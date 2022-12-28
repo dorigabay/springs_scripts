@@ -9,6 +9,8 @@ from springs_detector import Springs
 from calculations import Calculation
 from ants_detector import Ants
 
+
+
 def save_data(calculations,output_dir,first_save):
     print("Saving data...")
     data_arrays = [calculations.springs_length,calculations.N_ants_around_springs,calculations.size_ants_around_springs,
