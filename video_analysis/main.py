@@ -9,8 +9,6 @@ from springs_detector import Springs
 from calculations import Calculation
 from ants_detector import Ants
 
-
-
 def save_data(calculations,output_dir,first_save):
     print("Saving data...")
     data_arrays = [calculations.springs_length,calculations.N_ants_around_springs,calculations.size_ants_around_springs,
@@ -55,6 +53,7 @@ def present_analysis_result(frame, springs, calculations, ants):
                 image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (255, 255, 255), 2)
     image_to_illustrate = cv2.circle(image_to_illustrate, springs.object_center, 1, (255, 255, 255), 2)
     image_to_illustrate = cv2.circle(image_to_illustrate, springs.tip_point, 1, (255, 0, 0), 2)
+
     # try:
     #     # print(np.unique(ants.corrected_labeled_image))
     #     # for label, point in zip(np.unique(ants.corrected_labeled_image)[1:],ants.corrected_labels_center_of_mass):
@@ -69,6 +68,20 @@ def present_analysis_result(frame, springs, calculations, ants):
 
     cv2.imshow("frame", image_to_illustrate)
     cv2.waitKey(1)
+    return image_to_illustrate, calculations.joints
+
+def create_video(output_dir, images, vid_name):
+    print("Creating video...")
+    height, width = images[0].shape[:2]
+    video = cv2.VideoWriter(os.path.join(output_dir, vid_name+'.MP4'), cv2.VideoWriter_fourcc(*'mp4v'), 50, (width, height))
+    for image in images:
+        # convert mask to 3 channel:
+        if len(image.shape) == 2:
+            image = image.astype(np.uint8)*255
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+
+        video.write(image)
+    video.release()
 
 def main(video_path, output_dir, parameters):
     print("video_path: ", video_path)
@@ -76,6 +89,8 @@ def main(video_path, output_dir, parameters):
     cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["starting_frame"])
     previous_detections = None
     count = 0
+    # images = []
+    # joints = []
     # for count, x in enumerate(range(N_ITERATIONS)):
     while True:
         currFrame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
@@ -103,16 +118,22 @@ def main(video_path, output_dir, parameters):
                 if count==SAVE_GAP: first_save = True
                 else: first_save = False
                 save_data(calculations, output_dir, first_save)
+                # create_video(output_dir, images,"video")
+                # create_video(output_dir, joints,"joints")
 
             # Presnting analysis:
-            present_analysis_result(frame, springs, calculations, ants)
+            results_frame,results_joints = present_analysis_result(frame, springs, calculations, ants)
+            # images.append(results_frame)
+            # joints.append(results_joints)
             count += 1
         except:
             print("skipped frame ")
+            # images.append(frame*0)
+            # joints.append(frame*0)
             calculations.add_blank_row()
             count += 1
-
             continue
+
     cv2.destroyAllWindows()
     cap.release()
 

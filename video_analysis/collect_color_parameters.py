@@ -1,5 +1,5 @@
 import copy
-
+import re
 import cv2
 import numpy as np
 import os
@@ -165,7 +165,7 @@ def create_color_space_from_points(frame, points, margin, boundary,white=False):
     return spaces
 
 
-def get_parameters(output_folder, vidpath):
+def get_parameters(output_folder, video_path):
     """
     If the preferences for analyzing the video already had been save, this function enables to access them.
     :param output_folder: The directory path of the output.
@@ -175,10 +175,14 @@ def get_parameters(output_folder, vidpath):
     preferences = pd.read_pickle(os.path.join(output_folder, "video_preferences.pickle"))
     # print(os.path.join(output_folder, "video_preferences.pickle"))
     preferences_normpath = {}
+    keys_ends = {}
+    video_name = re.search(".*[/\\\\]([^/\\\\]+).[mM][pP]4", video_path).group(1)
     for key in preferences:
+        keys_ends[re.search(".*[/\\\\]([^/\\\\]+).[mM][pP]4", key).group(1)] = os.path.normpath(key)
         preferences_normpath[os.path.normpath(key)] = preferences[key]
     # print(preferences_normpath["\\".join(vidpath.split('\\'))])
-    return preferences_normpath["\\".join(vidpath.split('\\'))]
+    return preferences_normpath[keys_ends[video_name]]
+    # return preferences_normpath["\\".join(vidpath.split('\\'))]
 
 
 def get_first_frame(video, starting_frame=0):

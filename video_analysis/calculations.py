@@ -13,7 +13,6 @@ class Calculation:
         self.N_ants_around_springs, self.size_ants_around_springs =\
             self.occupied_springs(springs, ants, springs_order)
         self.springs_angles_to_nest, self.springs_angles_to_object = self.calc_springs_angles(springs, springs_order)
-
     def initiate_springs_angles_matrix(self,springs):
         if len(springs.bundles_labels)!=20:
             exit("First frame should have exactly 20 springs. Different number of springs were detect,"
@@ -64,6 +63,7 @@ class Calculation:
         dialated_ends = maximum_filter(springs.free_ends_labeled,ANTS_SPRINGS_OVERLAP_SIZE)
         dialated_ants = maximum_filter(ants.labaled_ants,ANTS_SPRINGS_OVERLAP_SIZE)
         joints = ((dialated_ends != 0) * (dialated_ants != 0))
+        self.joints = joints
         # import cv2
         # cv2.imshow("joints", joints.astype(np.uint8)*255)
         # cv2.waitKey(1)
@@ -110,10 +110,22 @@ class Calculation:
         empty_row[:] = np.nan
         ref = self.springs_length.shape[0]
         #for the self matrices, if shape[0] is as count then do nothing, else add a row of nans.
-        for matrix in [self.springs_length, self.springs_angles_matrix, self.springs_angles_matrix,
-                       self.N_ants_around_springs, self.size_ants_around_springs]:
-            if matrix.shape[0] == ref:
-                matrix = np.vstack((matrix,empty_row))
+        if ref != self.N_ants_around_springs.shape[0]:
+            self.N_ants_around_springs = np.vstack((self.N_ants_around_springs,empty_row))
+        if ref != self.springs_angles_to_nest.shape[0]:
+            self.springs_angles_to_nest = np.vstack((self.springs_angles_to_nest,empty_row))
+        if ref != self.size_ants_around_springs.shape[0]:
+            self.size_ants_around_springs = np.vstack((self.size_ants_around_springs,empty_row))
+        if ref != self.springs_angles_to_object.shape[0]:
+            self.springs_angles_to_object = np.vstack((self.springs_angles_to_object,empty_row))
+        # if ref != self.springs_length.shape[0]:
+        #     self.springs_length = np.vstack((self.springs_length,empty_row))
+        # for matrix in [self.springs_length, self.springs_angles_to_nest, self.springs_angles_to_object,
+        #                self.N_ants_around_springs, self.size_ants_around_springs]:
+        #     if matrix.shape[0] != ref:
+        #         print("adding row to matrix")
+        #         print(matrix.shape)
+        #         matrix = np.vstack((matrix,empty_row))
 
     def clear_data(calculations):
         # data_arrays_names = ["springs_length", "N_ants_around_springs", "size_ants_around_springs",
