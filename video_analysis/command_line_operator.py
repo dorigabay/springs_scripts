@@ -92,11 +92,9 @@ def run_analysis(video_path):
     output_dir,vidname = create_output_dir(video_path)
     print("Start processing video: ",video_path)
     video_parameters = collect_color_parameters.get_parameters(args["dir_path"],video_path)
-    main.main(video_path, output_dir, video_parameters)
+    main.main(video_path, output_dir, video_parameters,starting_frame=args["start_frame"])
     # remove vidoe path from 'Unanalyzed_videos.txt' file:
-    write_or_remove_files_paths_in_txt_file(video_path=video_path)
-
-
+    # write_or_remove_files_paths_in_txt_file(video_path=video_path)
 
 if __name__ == '__main__':
     if not args["iter_dir"]:
@@ -119,7 +117,11 @@ if __name__ == '__main__':
 # python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9/plus0_force/S5200007.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/video_analysis/test/ --complete_unanalyzed
 # python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/analysis_data/ --complete_unanalyzed
 # python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/analysis_data/ --complete_unanalyzed
-# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/analysis_data/ --complete_unanalyzed --nCPU 7
 # python video_analysis/command_line_operator.py --dir_path ../../data/videos/10.9/ --vid_path ../../videos/10.9/plus0_force/S5200007.MP4 --output_dir ../../data/video_analysis/test/ --complete_unanalyzed
 
+# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/analysis_data2/ --complete_unanalyzed --nCPU 5
+# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/analysis_data2/ --complete_unanalyzed --nCPU 5
+# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/analysis_data2/ --complete_unanalyzed --nCPU 2
 
+# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/plus0.5mm_force/S5290001.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/TEST/ --nCPU 1 --start_frame 43040
+#

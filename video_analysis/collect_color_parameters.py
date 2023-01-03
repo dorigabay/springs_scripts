@@ -200,6 +200,14 @@ def get_first_frame(video, starting_frame=0):
     # frame = cv2.resize(frame, (0, 0), fx=.3, fy=.3)
     return frame
 
+def neutrlize_colour(frame,alpha=1.5, beta=1.5):
+    """
+    Takes the frame and neutralizes the colors, by adjusting the white balance
+    :param frame: The frame to neutralize.
+    :return: The neutralized frame.
+    """
+    frame = cv2.convertScaleAbs(frame, alpha=alpha, beta=beta)
+    return frame
 
 def show_parameters_result(video, parameters):
     """
@@ -209,6 +217,7 @@ def show_parameters_result(video, parameters):
     image = get_first_frame(video, parameters["starting_frame"])
     image = image[parameters["crop_coordinates"][0]:parameters["crop_coordinates"][1],
             parameters["crop_coordinates"][2]:parameters["crop_coordinates"][3]]
+    image = neutrlize_colour(image)
     print("Are you happy with the result?:")
     import utils
     binary_color_masks = utils.mask_object_colors(parameters,image)
@@ -269,6 +278,7 @@ def set_parameters(video, starting_frame, stiff_object=False, crop_frame=False,i
         frame_cropped = crop_frame_by_coordinates(frame, crop_coordinates)
     else:
         crop_coordinates = None
+    frame_cropped = neutrlize_colour(frame_cropped)
     # set element color space for colors
     # if collect_element:
     margin = np.array([12, 30, 30])

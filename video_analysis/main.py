@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 from utils import crop_frame_by_coordinates,create_circular_mask
 import pickle
+from collect_color_parameters import neutrlize_colour
 from skimage.color import label2rgb
 # local imports:
 from springs_detector import Springs
@@ -12,9 +13,9 @@ from ants_detector import Ants
 def save_data(calculations,output_dir,first_save):
     print("Saving data...")
     data_arrays = [calculations.springs_length,calculations.N_ants_around_springs,calculations.size_ants_around_springs,
-                   calculations.springs_angles_to_nest,calculations.springs_angles_to_object]
+                   calculations.springs_angles_to_nest,calculations.springs_angles_to_object, calculations.springs_angles_matrix]
     data_arrays_names = ["springs_length","N_ants_around_springs","size_ants_around_springs","springs_angles_to_nest",
-                         "springs_angles_to_object"]
+                         "springs_angles_to_object","springs_angles_matrix"]
     for d,n in zip(data_arrays,data_arrays_names):
     # for dat in data_arrays_names:
         if first_save:
@@ -83,24 +84,28 @@ def create_video(output_dir, images, vid_name):
         video.write(image)
     video.release()
 
-def main(video_path, output_dir, parameters):
+def main(video_path, output_dir, parameters,starting_frame=None):
     print("video_path: ", video_path)
     cap = cv2.VideoCapture(video_path)
+    if starting_frame is not None:
+        parameters['starting_frame'] = starting_frame
     cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["starting_frame"])
     previous_detections = None
     count = 0
     # images = []
     # joints = []
     # for count, x in enumerate(range(N_ITERATIONS)):
+    balance_values = (1.5, 1.5, 1.5)
     while True:
         currFrame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
         ret, frame = cap.read()
         if frame is None:
             print("End of video")
-            save_data(calculations,count)
+            save_data(calculations,count,first_save=False)
             break # break the loop if there are no additional frame in the video
             # When setting the parameters, there's an option to set fixed coordinates for cropping the frame
         try:
+            frame = neutrlize_colour(frame)
             if parameters["crop_coordinates"] != None:
                 frame = crop_frame_by_coordinates(frame, parameters["crop_coordinates"])
             springs = Springs(parameters, frame, previous_detections)
@@ -112,7 +117,7 @@ def main(video_path, output_dir, parameters):
                 calculations.make_calculations(springs, ants)
             previous_detections = [springs.object_center,springs.mask_blue_full, ants.labaled_ants]
 
-            print("frame number:",count)
+            print("frame number:",count, end="\r")
             SAVE_GAP = 100
             if (count%SAVE_GAP == 0 and count != 0):# or count==(N_ITERATIONS-1):
                 if count==SAVE_GAP: first_save = True
@@ -127,7 +132,7 @@ def main(video_path, output_dir, parameters):
             # joints.append(results_joints)
             count += 1
         except:
-            print("skipped frame ")
+            print("skipped frame ", end="\r")
             # images.append(frame*0)
             # joints.append(frame*0)
             calculations.add_blank_row()

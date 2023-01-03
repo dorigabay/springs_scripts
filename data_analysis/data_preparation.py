@@ -6,18 +6,30 @@ from scipy.signal import savgol_filter
 import os, pickle
 import pandas as pd
 import seaborn as sns
-import utils
+from data_analysis import utils
 
-class Prepare_data:
-    def __init__(self,directory,save_events=False):
+def prepare_multiple(spring_type_directories):
+    springs_analysed = {}
+    for spring_type in spring_type_directories:
+        springs_analysed[spring_type] = {}
+        for video_data in spring_type_directories[spring_type]:
+            video_name = video_data.split("\\")[-2]
+            springs_analysed[spring_type][video_name] = PrepareData(video_data)
+    return springs_analysed
+
+class PrepareData:
+    def __init__(self,directory):
         self.directory = directory
         self.load_data(directory)
         self.original_N_ants = copy.copy(self.N_ants_around_springs)
+        self.original_angles = copy.copy(self.springs_angles_to_nest)
+        self.resolve_bad_rows()
         self.load_starting_frame()
         self.N_ants_proccessing()
         self.springs_length_processing()
         self.springs_angles_processing()
-        self.angular_velocity_nest = self.calc_angular_velocity(self.springs_angles_to_nest)
+        # self.angular_velocity_nest = self.calc_angular_velocity(self.springs_angles_to_nest,diff_spacing=1)
+        # self.angular_velocity_nest_spaced = self.calc_angular_velocity(self.springs_angles_to_nest,diff_spacing=10)
         self.springs_rest_lengths()
         self.attaches_events(self.N_ants_around_springs)
         self.labeled_zero_to_one_filtered = self.fiter_attaches_events(self.labeled_zero_to_one)
@@ -25,6 +37,7 @@ class Prepare_data:
         #     self.save_events(self.labeled_zero_to_one_filtered,self.directory)
 
     def load_data(self,directory):
+        print("loading data from:",directory)
         self.N_ants_around_springs = np.loadtxt(f"{directory}N_ants_around_springs.csv",delimiter=",")
         self.size_ants_around_springs = np.loadtxt(f"{directory}size_ants_around_springs.csv",delimiter=",")
         self.springs_length = np.loadtxt(f"{directory}springs_length.csv",delimiter=",")
@@ -32,12 +45,24 @@ class Prepare_data:
         self.springs_angles_to_object = np.loadtxt(f"{directory}springs_angles_to_object.csv",delimiter=",")
 
     def load_starting_frame(self):
+        from video_analysis.collect_color_parameters import get_parameters
         path_parts =  os.path.normpath(self.directory).split('\\')
-        with open(os.path.join("Z:/Dor_Gabay/ThesisProject/data/videos",path_parts[-3],"video_preferences.pickle"), 'rb') as handle:
-            # self.startig_frame = pickle.load(handle)["Z:\\Dor_Gabay\\videos\\10.9\\plus0_force\\S5200007.MP4"]['starting_frame']
-            path = f"Z:\\Dor_Gabay\\videos\\{path_parts[-3]}\\{path_parts[-2]}\\{path_parts[-1]}.MP4"
-            self.starting_frame = pickle.load(handle)[path]['starting_frame']
-            print("starting_frame:",self.starting_frame)
+        video_dir =os.path.normpath(os.path.join("Z:/Dor_Gabay/ThesisProject/data/videos",path_parts[-3]))
+        video_path = os.path.normpath(os.path.join("Z:/Dor_Gabay/ThesisProject/data/videos",path_parts[-3],path_parts[-2],path_parts[-1]+".MP4"))
+        parameters = get_parameters(video_dir, video_path)
+        self.starting_frame = parameters["starting_frame"]
+        # with open(os.path.join("Z:/Dor_Gabay/ThesisProject/data/videos",path_parts[-3],"video_preferences.pickle"), 'rb') as handle:
+        #     path = f"Z:\\Dor_Gabay\\videos\\{path_parts[-3]}\\{path_parts[-2]}\\{path_parts[-1]}.MP4"
+        #     self.starting_frame = pickle.load(handle)[path]['starting_frame']
+
+    def resolve_bad_rows(self):
+        # for rows with more than 2 Nan values, put nan in all the row
+        bad_rows = np.sum(np.isnan(self.springs_length),axis=1)>2
+        self.springs_length[bad_rows,:] = np.nan
+        self.springs_angles_to_nest[bad_rows,:] = np.nan
+        self.springs_angles_to_object[bad_rows,:] = np.nan
+        self.N_ants_around_springs[bad_rows,:] = np.nan
+        self.size_ants_around_springs[bad_rows,:] = np.nan
 
     def N_ants_proccessing(self):
         undetected_springs_for_long_time = utils.filter_continuity(utils.convert_bool_to_binary(np.isnan(self.springs_length)),min_size=8)
@@ -62,15 +87,15 @@ class Prepare_data:
 
     def springs_angles_processing(self):
         cells_to_interp = utils.find_cells_to_interpolate(self.springs_angles_to_nest)
-        self.springs_angles_to_nest = utils.interpolate_data(self.springs_angles_to_nest+np.pi,
-                                                             cells_to_interp,period=2*np.pi)
-        self.springs_angles_to_object = utils.interpolate_data(self.springs_angles_to_nest+np.pi,
-                                                               cells_to_interp,period=2*np.pi)
+        self.springs_angles_to_nest = utils.interpolate_data(self.springs_angles_to_nest+np.pi,cells_to_interp)
+        self.springs_angles_to_object = utils.interpolate_data(self.springs_angles_to_nest+np.pi,cells_to_interp)
 
-    def calc_angular_velocity(self,angles):
-        diff = np.diff(angles,axis=0)
-        diff[diff>np.pi] = diff[diff>np.pi]-2*np.pi
-        return diff
+    # def calc_angular_velocity(self,angles,diff_spacing=1):
+    #     thershold = 5.5
+    #     diff = utils.difference(angles,spacing=diff_spacing,axis=0)
+    #     diff[(diff>thershold)] = diff[diff>thershold]-2*np.pi
+    #     diff[(diff<-thershold)] = diff[diff<-thershold]+2*np.pi
+    #     return diff
 
     def smoothing_n_ants(self, array):
         for col in range(array.shape[1]):
@@ -137,7 +162,7 @@ class Prepare_data:
         median_size_over_N_ants = median(self.size_ants_around_springs,N_ants_for_mean.astype(int),
                                          index=np.unique(N_ants_for_mean))
         # size_ants_around_springs[(smoothed_N_ants_without_short_attaches==1)&size_ants_around_springs*1.3<median_size_over_N_ants[1]] = 0
-        false_single_ants = (self.N_ants_around_springs==1)&(self.size_ants_around_springs>median_size_over_N_ants[1]*1.5)
+        # false_single_ants = (self.N_ants_around_springs==1)&(self.size_ants_around_springs>median_size_over_N_ants[1]*1.5)
 
     def springs_rest_lengths(self):
         ar = copy.copy(self.springs_length_processed)
@@ -145,8 +170,3 @@ class Prepare_data:
         ar = np.sort(ar,axis=0)
         self.rest_lenghts = np.nanmedian(ar[:100],axis=0)
         self.rest_length = np.median(self.rest_lenghts)
-
-    # def events_hist(self):
-    #     number_of_seconds = sum_labels(convert_bool_to_binary(self.single_ant_attached_labeled>=1),self.single_ant_attached_labeled,np.unique(self.single_ant_attached_labeled))/50
-    #     plt.hist(number_of_seconds,bins=100)
-    #     plt.show()

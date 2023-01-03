@@ -102,7 +102,7 @@ class Calculation:
                     # print("angle to object",free_ends_angles_to_object[springs.free_ends_edges_bundles_labels==label])
                     angles_to_object[index_springs] = free_ends_angles_to_object[springs.free_ends_edges_bundles_labels==label]
         angles_to_nest = angles_to_nest.reshape(1,20)
-        angles_to_object = angles_to_nest.reshape(1,20)
+        angles_to_object = angles_to_object.reshape(1,20)
         return angles_to_nest, angles_to_object
 
     def add_blank_row(self):
