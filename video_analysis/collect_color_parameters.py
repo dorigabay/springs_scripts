@@ -9,11 +9,21 @@ import scipy.cluster as sclu
 import scipy.misc
 import scipy
 
+def get_background_color(frame):
+    from PIL import Image
+    #conver a frame to PIL image
+    im = Image.fromarray(frame)
+    colors = im.getcolors(im.size[0] * im.size[1])
+    colors = sorted(colors, key=lambda x: x[0], reverse=True)
+    background_color = colors[0][1]
+    return background_color
+
 def most_common_hue(frame):
     """
     Finds the most common hue in the frame, uses clustering method.
     :return: The commmon hue in HSV
     """
+
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     ar = np.asarray(frame)
     shape = frame.shape
@@ -144,6 +154,9 @@ def create_color_space_from_points(frame, points, margin, boundary,white=False):
     """
     image_hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     background_color = most_common_hue(frame)
+    background_color2 = get_background_color(frame)
+    print("background_color", background_color)
+    print("background_color2", background_color2)
     points_hsv = []
     for point in points:
         points_hsv.append(image_hsv[point[0], point[1], :])
@@ -173,6 +186,7 @@ def get_parameters(output_folder, video_path):
     :return: The preferences.
     """
     preferences = pd.read_pickle(os.path.join(output_folder, "video_preferences.pickle"))
+    # print(preferences)
     # print(os.path.join(output_folder, "video_preferences.pickle"))
     preferences_normpath = {}
     keys_ends = {}
@@ -200,7 +214,7 @@ def get_first_frame(video, starting_frame=0):
     # frame = cv2.resize(frame, (0, 0), fx=.3, fy=.3)
     return frame
 
-def neutrlize_colour(frame,alpha=1.5, beta=1.5):
+def neutrlize_colour(frame,alpha=2, beta=0):
     """
     Takes the frame and neutralizes the colors, by adjusting the white balance
     :param frame: The frame to neutralize.
@@ -264,10 +278,10 @@ def set_parameters(video, starting_frame, stiff_object=False, crop_frame=False,i
         # set starting frame
         if starting_frame:
             print("What frame to start with: ")
-            starting_frame = int(input())
+            start_frame = int(input())
         else:
-            starting_frame = 0
-        frame = get_first_frame(video, starting_frame=starting_frame)
+            start_frame = 0
+        frame = get_first_frame(video, starting_frame=start_frame)
     else:
         frame = cv2.imread(video)
         frame = cv2.resize(frame, (0, 0), fx=.3, fy=.3)
@@ -303,7 +317,7 @@ def set_parameters(video, starting_frame, stiff_object=False, crop_frame=False,i
         print(f"color_spaces for color {color_name}: {color_spaces}")
         colors["g"] = color_spaces
     return {"crop_coordinates": crop_coordinates, "colors_spaces": colors,
-            "starting_frame": starting_frame}
+            "starting_frame": start_frame}
 
 def main(videos_to_analyse,output_folder,starting_frame=False,collect_crop=False):
     parameters = {}

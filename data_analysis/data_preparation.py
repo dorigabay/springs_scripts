@@ -23,7 +23,7 @@ class PrepareData:
         self.load_data(directory)
         self.original_N_ants = copy.copy(self.N_ants_around_springs)
         self.original_angles = copy.copy(self.springs_angles_to_nest)
-        self.resolve_bad_rows()
+        # self.resolve_bad_rows()
         self.load_starting_frame()
         self.N_ants_proccessing()
         self.springs_length_processing()
@@ -33,6 +33,7 @@ class PrepareData:
         self.springs_rest_lengths()
         self.attaches_events(self.N_ants_around_springs)
         self.labeled_zero_to_one_filtered = self.fiter_attaches_events(self.labeled_zero_to_one)
+        self.data_names = ["N_ants_around_springs","size_ants_around_springs","springs_length","springs_angles_to_nest","springs_angles_to_object"]
         # if save_events:
         #     self.save_events(self.labeled_zero_to_one_filtered,self.directory)
 
@@ -45,24 +46,26 @@ class PrepareData:
         self.springs_angles_to_object = np.loadtxt(f"{directory}springs_angles_to_object.csv",delimiter=",")
 
     def load_starting_frame(self):
-        from video_analysis.collect_color_parameters import get_parameters
-        path_parts =  os.path.normpath(self.directory).split('\\')
-        video_dir =os.path.normpath(os.path.join("Z:/Dor_Gabay/ThesisProject/data/videos",path_parts[-3]))
-        video_path = os.path.normpath(os.path.join("Z:/Dor_Gabay/ThesisProject/data/videos",path_parts[-3],path_parts[-2],path_parts[-1]+".MP4"))
-        parameters = get_parameters(video_dir, video_path)
-        self.starting_frame = parameters["starting_frame"]
+        # from video_analysis.collect_color_parameters import get_parameters
+        # path_parts =  os.path.normpath(self.directory).split('\\')
+        # video_dir =os.path.normpath(os.path.join("Z:/Dor_Gabay/ThesisProject/data/videos",path_parts[-3]))
+        # video_path = os.path.normpath(os.path.join("Z:/Dor_Gabay/ThesisProject/data/videos",path_parts[-3],path_parts[-2],path_parts[-1]+".MP4"))
+        #
+        # parameters = get_parameters(video_dir, video_path)
+        # self.starting_frame = parameters["starting_frame"]
         # with open(os.path.join("Z:/Dor_Gabay/ThesisProject/data/videos",path_parts[-3],"video_preferences.pickle"), 'rb') as handle:
         #     path = f"Z:\\Dor_Gabay\\videos\\{path_parts[-3]}\\{path_parts[-2]}\\{path_parts[-1]}.MP4"
         #     self.starting_frame = pickle.load(handle)[path]['starting_frame']
-
-    def resolve_bad_rows(self):
-        # for rows with more than 2 Nan values, put nan in all the row
-        bad_rows = np.sum(np.isnan(self.springs_length),axis=1)>2
-        self.springs_length[bad_rows,:] = np.nan
-        self.springs_angles_to_nest[bad_rows,:] = np.nan
-        self.springs_angles_to_object[bad_rows,:] = np.nan
-        self.N_ants_around_springs[bad_rows,:] = np.nan
-        self.size_ants_around_springs[bad_rows,:] = np.nan
+        # return int(input("starting frame:"))
+        return 0
+    # def resolve_bad_rows(self):
+    #     # for rows with more than 2 Nan values, put nan in all the row
+    #     bad_rows = np.sum(np.isnan(self.springs_length),axis=1)>2
+    #     self.springs_length[bad_rows,:] = np.nan
+    #     self.springs_angles_to_nest[bad_rows,:] = np.nan
+    #     self.springs_angles_to_object[bad_rows,:] = np.nan
+    #     self.N_ants_around_springs[bad_rows,:] = np.nan
+    #     self.size_ants_around_springs[bad_rows,:] = np.nan
 
     def N_ants_proccessing(self):
         undetected_springs_for_long_time = utils.filter_continuity(utils.convert_bool_to_binary(np.isnan(self.springs_length)),min_size=8)

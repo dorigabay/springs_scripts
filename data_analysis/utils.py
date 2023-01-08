@@ -1,4 +1,6 @@
 import copy
+import glob
+
 import numpy as np
 from scipy.ndimage import label,sum_labels
 import os
@@ -26,6 +28,13 @@ def calc_angular_velocity(angles,diff_spacing=1):
     diff[(diff>THERSHOLD)] = diff[diff>THERSHOLD]-2*np.pi
     diff[(diff<-THERSHOLD)] = diff[diff<-THERSHOLD]+2*np.pi
     return diff
+
+# def sum_n_lines(array,n_lines=10):
+#     summed_array = np.abs(array.copy()[list(range(0,array.shape[0],n_lines)),:])
+#     for n in range(1,n_lines):
+#         add = np.abs(array[list(range(n,array.shape[0],n_lines)),:])
+#         summed_array[0:add.shape[0],:] += add
+#     return summed_array
 
 def interpolate_data(array,undetected_bool,period=None):
     array = copy.copy(array)
@@ -65,11 +74,21 @@ def iter_folder(path):
         found_dirs = [folder_name for folder_name in [x for x in os.walk(dir)][0][1] if "_force" in folder_name]
         for found_dir in found_dirs:
             videos_names = [x for x in os.walk(os.path.join(dir,found_dir))][0][1]
+            videos_paths = [os.path.normpath(os.path.join(dir,found_dir,x))+"\\" for x in videos_names]
+            videos_paths_filtered = [x for x in videos_paths if len(glob.glob(x+'\\*.csv'))>0]
             if found_dir not in to_analyze:
-                to_analyze[found_dir] = [os.path.normpath(os.path.join(dir,found_dir,x))+"\\" for x in videos_names]
+                to_analyze[found_dir] = videos_paths_filtered
             else:
-                to_analyze[found_dir] += [os.path.normpath(os.path.join(dir,found_dir,x))+"\\" for x in videos_names]
+                to_analyze[found_dir] += videos_paths_filtered
         else:
             for subdir in [x for x in os.walk(dir)][0][1]:
                 directories_to_search.append(os.path.join(dir, subdir))
     return to_analyze
+
+def get_outliers(array, threshold=1.1):
+    # get the outliers from an array
+    # outliers are defined as values that are more than percent_threshold away from the median
+    median = np.nanmedian(array)
+    outliers = np.where(np.abs(array - median) > threshold * median)[0]
+    return outliers
+

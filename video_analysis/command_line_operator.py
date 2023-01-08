@@ -17,7 +17,8 @@ parser.add_argument("--nCPU", type=int, help='Number of CPU processors to use fo
 # parser.add_argument('--Xmargin', type=int, help='Margins from contour to cut frames (X_value)"')
 # parser.add_argument('--Ymargin', type=int, help='Margins from contour to cut frames (X_value)"')
 parser.add_argument('--output_dir', type=str, help='Path to output directory. If not given the program will create a directory within the input folder')
-parser.add_argument('--start_frame', type=int, help='Frame to start analysing',default=0)
+parser.add_argument('--collect_start_frame', help='If True, then the program will request frame to start analysing for each vidoe',action='store_true')
+parser.add_argument('--start_frame', help='Frame to start with',type=int,default=None)
 parser.add_argument('--skip', type=int, help='Number of skipping frames',default=1)
 parser.add_argument('--crop',help='Number of pixels to slice out from each direction (top,bottom,left,right)',action='store_true')
 parser.add_argument('--collect_parameters',help='', action='store_true')
@@ -92,7 +93,7 @@ def run_analysis(video_path):
     output_dir,vidname = create_output_dir(video_path)
     print("Start processing video: ",video_path)
     video_parameters = collect_color_parameters.get_parameters(args["dir_path"],video_path)
-    main.main(video_path, output_dir, video_parameters,starting_frame=args["start_frame"])
+    main.main(video_path, output_dir, video_parameters,start_frame=args["start_frame"])
     # remove vidoe path from 'Unanalyzed_videos.txt' file:
     # write_or_remove_files_paths_in_txt_file(video_path=video_path)
 
@@ -106,7 +107,7 @@ if __name__ == '__main__':
         write_or_remove_files_paths_in_txt_file(videos_to_analyze=videos_to_analyze)
         if args['collect_parameters']:
             # make parameters file:
-            collect_color_parameters.main(videos_to_analyze,args["dir_path"], starting_frame=args["start_frame"], collect_crop=args["crop"])
+            collect_color_parameters.main(videos_to_analyze,args["dir_path"], starting_frame=args["collect_start_frame"], collect_crop=args["crop"])
         # analyze videos:
         print("Number of processors exist:",mp.cpu_count())
         print("Mumber of processors used for this task:",str(args["nCPU"]))
@@ -119,9 +120,14 @@ if __name__ == '__main__':
 # python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/analysis_data/ --complete_unanalyzed
 # python video_analysis/command_line_operator.py --dir_path ../../data/videos/10.9/ --vid_path ../../videos/10.9/plus0_force/S5200007.MP4 --output_dir ../../data/video_analysis/test/ --complete_unanalyzed
 
-# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/analysis_data2/ --complete_unanalyzed --nCPU 5
-# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/analysis_data2/ --complete_unanalyzed --nCPU 5
-# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/analysis_data2/ --complete_unanalyzed --nCPU 2
+# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/videos_analysis_data/ --complete_unanalyzed --nCPU 5
+# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/videos_analysis_data/ --complete_unanalyzed --collect_parameters --nCPU 4 --crop
+# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/videos_analysis_data/ --complete_unanalyzed --nCPU 5
+# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/videos_analysis_data/ --complete_unanalyzed --collect_parameters --nCPU 2 --crop
+# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/videos_analysis_data/ --complete_unanalyzed --collect_parameters --nCPU 1 --crop
 
-# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/plus0.5mm_force/S5290001.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/TEST/ --nCPU 1 --start_frame 43040
 #
+# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/plus0.5mm_force/S5290002.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/TEST/ --nCPU 1 --start_frame 11500
+# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9/plus0.1_force/S5200004.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/TEST/ --nCPU 1 --start_frame 50117
+#
+# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/plus_0.5mm_force/S5290002.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/videos_analysis_data/ --complete_unanalyzed --start_frame 1360

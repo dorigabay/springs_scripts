@@ -11,7 +11,7 @@ WHOLE_OBJECT_CLOSING_SIZE = 4
 # COLOR_CLOSING = np.ones((3, 3))
 COLOR_CLOSING = 3
 # BLUE_CLOSING = np.ones((5, 5))
-BLUE_CLOSING = 5
+BLUE_CLOSING = 9
 BLUE_SIZE_DEVIATION = 0.85
 LABELING_BINARY_STRUCTURE = generate_binary_structure(2, 2)
 MIN_GREEN_SIZE = 7
@@ -88,7 +88,7 @@ class Springs:
         # mask_blue_empty_closed = self.close_element(mask_blue, closing_structure)
         mask_blue_empty_closed = connect_blobs(mask_blue, closing_structure)
         # cv2.imshow("mask_blue_empty_closed", self.convert_bool_to_binary(mask_blue_empty_closed.astype("bool")).astype(np.uint8)*255)
-        # cv2.waitKey(1)
+        # cv2.waitKey(0)
         lableled,_ = label(mask_blue_empty_closed)
         bulb_prop = regionprops(lableled)
         biggest_blub = bulb_prop[np.argmax([x.area for x in bulb_prop])].label

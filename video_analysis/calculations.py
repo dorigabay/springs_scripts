@@ -19,16 +19,18 @@ class Calculation:
                  " please start the process from a different frame.")
         self.springs_angles_matrix = np.sort(springs.bundles_labels).reshape(1,20)
 
-    def make_calculations(self,springs,ants):
+    def make_calculations(self,springs,ants,previous_calculations):
         self.springs_angles_matrix = np.vstack([self.springs_angles_matrix, self.match_springs(springs)])
 
         springs_order = self.springs_angles_matrix[-1, :]
+        springs_order, angles_to_nest, angles_to_object = self.correct_springs_matching(springs, springs_order,
+                                                                                      previous_calculations[3])
         self.springs_length = np.vstack([self.springs_length, self.calc_springs_lengths(springs, springs_order)])
         N_ants_around_springs, size_ants_around_springs =\
             self.occupied_springs(springs,ants,springs_order)
         self.N_ants_around_springs = np.vstack([self.N_ants_around_springs, N_ants_around_springs])
         self.size_ants_around_springs = np.vstack([self.size_ants_around_springs, size_ants_around_springs])
-        angles_to_nest, angles_to_object = self.calc_springs_angles(springs, springs_order)
+        # angles_to_nest, angles_to_object = self.calc_springs_angles(springs, springs_order)
         self.springs_angles_to_nest = np.vstack([self.springs_angles_to_nest, angles_to_nest])
         self.springs_angles_to_object = np.vstack([self.springs_angles_to_object, angles_to_object])
 
@@ -44,6 +46,15 @@ class Calculation:
         for angle_class, angle in zip(assigned_angles_classes, current_springs_angles):
             new_springs_row[angle_class] = angle
         return new_springs_row
+
+    def correct_springs_matching(self, springs,springs_order, previous_angles):
+        angles_to_nest, angles_to_object = self.calc_springs_angles(springs, springs_order)
+        if np.abs(np.nanmean(angles_to_nest/previous_angles)) > 0.05:
+            springs_order = np.roll(springs_order,1)
+        angles_to_nest, angles_to_object = self.calc_springs_angles(springs, springs_order)
+        if np.abs(np.nanmean(angles_to_nest/previous_angles)) > 0.05:
+            springs_order = np.roll(springs_order,-2)
+        return springs_order, angles_to_nest, angles_to_object
 
     def calc_springs_lengths(self, springs, springs_order):# fixed_ends_coor, free_ends_coor, fixed_ends_labels, free_ends_labels):
         springs_length = np.empty((20))

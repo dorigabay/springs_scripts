@@ -13,9 +13,9 @@ from ants_detector import Ants
 def save_data(calculations,output_dir,first_save):
     print("Saving data...")
     data_arrays = [calculations.springs_length,calculations.N_ants_around_springs,calculations.size_ants_around_springs,
-                   calculations.springs_angles_to_nest,calculations.springs_angles_to_object, calculations.springs_angles_matrix]
+                   calculations.springs_angles_to_nest,calculations.springs_angles_to_object]
     data_arrays_names = ["springs_length","N_ants_around_springs","size_ants_around_springs","springs_angles_to_nest",
-                         "springs_angles_to_object","springs_angles_matrix"]
+                         "springs_angles_to_object"]
     for d,n in zip(data_arrays,data_arrays_names):
     # for dat in data_arrays_names:
         if first_save:
@@ -55,17 +55,17 @@ def present_analysis_result(frame, springs, calculations, ants):
     image_to_illustrate = cv2.circle(image_to_illustrate, springs.object_center, 1, (255, 255, 255), 2)
     image_to_illustrate = cv2.circle(image_to_illustrate, springs.tip_point, 1, (255, 0, 0), 2)
 
-    # try:
-    #     # print(np.unique(ants.corrected_labeled_image))
-    #     # for label, point in zip(np.unique(ants.corrected_labeled_image)[1:],ants.corrected_labels_center_of_mass):
-    #     #     point = np.array((point[1],point[0])).astype(int)
-    #     #     # image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 255, 0), 2)
-    #     #     image_to_illustrate = cv2.putText(image_to_illustrate, str(label), point, cv2.FONT_HERSHEY_SIMPLEX, 1,
-    #     #                                       (255, 0, 0), 2)
-    #     image_to_illustrate = label2rgb(ants.labaled_ants, image=image_to_illustrate, bg_label=0)
-    #     # image_to_illustrate = utils.draw_lines_on_image(image_to_illustrate, ants.ants_lines)
-    #     # print(ants.ants_lines)
-    # except: pass
+    try:
+        # print(np.unique(ants.corrected_labeled_image))
+        # for label, point in zip(np.unique(ants.corrected_labeled_image)[1:],ants.corrected_labels_center_of_mass):
+        #     point = np.array((point[1],point[0])).astype(int)
+        #     # image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 255, 0), 2)
+        #     image_to_illustrate = cv2.putText(image_to_illustrate, str(label), point, cv2.FONT_HERSHEY_SIMPLEX, 1,
+        #                                       (255, 0, 0), 2)
+        image_to_illustrate = label2rgb(ants.labaled_ants, image=image_to_illustrate, bg_label=0)
+        # image_to_illustrate = utils.draw_lines_on_image(image_to_illustrate, ants.ants_lines)
+        # print(ants.ants_lines)
+    except: pass
 
     cv2.imshow("frame", image_to_illustrate)
     cv2.waitKey(1)
@@ -84,12 +84,19 @@ def create_video(output_dir, images, vid_name):
         video.write(image)
     video.release()
 
-def main(video_path, output_dir, parameters,starting_frame=None):
+def main(video_path, output_dir, parameters,start_frame=None):
     print("video_path: ", video_path)
+
     cap = cv2.VideoCapture(video_path)
-    if starting_frame is not None:
-        parameters['starting_frame'] = starting_frame
-    cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["starting_frame"])
+    # print(cap)
+    # if starting_frame is not None:
+    #     parameters['starting_frame'] = starting_frame
+    if start_frame is not None:
+        # print("start_frame: ", start_frame)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    else:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["starting_frame"])
+        # print("cap",  parameters["starting_frame"])
     previous_detections = None
     count = 0
     # images = []
@@ -97,25 +104,27 @@ def main(video_path, output_dir, parameters,starting_frame=None):
     # for count, x in enumerate(range(N_ITERATIONS)):
     balance_values = (1.5, 1.5, 1.5)
     while True:
-        currFrame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+        # currFrame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
         ret, frame = cap.read()
+        # print("frame: ", frame)
         if frame is None:
             print("End of video")
             save_data(calculations,count,first_save=False)
             break # break the loop if there are no additional frame in the video
             # When setting the parameters, there's an option to set fixed coordinates for cropping the frame
         try:
-            frame = neutrlize_colour(frame)
+            frame_neutrlized = neutrlize_colour(frame)
             if parameters["crop_coordinates"] != None:
                 frame = crop_frame_by_coordinates(frame, parameters["crop_coordinates"])
-            springs = Springs(parameters, frame, previous_detections)
+                frame_neutrlized = crop_frame_by_coordinates(frame_neutrlized, parameters["crop_coordinates"])
+            springs = Springs(parameters, frame_neutrlized, previous_detections)
             ants = Ants(frame, springs)
             if count == 0:
                 calculations = Calculation(springs, ants)
             else:
                 # ants.track_ants(ants.labaled_ants, previous_detections[2])
-                calculations.make_calculations(springs, ants)
-            previous_detections = [springs.object_center,springs.mask_blue_full, ants.labaled_ants]
+                calculations.make_calculations(springs, ants,previous_calculations=previous_detections)
+            previous_detections = [springs.object_center,springs.mask_blue_full, ants.labaled_ants, calculations.springs_angles_to_nest]
 
             print("frame number:",count, end="\r")
             SAVE_GAP = 100
