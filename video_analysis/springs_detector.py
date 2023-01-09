@@ -32,6 +32,8 @@ class Springs:
             self.detect_blue_stripe(self.binary_color_masks["b"], previous_detections = previous_detections)
         self.green_mask = self.clean_mask(self.binary_color_masks["g"],MIN_GREEN_SIZE)
         self.red_mask = self.clean_mask(self.binary_color_masks["r"],MIN_RED_SIZE)
+        # cv2.imshow("red_mask",self.red_mask.astype(np.uint8)*255)
+        # cv2.waitKey(1)
         self.red_labeled, self.green_labeled, self.fixed_ends_labeled, self.free_ends_labeled, self.red_centers, self.green_centers = \
             self.get_spring_parts(self.object_center,self.binary_color_masks["r"],self.green_mask)
         self.bundles_labeled, self.bundles_labels = self.create_bundles_labels()
@@ -115,8 +117,14 @@ class Springs:
     def find_farthest_point(self, point, contour):
         point = np.array([point[1],point[0]])
         distances = np.sqrt(np.sum(np.square(contour-point),1))
-        farthest_from_point = contour[np.argmax(distances),:]
-        return farthest_from_point, np.max(distances)
+        # take the index of the 5 farthest points
+        farthest_points = np.argsort(distances)[-50:]
+        # take the average of the 5 farthest points
+        farthest_point = np.mean(contour[farthest_points],0).astype(int)
+        # print("farthest_point",farthest_point)
+        # farthest_from_point = contour[np.argmax(distances),:]
+        # print("farthest_from_point",farthest_from_point)
+        return farthest_point, np.max(distances)
 
     def clean_mask(self,mask,min_size):
         inner_circle_mask = create_circular_mask(mask.shape, center=self.object_center, radius=self.blue_radius)
@@ -138,8 +146,17 @@ class Springs:
             binary_mask = binary_mask.astype(dtype)
         return binary_mask
 
+    def screen_small_labels(self, labeled, threshold=0.5):
+        # calculate the number of pixels in each label, and remove labels with too few pixels, by the being smaller than the mean by a threshold
+        label_counts = np.bincount(labeled.ravel())
+        too_small = np.arange(len(label_counts))[label_counts < np.mean(label_counts[1:]) * threshold]
+        labeled[np.isin(labeled, too_small)] = 0
+
+        return label(labeled)
+
     def get_spring_parts(self,object_center,red_mask,green_mask):
         red_labeled, red_num_features = label(red_mask, LABELING_BINARY_STRUCTURE)
+        red_labeled, red_num_features = self.screen_small_labels(red_labeled)
         red_centers = np.array(center_of_mass(red_labeled, labels=red_labeled, index=range(1, red_num_features + 1)))
         red_centers = self.swap_columns(red_centers)
         red_radii = np.sqrt(np.sum(np.square(red_centers - object_center), axis=1))
@@ -240,4 +257,14 @@ class Springs:
         overlap_centers = self.swap_columns(np.array(
             center_of_mass(overlap_labeled, labels=overlap_labeled, index=overlap_labels)).astype("int"))
         overlap_bundles_labels = [bundles_labeled[x[1], x[0]] for x in overlap_centers]
+        overlap_bundles_labels = self.remove_duplicates(overlap_bundles_labels)
         return overlap_centers, overlap_bundles_labels
+
+    def remove_duplicates(self, labels):
+        # turn duplicates labels to 0
+        # print(labels)
+        labels_array = np.array(labels)
+        counts = np.array([labels.count(x) for x in labels])
+        labels_array[counts > 1] = 0
+        # print(list(labels_array))
+        return list(labels_array)

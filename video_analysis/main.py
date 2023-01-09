@@ -4,7 +4,6 @@ import numpy as np
 from utils import crop_frame_by_coordinates,create_circular_mask
 import pickle
 from collect_color_parameters import neutrlize_colour
-from skimage.color import label2rgb
 # local imports:
 from springs_detector import Springs
 from calculations import Calculation
@@ -55,17 +54,17 @@ def present_analysis_result(frame, springs, calculations, ants):
     image_to_illustrate = cv2.circle(image_to_illustrate, springs.object_center, 1, (255, 255, 255), 2)
     image_to_illustrate = cv2.circle(image_to_illustrate, springs.tip_point, 1, (255, 0, 0), 2)
 
-    try:
-        # print(np.unique(ants.corrected_labeled_image))
-        # for label, point in zip(np.unique(ants.corrected_labeled_image)[1:],ants.corrected_labels_center_of_mass):
-        #     point = np.array((point[1],point[0])).astype(int)
-        #     # image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 255, 0), 2)
-        #     image_to_illustrate = cv2.putText(image_to_illustrate, str(label), point, cv2.FONT_HERSHEY_SIMPLEX, 1,
-        #                                       (255, 0, 0), 2)
-        image_to_illustrate = label2rgb(ants.labaled_ants, image=image_to_illustrate, bg_label=0)
-        # image_to_illustrate = utils.draw_lines_on_image(image_to_illustrate, ants.ants_lines)
-        # print(ants.ants_lines)
-    except: pass
+    # try:
+    #     # print(np.unique(ants.corrected_labeled_image))
+    #     # for label, point in zip(np.unique(ants.corrected_labeled_image)[1:],ants.corrected_labels_center_of_mass):
+    #     #     point = np.array((point[1],point[0])).astype(int)
+    #     #     # image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 255, 0), 2)
+    #     #     image_to_illustrate = cv2.putText(image_to_illustrate, str(label), point, cv2.FONT_HERSHEY_SIMPLEX, 1,
+    #     #                                       (255, 0, 0), 2)
+    #     image_to_illustrate = label2rgb(ants.labaled_ants, image=image_to_illustrate, bg_label=0)
+    #     # image_to_illustrate = utils.draw_lines_on_image(image_to_illustrate, ants.ants_lines)
+    #     # print(ants.ants_lines)
+    # except: pass
 
     cv2.imshow("frame", image_to_illustrate)
     cv2.waitKey(1)
@@ -88,25 +87,14 @@ def main(video_path, output_dir, parameters,start_frame=None):
     print("video_path: ", video_path)
 
     cap = cv2.VideoCapture(video_path)
-    # print(cap)
-    # if starting_frame is not None:
-    #     parameters['starting_frame'] = starting_frame
     if start_frame is not None:
-        # print("start_frame: ", start_frame)
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     else:
         cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["starting_frame"])
-        # print("cap",  parameters["starting_frame"])
     previous_detections = None
     count = 0
-    # images = []
-    # joints = []
-    # for count, x in enumerate(range(N_ITERATIONS)):
-    balance_values = (1.5, 1.5, 1.5)
     while True:
-        # currFrame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
         ret, frame = cap.read()
-        # print("frame: ", frame)
         if frame is None:
             print("End of video")
             save_data(calculations,count,first_save=False)
@@ -122,28 +110,21 @@ def main(video_path, output_dir, parameters,start_frame=None):
             if count == 0:
                 calculations = Calculation(springs, ants)
             else:
-                # ants.track_ants(ants.labaled_ants, previous_detections[2])
                 calculations.make_calculations(springs, ants,previous_calculations=previous_detections)
             previous_detections = [springs.object_center,springs.mask_blue_full, ants.labaled_ants, calculations.springs_angles_to_nest]
 
             print("frame number:",count, end="\r")
             SAVE_GAP = 100
-            if (count%SAVE_GAP == 0 and count != 0):# or count==(N_ITERATIONS-1):
+            if (count%SAVE_GAP == 0 and count != 0):
                 if count==SAVE_GAP: first_save = True
                 else: first_save = False
                 save_data(calculations, output_dir, first_save)
-                # create_video(output_dir, images,"video")
-                # create_video(output_dir, joints,"joints")
 
             # Presnting analysis:
-            results_frame,results_joints = present_analysis_result(frame, springs, calculations, ants)
-            # images.append(results_frame)
-            # joints.append(results_joints)
+            present_analysis_result(frame, springs, calculations, ants)
             count += 1
         except:
             print("skipped frame ", end="\r")
-            # images.append(frame*0)
-            # joints.append(frame*0)
             calculations.add_blank_row()
             count += 1
             continue

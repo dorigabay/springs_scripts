@@ -60,6 +60,6 @@ if __name__ == "__main__":
     #     df = pd.DataFrame(concatenated_data[key])
     #     plot_velocity_moving_average(df, start=0, end=None, window_size=200)
     # df = pd.DataFrame(concatenated_data["plus0.1_force"])
-    plot_velocity_moving_average(df, start=0, end=None)
+    plot_velocity_moving_average(df, start=10, end=None)
 
 
