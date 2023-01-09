@@ -86,17 +86,13 @@ def create_video(output_dir, images, vid_name):
 
 def main(video_path, output_dir, parameters,start_frame=None):
     print("video_path: ", video_path)
-
     cap = cv2.VideoCapture(video_path)
-    # print(cap)
     # if starting_frame is not None:
     #     parameters['starting_frame'] = starting_frame
-    if start_frame is not None:
-        # print("start_frame: ", start_frame)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-    else:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["starting_frame"])
-        # print("cap",  parameters["starting_frame"])
+    # if start_frame is not None:
+    #     cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    # else:
+    cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["starting_frame"])
     previous_detections = None
     count = 0
     # images = []
@@ -104,9 +100,8 @@ def main(video_path, output_dir, parameters,start_frame=None):
     # for count, x in enumerate(range(N_ITERATIONS)):
     balance_values = (1.5, 1.5, 1.5)
     while True:
-        # currFrame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+        currFrame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
         ret, frame = cap.read()
-        # print("frame: ", frame)
         if frame is None:
             print("End of video")
             save_data(calculations,count,first_save=False)
@@ -123,8 +118,8 @@ def main(video_path, output_dir, parameters,start_frame=None):
                 calculations = Calculation(springs, ants)
             else:
                 # ants.track_ants(ants.labaled_ants, previous_detections[2])
-                calculations.make_calculations(springs, ants,previous_calculations=previous_detections)
-            previous_detections = [springs.object_center,springs.mask_blue_full, ants.labaled_ants, calculations.springs_angles_to_nest]
+                calculations.make_calculations(springs, ants)
+            previous_detections = [springs.object_center,springs.mask_blue_full, ants.labaled_ants]
 
             print("frame number:",count, end="\r")
             SAVE_GAP = 100
@@ -136,12 +131,12 @@ def main(video_path, output_dir, parameters,start_frame=None):
                 # create_video(output_dir, joints,"joints")
 
             # Presnting analysis:
-            results_frame,results_joints = present_analysis_result(frame, springs, calculations, ants)
+            present_analysis_result(frame, springs, calculations, ants)
             # images.append(results_frame)
             # joints.append(results_joints)
             count += 1
         except:
-            print("skipped frame ", end="\r")
+            print("skipped frame ")
             # images.append(frame*0)
             # joints.append(frame*0)
             calculations.add_blank_row()

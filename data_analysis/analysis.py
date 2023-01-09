@@ -70,12 +70,12 @@ def concat_data(data_analysed):
 #     return concatenated
 
 
-spring_types_directories = (utils.iter_folder("Z:/Dor_Gabay/ThesisProject/data/videos_analysis_data/"))
+spring_types_directories = (utils.iter_folder("Z:/Dor_Gabay/ThesisProject/data/videos_analysis_data2/"))
 data_prepared = data_preparation.prepare_multiple(spring_types_directories)
 analysed_data = analyse_data(data_prepared)
 
 # analysed_data = remove_outliers(analysed_data,2)
 concatenated_data = concat_data(analysed_data)
 
-df = pd.DataFrame(analysed_data["plus0.5mm_force"]["S5290002"])
+df = pd.DataFrame(analysed_data["plus0_force"]["S5200009"])
 plots.plot_velocity_moving_average(df, start=0, end=None)

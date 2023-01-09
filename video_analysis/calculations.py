@@ -19,18 +19,16 @@ class Calculation:
                  " please start the process from a different frame.")
         self.springs_angles_matrix = np.sort(springs.bundles_labels).reshape(1,20)
 
-    def make_calculations(self,springs,ants,previous_calculations):
+    def make_calculations(self,springs,ants):
         self.springs_angles_matrix = np.vstack([self.springs_angles_matrix, self.match_springs(springs)])
 
         springs_order = self.springs_angles_matrix[-1, :]
-        springs_order, angles_to_nest, angles_to_object = self.correct_springs_matching(springs, springs_order,
-                                                                                      previous_calculations[3])
         self.springs_length = np.vstack([self.springs_length, self.calc_springs_lengths(springs, springs_order)])
         N_ants_around_springs, size_ants_around_springs =\
             self.occupied_springs(springs,ants,springs_order)
         self.N_ants_around_springs = np.vstack([self.N_ants_around_springs, N_ants_around_springs])
         self.size_ants_around_springs = np.vstack([self.size_ants_around_springs, size_ants_around_springs])
-        # angles_to_nest, angles_to_object = self.calc_springs_angles(springs, springs_order)
+        angles_to_nest, angles_to_object = self.calc_springs_angles(springs, springs_order)
         self.springs_angles_to_nest = np.vstack([self.springs_angles_to_nest, angles_to_nest])
         self.springs_angles_to_object = np.vstack([self.springs_angles_to_object, angles_to_object])
 
@@ -47,16 +45,7 @@ class Calculation:
             new_springs_row[angle_class] = angle
         return new_springs_row
 
-    def correct_springs_matching(self, springs,springs_order, previous_angles):
-        angles_to_nest, angles_to_object = self.calc_springs_angles(springs, springs_order)
-        if np.abs(np.nanmean(angles_to_nest/previous_angles)) > 0.05:
-            springs_order = np.roll(springs_order,1)
-        angles_to_nest, angles_to_object = self.calc_springs_angles(springs, springs_order)
-        if np.abs(np.nanmean(angles_to_nest/previous_angles)) > 0.05:
-            springs_order = np.roll(springs_order,-2)
-        return springs_order, angles_to_nest, angles_to_object
-
-    def calc_springs_lengths(self, springs, springs_order):# fixed_ends_coor, free_ends_coor, fixed_ends_labels, free_ends_labels):
+    def calc_springs_lengths(self, springs, springs_order):
         springs_length = np.empty((20))
         springs_length[:] = np.nan
         found_in_both = list(set(springs.fixed_ends_edges_bundles_labels).
@@ -75,16 +64,9 @@ class Calculation:
         dialated_ants = maximum_filter(ants.labaled_ants,ANTS_SPRINGS_OVERLAP_SIZE)
         joints = ((dialated_ends != 0) * (dialated_ants != 0))
         self.joints = joints
-        # import cv2
-        # cv2.imshow("joints", joints.astype(np.uint8)*255)
-        # cv2.waitKey(1)
         ends_occupied = np.sort(np.unique(springs.bundles_labeled[joints*(springs.bundles_labeled!=0)]))
         N_ants_around_springs = np.zeros(20)
         size_ants_around_springs = np.zeros(20)
-        # N_ants_around_springs = np.empty((20))
-        # N_ants_around_springs[:] = np.nan
-        # size_ants_around_springs = np.empty((20))
-        # size_ants_around_springs[:] = np.nan
         for end in ends_occupied:
             index_springs = springs_order==end
             ends_i = np.unique(dialated_ants[(springs.bundles_labeled==end)*(dialated_ends != 0)])[1:]
@@ -104,13 +86,8 @@ class Calculation:
             if label !=0:
                 index_springs = springs_order == label
                 if label in springs.fixed_ends_edges_bundles_labels:
-                    # print(label)
-                    # print(springs.fixed_ends_edges_bundles_labels==label)
-                    # print(springs.free_ends_edges_bundles_labels==label)
-                    # print(springs.free_ends_edges_bundles_labels)
                     angles_to_nest[index_springs] = fixed_ends_angles_to_nest[springs.fixed_ends_edges_bundles_labels==label]
                 if label in springs.free_ends_edges_bundles_labels:
-                    # print("angle to object",free_ends_angles_to_object[springs.free_ends_edges_bundles_labels==label])
                     angles_to_object[index_springs] = free_ends_angles_to_object[springs.free_ends_edges_bundles_labels==label]
         angles_to_nest = angles_to_nest.reshape(1,20)
         angles_to_object = angles_to_object.reshape(1,20)
@@ -129,20 +106,8 @@ class Calculation:
             self.size_ants_around_springs = np.vstack((self.size_ants_around_springs,empty_row))
         if ref != self.springs_angles_to_object.shape[0]:
             self.springs_angles_to_object = np.vstack((self.springs_angles_to_object,empty_row))
-        # if ref != self.springs_length.shape[0]:
-        #     self.springs_length = np.vstack((self.springs_length,empty_row))
-        # for matrix in [self.springs_length, self.springs_angles_to_nest, self.springs_angles_to_object,
-        #                self.N_ants_around_springs, self.size_ants_around_springs]:
-        #     if matrix.shape[0] != ref:
-        #         print("adding row to matrix")
-        #         print(matrix.shape)
-        #         matrix = np.vstack((matrix,empty_row))
 
     def clear_data(calculations):
-        # data_arrays_names = ["springs_length", "N_ants_around_springs", "size_ants_around_springs",
-        #                      "springs_angles_to_nest", "springs_angles_to_object"]
-        # for dat in data_arrays_names:
-        #     exec(f"calculations.{dat} = calculations.{dat}[-1,:]")
         calculations.springs_length = calculations.springs_length[-1,:]
         calculations.N_ants_around_springs = calculations.N_ants_around_springs[-1,:]
         calculations.size_ants_around_springs = calculations.size_ants_around_springs[-1,:]
