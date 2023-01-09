@@ -130,4 +130,4 @@ if __name__ == '__main__':
 # python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/plus0.5mm_force/S5290002.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/TEST/ --nCPU 1 --start_frame 11500
 # python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9/plus0.1_force/S5200004.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/TEST/ --nCPU 1 --start_frame 50117
 #
-# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9/plus0_force/S5200009.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/videos_analysis_data3/ --complete_unanalyzed --start_frame 645
+# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/plus_0.5mm_force/S5290002.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/videos_analysis_data/ --complete_unanalyzed --start_frame 1360

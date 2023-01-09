@@ -8,7 +8,9 @@ from skimage.morphology import binary_dilation, binary_erosion, remove_small_obj
 from utils import create_circular_mask, connect_blobs
 
 WHOLE_OBJECT_CLOSING_SIZE = 4
-COLOR_CLOSING = 4
+# COLOR_CLOSING = np.ones((3, 3))
+COLOR_CLOSING = 3
+# BLUE_CLOSING = np.ones((5, 5))
 BLUE_CLOSING = 9
 BLUE_SIZE_DEVIATION = 0.85
 LABELING_BINARY_STRUCTURE = generate_binary_structure(2, 2)
@@ -22,21 +24,21 @@ SPRINGS_PARTS_OVERLAP_SIZE = 10
 class Springs:
     def __init__(self, parameters, image, previous_detections):
         self.binary_color_masks = self.mask_object_colors(parameters, image)
+        # self.whole_object_mask = self.close_element(self.combine_masks(list(self.binary_color_masks.values())),np.ones((15,15)))
         self.whole_object_mask = connect_blobs(self.combine_masks(list(self.binary_color_masks.values())),WHOLE_OBJECT_CLOSING_SIZE)
+        # cv2.imshow("whole_object_mask",self.whole_object_mask.astype(np.uint8)*255)
+        # cv2.waitKey(1)
         self.object_center, self.tip_point, self.mask_blue_full, self.blue_radius =\
             self.detect_blue_stripe(self.binary_color_masks["b"], previous_detections = previous_detections)
         self.green_mask = self.clean_mask(self.binary_color_masks["g"],MIN_GREEN_SIZE)
         self.red_mask = self.clean_mask(self.binary_color_masks["r"],MIN_RED_SIZE)
         self.red_labeled, self.green_labeled, self.fixed_ends_labeled, self.free_ends_labeled, self.red_centers, self.green_centers = \
             self.get_spring_parts(self.object_center,self.binary_color_masks["r"],self.green_mask)
-
         self.bundles_labeled, self.bundles_labels = self.create_bundles_labels()
-
-        real_springs_bundles_labels = self.assign_ends_to_bundles(self.bundles_labeled, self.fixed_ends_labeled,
+        self.fixed_ends_bundles_labels, self.free_ends_bundles_labels, self.real_springs_bundles_labels = \
+            self.assign_ends_to_bundles(self.bundles_labeled, self.fixed_ends_labeled,
                                           self.free_ends_labeled,self.red_centers, self.green_labeled)
-
-        self.bundles_labeled_after_removal = self.remove_labels(real_springs_bundles_labels, self.bundles_labeled)
-
+        self.bundles_labeled_after_removal = self.remove_labels(self.real_springs_bundles_labels, self.bundles_labeled)
         self.fixed_ends_edges_centers, self.fixed_ends_edges_bundles_labels = \
             self.find_bounderies_touches(self.fixed_ends_labeled, self.red_labeled, self.bundles_labeled_after_removal)
         self.free_ends_edges_centers, self.free_ends_edges_bundles_labels = \
@@ -203,18 +205,11 @@ class Springs:
             center_of_mass(green_labeled, labels=green_labeled, index=list(np.unique(fixed_ends_labeled))[1:]), "int"))
         free_ends_centers = self.swap_columns(np.array(
             center_of_mass(green_labeled, labels=green_labeled, index=list(np.unique(free_ends_labeled))[1:]), "int"))
-
-        # image_to_show = copy.copy(bundles_labeled)
-        # image_to_show[bundles_labeled!=-2.4640390888517305] = 0
-        # cv2.imshow("bundles_labeled", (self.convert_bool_to_binary(image_to_show.astype("bool")).astype(np.uint8) * 255))
-        # cv2.waitKey(0)
-
         fixed_ends_bundles_labels = []
         free_ends_bundles_labels = []
         red_bundles_labels = []
         for x1, y1 in fixed_ends_centers:
             fixed_ends_bundles_labels.append(bundles_labeled[y1, x1])
-        # print("len free ends centers",len(free_ends_centers))
         for x1, y1 in free_ends_centers:
             free_ends_bundles_labels.append(bundles_labeled[y1, x1])
         for x1, y1 in red_centers.astype("int"):
@@ -245,13 +240,4 @@ class Springs:
         overlap_centers = self.swap_columns(np.array(
             center_of_mass(overlap_labeled, labels=overlap_labeled, index=overlap_labels)).astype("int"))
         overlap_bundles_labels = [bundles_labeled[x[1], x[0]] for x in overlap_centers]
-        # overlap_bundles_labels = self.remove_duplicates(overlap_bundles_labels)
         return overlap_centers, overlap_bundles_labels
-
-    def remove_duplicates(self,labels):
-        # turn duplicates labels to 0
-        labels_array = np.array(labels)
-        counts = np.array([labels.count(x) for x in labels])
-        labels_array[counts > 1] = 0
-        return list(labels_array)
-
