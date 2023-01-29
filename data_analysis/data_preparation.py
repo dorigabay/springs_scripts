@@ -22,28 +22,24 @@ class PrepareData:
         self.directory = directory
         self.load_data(directory)
         self.original_N_ants = copy.copy(self.N_ants_around_springs)
-        self.original_angles = copy.copy(self.springs_angles_to_nest)
-        # self.resolve_bad_rows()
+        # self.original_angles = copy.copy(self.springs_angles_to_nest)
         self.load_starting_frame()
         self.N_ants_proccessing()
         self.springs_length_processing()
         self.springs_angles_processing()
-        # self.angular_velocity_nest = self.calc_angular_velocity(self.springs_angles_to_nest,diff_spacing=1)
-        # self.angular_velocity_nest_spaced = self.calc_angular_velocity(self.springs_angles_to_nest,diff_spacing=10)
         self.springs_rest_lengths()
         self.attaches_events(self.N_ants_around_springs)
         self.labeled_zero_to_one_filtered = self.fiter_attaches_events(self.labeled_zero_to_one)
-        self.data_names = ["N_ants_around_springs","size_ants_around_springs","springs_length","springs_angles_to_nest","springs_angles_to_object"]
-        # if save_events:
-        #     self.save_events(self.labeled_zero_to_one_filtered,self.directory)
+        # self.data_names = ["N_ants_around_springs","size_ants_around_springs","springs_length","springs_angles_to_nest","springs_angles_to_object"]
 
     def load_data(self,directory):
         print("loading data from:",directory)
         self.N_ants_around_springs = np.loadtxt(f"{directory}N_ants_around_springs.csv",delimiter=",")
         self.size_ants_around_springs = np.loadtxt(f"{directory}size_ants_around_springs.csv",delimiter=",")
         self.springs_length = np.loadtxt(f"{directory}springs_length.csv",delimiter=",")
-        self.springs_angles_to_nest = np.loadtxt(f"{directory}springs_angles_to_nest.csv",delimiter=",")
-        self.springs_angles_to_object = np.loadtxt(f"{directory}springs_angles_to_object.csv",delimiter=",")
+        self.angles_to_nest = np.loadtxt(f"{directory}angles_to_nest.csv",delimiter=",")
+        self.angles_to_object_free = np.loadtxt(f"{directory}angles_to_object_free.csv",delimiter=",")
+        self.angles_to_object_fixed = np.loadtxt(f"{directory}angles_to_object_fixed.csv",delimiter=",")
 
     def load_starting_frame(self):
         # from video_analysis.collect_color_parameters import get_parameters
@@ -58,14 +54,6 @@ class PrepareData:
         #     self.starting_frame = pickle.load(handle)[path]['starting_frame']
         # return int(input("starting frame:"))
         return 0
-    # def resolve_bad_rows(self):
-    #     # for rows with more than 2 Nan values, put nan in all the row
-    #     bad_rows = np.sum(np.isnan(self.springs_length),axis=1)>2
-    #     self.springs_length[bad_rows,:] = np.nan
-    #     self.springs_angles_to_nest[bad_rows,:] = np.nan
-    #     self.springs_angles_to_object[bad_rows,:] = np.nan
-    #     self.N_ants_around_springs[bad_rows,:] = np.nan
-    #     self.size_ants_around_springs[bad_rows,:] = np.nan
 
     def N_ants_proccessing(self):
         undetected_springs_for_long_time = utils.filter_continuity(utils.convert_bool_to_binary(np.isnan(self.springs_length)),min_size=8)
@@ -89,16 +77,15 @@ class PrepareData:
                                                                utils.find_cells_to_interpolate(self.springs_length))
 
     def springs_angles_processing(self):
-        cells_to_interp = utils.find_cells_to_interpolate(self.springs_angles_to_nest)
-        self.springs_angles_to_nest = utils.interpolate_data(self.springs_angles_to_nest+np.pi,cells_to_interp)
-        self.springs_angles_to_object = utils.interpolate_data(self.springs_angles_to_nest+np.pi,cells_to_interp)
+        cells_to_interp = utils.find_cells_to_interpolate(self.angles_to_nest)
+        self.angles_to_nest = utils.interpolate_data(self.angles_to_nest+np.pi,cells_to_interp)
+        self.angles_to_object_free = utils.interpolate_data(self.angles_to_object_free+np.pi,cells_to_interp)
+        self.angles_to_object_fixed = utils.interpolate_data(self.angles_to_object_fixed+np.pi,cells_to_interp)
+        self.pulling_angle = self.angles_to_object_free-self.angles_to_object_fixed
+        self.pulling_angle = (self.pulling_angle+np.pi)%(2*np.pi)-np.pi
+        # pulling_angle_rest_median = np.median(self.pulling_angle[self.N_ants_around_springs == 0],axis=0)
+        # self.pulling_angle = self.pulling_angle - pulling_angle_rest_median
 
-    # def calc_angular_velocity(self,angles,diff_spacing=1):
-    #     thershold = 5.5
-    #     diff = utils.difference(angles,spacing=diff_spacing,axis=0)
-    #     diff[(diff>thershold)] = diff[diff>thershold]-2*np.pi
-    #     diff[(diff<-thershold)] = diff[diff<-thershold]+2*np.pi
-    #     return diff
 
     def smoothing_n_ants(self, array):
         for col in range(array.shape[1]):
@@ -157,15 +144,13 @@ class PrepareData:
         N_ants_array = N_ants_array[:,list(range(0,N_ants_array.shape[1],2))]
         return N_ants_array
 
-    def filter_by_ant_size(self):
-        from scipy.ndimage import median
-        self.size_ants_around_springs[np.isnan(self.size_ants_around_springs)] = 0
-        N_ants_for_mean = copy.copy(self.N_ants_around_springs)
-        N_ants_for_mean[self.size_ants_around_springs==0] = 0
-        median_size_over_N_ants = median(self.size_ants_around_springs,N_ants_for_mean.astype(int),
-                                         index=np.unique(N_ants_for_mean))
-        # size_ants_around_springs[(smoothed_N_ants_without_short_attaches==1)&size_ants_around_springs*1.3<median_size_over_N_ants[1]] = 0
-        # false_single_ants = (self.N_ants_around_springs==1)&(self.size_ants_around_springs>median_size_over_N_ants[1]*1.5)
+    # def filter_by_ant_size(self):
+    #     from scipy.ndimage import median
+    #     self.size_ants_around_springs[np.isnan(self.size_ants_around_springs)] = 0
+    #     N_ants_for_mean = copy.copy(self.N_ants_around_springs)
+    #     N_ants_for_mean[self.size_ants_around_springs==0] = 0
+    #     median_size_over_N_ants = median(self.size_ants_around_springs,N_ants_for_mean.astype(int),
+    #                                      index=np.unique(N_ants_for_mean))
 
     def springs_rest_lengths(self):
         ar = copy.copy(self.springs_length_processed)
@@ -173,3 +158,4 @@ class PrepareData:
         ar = np.sort(ar,axis=0)
         self.rest_lenghts = np.nanmedian(ar[:100],axis=0)
         self.rest_length = np.median(self.rest_lenghts)
+

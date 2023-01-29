@@ -13,6 +13,7 @@ COLOR_CLOSING = 3
 # BLUE_CLOSING = np.ones((5, 5))
 BLUE_CLOSING = 9
 BLUE_SIZE_DEVIATION = 0.85
+BLUE_SIZE_DEVIATION_CENTER = 0.98
 LABELING_BINARY_STRUCTURE = generate_binary_structure(2, 2)
 MIN_GREEN_SIZE = 7
 MIN_RED_SIZE = 300
@@ -85,12 +86,8 @@ class Springs:
         return binary_mask
 
     def detect_blue_stripe(self,mask_blue,closing_structure=BLUE_CLOSING,previous_detections=None):
-        # cv2.imshow("mask_blue",self.convert_bool_to_binary(mask_blue.astype("bool")).astype(np.uint8) * 255)
-        # cv2.waitKey(0)
-        # mask_blue_empty_closed = self.close_element(mask_blue, closing_structure)
         mask_blue_empty_closed = connect_blobs(mask_blue, closing_structure)
-        # cv2.imshow("mask_blue_empty_closed", self.convert_bool_to_binary(mask_blue_empty_closed.astype("bool")).astype(np.uint8)*255)
-        # cv2.waitKey(0)
+        #find the center of the blue stripe
         lableled,_ = label(mask_blue_empty_closed)
         bulb_prop = regionprops(lableled)
         biggest_blub = bulb_prop[np.argmax([x.area for x in bulb_prop])].label
@@ -99,31 +96,48 @@ class Springs:
         binary_fill_holes(mask_blue_empty_closed,output=mask_blue_full)
         inner_mask = mask_blue_full - mask_blue_empty_closed
         inner_mask_center = center_of_mass(inner_mask)
-
+        # if the center is not found, use the previous detection
         if not np.isnan(np.sum(inner_mask_center)):
             object_center = [int(x) for x in inner_mask_center]
             object_center = np.array([object_center[1],object_center[0]])
         else: object_center = previous_detections[0]
-        if not previous_detections is None:
-            if np.sum(mask_blue_full) < np.sum(previous_detections[1])*BLUE_SIZE_DEVIATION:
-                mask_blue_full = previous_detections[1]
+
+        # if the length between the center and the edge is not as the previous detection,
+        # use the previous detection for the center:
+        farthest_point, blue_radius = self.find_farthest_point(object_center,mask_blue_full)
+        # print(np.sqrt(np.sum(np.square(farthest_point-object_center))))
+        BLUE_RADIUS_TOLERANCE = 0.05
+        if previous_detections is not None:
+            mean_radius = previous_detections[2]/previous_detections[3]
+            # print("blue_radius",blue_radius)
+            # print("previous_detections[2]",previous_detections[2])
+            # tolerance = np.abs(blue_radius-previous_detections[2])/previous_detections[2]>BLUE_RADIUS_TOLERANCE
+            # print("tolerance",tolerance)
+            # print(np.abs(blue_radius - previous_detections[2]))
+            if np.abs(blue_radius-mean_radius)/mean_radius>BLUE_RADIUS_TOLERANCE:
+                object_center = previous_detections[0]
+                farthest_point, blue_radius = self.find_farthest_point(object_center,mask_blue_full)
+                if np.abs(blue_radius-mean_radius)/mean_radius>BLUE_RADIUS_TOLERANCE:
+                    farthest_point = previous_detections[1]
+                    blue_radius = np.sqrt(np.sum(np.square(farthest_point-object_center)))
+                    if np.abs(blue_radius-mean_radius)/mean_radius>BLUE_RADIUS_TOLERANCE:
+                        print("the problem is here")
+                        exit("blue radius is not as expected")
+        # if not previous_detections is None:
+        #     if np.sum(mask_blue_full) < np.sum(previous_detections[1])*BLUE_SIZE_DEVIATION:
+        #         mask_blue_full = previous_detections[1]
         # cv2.imshow("inner_mask", (mask_blue_empty_closed*255).astype(np.uint8))
         # cv2.waitKey(1)
-        contour = (find_contours(mask_blue_full)[0]).astype(int)
-        farthest_point,blue_radius = self.find_farthest_point(object_center, contour)
-        farthest_point = np.array([farthest_point[1],farthest_point[0]])
         return object_center, farthest_point, mask_blue_full, blue_radius
 
-    def find_farthest_point(self, point, contour):
+    def find_farthest_point(self, point, mask):
+        contour = (find_contours(mask)[0]).astype(int)
         point = np.array([point[1],point[0]])
         distances = np.sqrt(np.sum(np.square(contour-point),1))
-        # take the index of the 5 farthest points
+        # take the average of the 50 farthest points
         farthest_points = np.argsort(distances)[-50:]
-        # take the average of the 5 farthest points
         farthest_point = np.mean(contour[farthest_points],0).astype(int)
-        # print("farthest_point",farthest_point)
-        # farthest_from_point = contour[np.argmax(distances),:]
-        # print("farthest_from_point",farthest_from_point)
+        farthest_point = np.array([farthest_point[1],farthest_point[0]])
         return farthest_point, np.max(distances)
 
     def clean_mask(self,mask,min_size):
@@ -262,9 +276,7 @@ class Springs:
 
     def remove_duplicates(self, labels):
         # turn duplicates labels to 0
-        # print(labels)
         labels_array = np.array(labels)
         counts = np.array([labels.count(x) for x in labels])
         labels_array[counts > 1] = 0
-        # print(list(labels_array))
         return list(labels_array)

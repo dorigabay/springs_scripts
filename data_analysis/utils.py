@@ -4,6 +4,18 @@ import glob
 import numpy as np
 from scipy.ndimage import label,sum_labels
 import os
+from scipy.optimize import curve_fit
+
+def deduce_bias_equation(x,y):
+    def bias_equation(x, a, b,c):
+        return a*np.cos(x+b)+c
+    params, _ = curve_fit(bias_equation, x, y)
+    return lambda x: bias_equation(x, *params)
+
+
+def normalize(y, x, bias_equation):
+    normalized_y = y - bias_equation(x)
+    return normalized_y
 
 def convert_bool_to_binary(bool_array):
     return copy.copy(np.array(bool_array,"int"))
@@ -13,18 +25,33 @@ def column_dilation(array):
     zeors[:,list(range(0,zeors.shape[1],2))] = array
     return zeors
 
-def difference(array,spacing=1,axis=0):
+def column_erosion(array):
+    # remove all the columns that are all zeros
+    return array[:,np.any(array,axis=0)]
+
+def difference(array,spacing=1):
     # calculate the difference between each element and the element at the given spacing, without a loop
-    if axis==0:
-        zeors = np.zeros((spacing,array.shape[1]))
-        return np.concatenate((zeors, array[spacing:] - array[:-spacing]))
-    elif axis==1:
-        zeors = np.zeros((array.shape[0],spacing))
-        return np.concatenate((zeors, array[:spacing] - array[-spacing:]))
+    if spacing == 1:
+        diff_array = np.diff(array,axis=0)
+        return np.concatenate((np.zeros((1,array.shape[1])).reshape(1,array.shape[1]),diff_array))
+    elif (spacing != 1) & (spacing % 2 != 0):
+        raise ValueError("diff_spacing must be an even number")
+    else:
+        zeros = np.zeros((int(spacing/2),array.shape[1]))
+        diff_array = np.concatenate((zeros, array[spacing:] - array[:-spacing]))
+        diff_array = np.concatenate((diff_array, zeros))
+        return diff_array
+    # elif axis==1:
+    #     zeros = np.zeros((array.shape[0],spacing))
+    #     diff_array = np.concatenate((zeros, array[:,spacing:] - array[:,:-spacing]),axis=1)
+    #     diff_array = np.concatenate((diff_array, zeros),axis=1)
+    #     return diff_array
+
 
 def calc_angular_velocity(angles,diff_spacing=1):
+    # calculate the angular velocity of the angles
     THERSHOLD = 5.5
-    diff = difference(angles,spacing=diff_spacing,axis=0)
+    diff = difference(angles,spacing=diff_spacing)
     diff[(diff>THERSHOLD)] = diff[diff>THERSHOLD]-2*np.pi
     diff[(diff<-THERSHOLD)] = diff[diff<-THERSHOLD]+2*np.pi
     return diff
