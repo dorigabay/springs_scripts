@@ -4,12 +4,13 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 
-def plot_overall_behavior(df, start=0, end=None, window_size=1, title=""):
+def plot_overall_behavior(analysed, start=0, end=None, window_size=1, title=""):
+    title = analysed.video_name
     # plt.close()
     plt.clf()
     # df = concatenated[spring_type][video_name]
     if end is None:
-        end = df.shape[0]
+        end = analysed.pulling_angle.shape[0]
     # set figure and title
     fig, ax1 = plt.subplots()
     # set a color by RGB
@@ -27,7 +28,7 @@ def plot_overall_behavior(df, start=0, end=None, window_size=1, title=""):
 
     # plot velocity
     # y = df["velocity"][start:end]
-    y = df["velocity_spaced"][start:end]
+    y = analysed.velocity_spaced[start:end]
     x = np.linspace(start, end, end - start)
     # plot the moving median of the velocity
     moving_median = pd.Series(y).rolling(window_size).median()
@@ -50,14 +51,14 @@ def plot_overall_behavior(df, start=0, end=None, window_size=1, title=""):
     # ax2.set_ylabel("total_n_ants", color=total_n_ants_color)
     # ax2.tick_params(axis="y", labelcolor=total_n_ants_color)
 
-    # # plot the mean pulling angles of the springs
-    # fig.suptitle(f"angular_velocity (moving median) VS mean_springs_pulling_angles (moving mean) (movie:{title})")
-    # ax2 = ax1.twinx()
-    # y = df["pulling_angle"][start:end]
-    # moving_averages = np.convolve(y, np.ones((window_size,)) / window_size, mode='valid')
-    # ax2.plot(x[window_size - 1:], moving_averages, color=pulling_angle_color)
-    # ax2.set_ylabel("pulling_angle (rad/ frame)", color=pulling_angle_color)
-    # ax2.tick_params(axis="y", labelcolor=pulling_angle_color)
+    # plot the mean pulling angles of the springs
+    fig.suptitle(f"angular_velocity (moving median) VS mean_springs_pulling_angles (moving mean) (movie:{title})")
+    ax2 = ax1.twinx()
+    y = analysed.pulling_angle[start:end]
+    moving_averages = np.convolve(y, np.ones((window_size,)) / window_size, mode='valid')
+    ax2.plot(x[window_size - 1:], moving_averages, color=pulling_angle_color)
+    ax2.set_ylabel("pulling_angle (rad/ frame)", color=pulling_angle_color)
+    ax2.tick_params(axis="y", labelcolor=pulling_angle_color)
 
     #plot the mean pulling forces of the springs
     # fig.suptitle(f"angular_velocity (moving median) VS mean_springs_extension (moving mean) (movie:{title})")
@@ -78,13 +79,13 @@ def plot_overall_behavior(df, start=0, end=None, window_size=1, title=""):
     # ax2.tick_params(axis="y", labelcolor=springs_extension_normed_color)
 
     # plot the sum of forces of the springs
-    fig.suptitle(f"angular_velocity (moving median) VS force_applied (moving mean) (movie:{title})")
-    ax2 = ax1.twinx()
-    y = df["force_applied"][start:end]
-    moving_averages = np.convolve(y, np.ones((window_size,)) / window_size, mode='valid')
-    ax2.plot(x[window_size - 1:], moving_averages, color=springs_extension_normed_color)
-    ax2.set_ylabel("extension_normed_to_pulling_angle (rad/ frame)", color=springs_extension_normed_color)
-    ax2.tick_params(axis="y", labelcolor=springs_extension_normed_color)
+    # fig.suptitle(f"angular_velocity (moving median) VS force_applied (moving mean) (movie:{title})")
+    # ax2 = ax1.twinx()
+    # y = df["force_applied"][start:end]
+    # moving_averages = np.convolve(y, np.ones((window_size,)) / window_size, mode='valid')
+    # ax2.plot(x[window_size - 1:], moving_averages, color=springs_extension_normed_color)
+    # ax2.set_ylabel("extension_normed_to_pulling_angle (rad/ frame)", color=springs_extension_normed_color)
+    # ax2.tick_params(axis="y", labelcolor=springs_extension_normed_color)
 
 
     # ax2 = ax1.twinx()
@@ -159,18 +160,4 @@ def histogram_pulling_angles(array):
 
 if __name__ == "__main__":
     # %matplotlib qt
-    video_name = "S5280006"
-    # video_name = "S5200009"
-    spring_type = "plus0.3mm_force"
-    # spring_type = "plus0_force"
-    df = pd.DataFrame(analysed_data[spring_type][video_name]["overall_behaviour"])
-    df["spring12"] = data_prepared_normalized[spring_type][video_name].pulling_angle[:,12]
-    # df_lengths_to_nest = pd.DataFrame(analysed_data[spring_type][video_name]["rest_lengths_and_angles"])
-    # for key in concatenated_data.keys():
-    #     df = pd.DataFrame(concatenated_data[key])
-    #     plot_velocity_moving_average(df, start=0, end=None, window_size=200)
-    # df = pd.DataFrame(concatenated_data["plus0.1_force"])
-    plot_overall_behavior(df, start=0, end=None,window_size=50, title=video_name)
-    # histogram_pulling_angles(data_prepared[spring_type][video_name].pulling_angle)
-    # correlation_rest_lengths_over_nest_direction(df_lengths_to_nest, start=0, end=None, title=video_name)
-
+    pass

@@ -100,52 +100,6 @@ def fit_line(points):
     intercept = y_mean - slope * x_mean
 
     return slope, intercept
-# def fit_line(matrix):
-#     # Find the indices of the non-zero elements in the matrix
-#     indices = np.nonzero(matrix)
-#
-#     # Extract the coordinates of the non-zero elements
-#     points = np.transpose(indices)
-#
-#     # Calculate the slope and intercept of the line
-#     x = points[:, 0]
-#     y = points[:, 1]
-#     slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
-#
-#     return slope, intercept
-
-
-# def extend_lines(matrix, extend_by=3):
-#     # Find the indices of the non-zero elements in the matrix
-#     indices = np.nonzero(matrix)
-#
-#     # Extract the coordinates of the non-zero elements
-#     points = np.transpose(indices)
-#
-#     # Extract the labels for the non-zero elements
-#     values = matrix[indices]
-#     # Calculate the slope and intercept of the line
-#     slope, intercept = fit_line(points)
-#
-#     # Initialize a copy of the matrix with all elements set to 0
-#     extended_matrix = np.zeros_like(matrix)
-#
-#     # Iterate through the unique labels
-#     for label in np.unique(values):
-#         # Select the points with the current label
-#         label_points = points[values == label]
-#
-#         # Calculate the points that the line goes through
-#         x1 = min(label_points[:, 0]) - extend_by
-#         y1 = slope * x1 + intercept
-#         x2 = max(label_points[:, 0]) + extend_by
-#         y2 = slope * x2 + intercept
-#
-#         # Set the elements in the matrix corresponding to the extended line to the label value
-#         extended_matrix[int(y1):int(y2) + 1, int(x1):int(x2) + 1] = label
-#     extended_matrix[matrix != 0] = matrix[matrix != 0]
-#     return extended_matrix
-
 
 def create_circular_mask(image_dim, center=None, radius=None):
     h, w = image_dim[0], image_dim[1]

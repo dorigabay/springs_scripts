@@ -6,6 +6,25 @@ from scipy.ndimage import label,sum_labels
 import os
 from scipy.optimize import curve_fit
 
+def calc_angle_matrix(a, b, c):
+    """
+    Calculate the angle between vectors a->b and b->c.
+    a, b, and c are all 3D arrays of the same shape, where last dimension is the x, y coordinates.
+    :param a:
+    :param b:
+    :param c:
+    :return:
+    """
+    ba = a - b
+    bc = c - b
+    ba_y = ba[:,:,0]
+    ba_x = ba[:,:,1]
+    dot = ba_y*bc[:,:,0] + ba_x*bc[:,:,1]
+    det = ba_y*bc[:,:,1] - ba_x*bc[:,:,0]
+    angles = np.arctan2(det, dot)
+    return angles
+
+
 def deduce_bias_equation(x,y):
     def bias_equation(x, a, b,c):
         return a*np.cos(x+b)+c
@@ -93,7 +112,7 @@ def filter_continuity(binary_array,min_size=0,max_size=np.inf):
     labeled = labeled[:,list(range(0,labeled.shape[1],2))]
     return labeled>=1
 
-def iter_folder(path):
+def find_dirs(path):
     to_analyze = {}
     directories_to_search = [path]
     while directories_to_search:

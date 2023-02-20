@@ -15,7 +15,7 @@ ANTS_SPRINGS_OVERLAP_SIZE = 10
 class Ants:
     def __init__(self, image, springs):
         self.object_mask = self.create_object_mask(image.shape,springs)
-        self.labaled_ants = self.label_ants(image,self.object_mask)
+        self.labeled_ants = self.label_ants(image,self.object_mask)
 
     def create_object_mask(self,image_dim,springs):
         # circle_mask = self.create_circular_mask(image_dim, center=springs.object_center, radius=springs.blue_radius*1.5)

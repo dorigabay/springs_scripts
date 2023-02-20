@@ -50,6 +50,18 @@ def rectangle_coordinates(image, what_for):
     yx_max = np.max(points, axis=0)
     return [yx_min[0], yx_max[0], yx_min[1], yx_max[1]]
 
+def collect_points(image,n_points):
+    points = []
+    def click_event(event, x, y, flags, params):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            points.append([y, x])
+
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    cv2.imshow("Pick the element pixels (only one point)", image)
+    cv2.setMouseCallback("Pick the element pixels (only one point)", click_event)
+    if len(points) != n_points: pick_points(image, n_points)
+    return np.array(points)
 
 def pick_points(image, what_for):
     """
