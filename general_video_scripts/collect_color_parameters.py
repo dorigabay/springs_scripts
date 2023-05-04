@@ -51,16 +51,15 @@ def rectangle_coordinates(image, what_for):
     return [yx_min[0], yx_max[0], yx_min[1], yx_max[1]]
 
 def collect_points(image,n_points):
-    points = []
     def click_event(event, x, y, flags, params):
         if event == cv2.EVENT_LBUTTONDOWN:
             points.append([y, x])
-
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    points = []
     cv2.imshow("Pick the element pixels (only one point)", image)
     cv2.setMouseCallback("Pick the element pixels (only one point)", click_event)
-    if len(points) != n_points: pick_points(image, n_points)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    if len(points) != n_points: collect_points(image, n_points)
     return np.array(points)
 
 def pick_points(image, what_for):
@@ -197,18 +196,15 @@ def get_parameters(output_folder, video_path):
     :param vidpath: The directory path of the video.
     :return: The preferences.
     """
-    preferences = pd.read_pickle(os.path.join(output_folder, "video_preferences.pickle"))
-    # print(preferences)
-    # print(os.path.join(output_folder, "video_preferences.pickle"))
+    video_name = os.path.basename(video_path).split(".")[0].split("_")[0]
+    preferences = pd.read_pickle(os.path.join(output_folder, f"{video_name}_video_parameters.pickle"))
+    # preferences = pd.read_pickle(os.path.join(output_folder, "video_preferences.pickle"))
     preferences_normpath = {}
     keys_ends = {}
-    video_name = re.search(".*[/\\\\]([^/\\\\]+).[mM][pP]4", video_path).group(1)
     for key in preferences:
         keys_ends[re.search(".*[/\\\\]([^/\\\\]+).[mM][pP]4", key).group(1)] = os.path.normpath(key)
         preferences_normpath[os.path.normpath(key)] = preferences[key]
-    # print(preferences_normpath["\\".join(vidpath.split('\\'))])
     return preferences_normpath[keys_ends[video_name]]
-    # return preferences_normpath["\\".join(vidpath.split('\\'))]
 
 
 def get_first_frame(video, starting_frame=0):
@@ -245,21 +241,28 @@ def show_parameters_result(video, parameters):
             parameters["crop_coordinates"][2]:parameters["crop_coordinates"][3]]
     image = neutrlize_colour(image)
     print("Are you happy with the result?:")
-    import utils
-    binary_color_masks = utils.mask_object_colors(parameters,image)
+    import general_video_scripts.utils as utils
+    binary_color_masks = utils.mask_object_colors(parameters, image)
     for mask_color in binary_color_masks:
         while True:
             image_copy = copy.copy(image)
             image_copy[binary_color_masks[mask_color].astype(bool)] = [0,255,0]
             cv2.imshow(mask_color, image_copy)
             cv2.waitKey(0)
-            if input("Want to add more colors? (type any character):"):
+            add_colors = str(input("Want to add more colors? (y/n/r to remove the last color)."))
+            while add_colors not in ["y", "n","r"]:
+                add_colors = str(input("Please enter y or n:"))
+            if add_colors == "y":
                 parameters["colors_spaces"] = add_colors_parameters(image_copy,parameters["colors_spaces"],mask_color)
-                binary_color_masks = utils.mask_object_colors(parameters,image)
+                binary_color_masks = utils.mask_object_colors(parameters, image)
+            elif add_colors == "r":
+                parameters["colors_spaces"][mask_color].pop()
+                binary_color_masks = utils.mask_object_colors(parameters, image)
             else: break
-
-    if input("If not press any key, "
-             "and set the parameters for this video again (press just 'ENTER' if you do happy with the parameters):"):
+    collect_again = str(input("Want to collect again? (y/n)"))
+    while collect_again not in ["y", "n"]:
+        collect_again = str(input("Please enter y or n:"))
+    if collect_again == "y":
         return False
     else:
         return True
@@ -283,7 +286,7 @@ def add_colors_parameters(frame_with_mask,colors_dict, color_name):
     colors_dict[color_name] += color_spaces
     return colors_dict
 
-def set_parameters(video, starting_frame, stiff_object=False, crop_frame=False,image=False):
+def set_parameters(video, starting_frame=False, stiff_object=False, crop_frame=False,image=False):
     """Collects the parameters and returns them in a dictionary.
     """
     if not image:
@@ -303,49 +306,55 @@ def set_parameters(video, starting_frame, stiff_object=False, crop_frame=False,i
         crop_coordinates = rectangle_coordinates(frame, what_for="crop")
         frame_cropped = crop_frame_by_coordinates(frame, crop_coordinates)
     else:
-        crop_coordinates = None
+        crop_coordinates = [0, frame.shape[0], 0, frame.shape[1]]
+        frame_cropped = frame
     frame_cropped = neutrlize_colour(frame_cropped)
-    # set element color space for colors
-    # if collect_element:
     margin = np.array([12, 30, 30])
     boundary_hsv = np.array([179, 255, 255])
-    # NUMBER_OF_COLORS = int(input("Please enter the number of color to detect:"))
     colors = {}
-    if not stiff_object:
-        for color_name, short_name in zip(["red","green","blue"],["r","g","b"]):
-            print("Please pick the "+color_name+" element pixels:")
-            points = pick_points(frame_cropped, what_for="element_color")
-            print("Those are the colors you picked (HSV): \n",
-                  [list(cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)[i[0], i[1], :]) for i in points])
-            color_spaces = create_color_space_from_points(frame_cropped, points, margin, boundary_hsv)
-            print(f"color_spaces for color {color_name}: {color_spaces}")
-            colors[short_name] = color_spaces
-    elif stiff_object:
-        print("Please pick the green element pixels:")
+    for color_name, short_name in zip(["red","green","blue"],["r","g","b"]):
+        print("Please pick the "+color_name+" element pixels:")
         points = pick_points(frame_cropped, what_for="element_color")
         print("Those are the colors you picked (HSV): \n",
               [list(cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)[i[0], i[1], :]) for i in points])
         color_spaces = create_color_space_from_points(frame_cropped, points, margin, boundary_hsv)
         print(f"color_spaces for color {color_name}: {color_spaces}")
-        colors["g"] = color_spaces
-    return {"crop_coordinates": crop_coordinates, "colors_spaces": colors,
-            "starting_frame": start_frame}
+        colors[short_name] = color_spaces
+    parameters = {"crop_coordinates": crop_coordinates, "colors_spaces": colors, "starting_frame": start_frame}
+    while not show_parameters_result(video, parameters):
+        parameters = set_parameters(video, starting_frame=starting_frame, stiff_object=stiff_object, crop_frame=crop_frame)
+    return parameters
+
 
 def main(videos_to_analyse,output_folder,starting_frame=False,collect_crop=False):
+    output_path_parameters = os.path.join(output_folder, "parameters")
+    os.makedirs(output_path_parameters, exist_ok=True)
     parameters = {}
     first = True
     for video,i in zip(videos_to_analyse,range(len(videos_to_analyse))):
         print("Collecting prefernces for: ", video)
-        if first:
-            parameters[video] = set_parameters(video, starting_frame=starting_frame, crop_frame=collect_crop)
-            first= False
-        elif not first:
-            parameters[video] = copy.copy(parameters[videos_to_analyse[i-1]])
-        while not show_parameters_result(video, parameters[video]):
-            parameters[video] = set_parameters(video, starting_frame=starting_frame, crop_frame=collect_crop)
-    with open(os.path.join(output_folder, "video_preferences.pickle"), 'wb') as f:
-        pickle.dump(parameters, f)
-
+        video_name = os.path.basename(video).split(".")[0]
+        reuse = 'n'
+        if os.path.exists(os.path.join(output_path_parameters, f"{video_name}_video_parameters.pickle")):
+            reuse = str(input("Found parameters for this video. Do you want to use them? (y/n)"))
+            while reuse not in ["y", "n"]:
+                reuse = str(input("Please enter y or n:"))
+        if reuse == 'y':
+            with open(os.path.join(output_path_parameters, f"{video_name}_video_parameters.pickle"), 'rb') as f:
+                parameters[video] = pickle.load(f)[video]
+                first = False
+        elif reuse == 'n':
+            if first:
+                parameters[video] = set_parameters(video, starting_frame=starting_frame, crop_frame=collect_crop)
+                first = False
+            elif not first:
+                parameters[video] = copy.copy(parameters[videos_to_analyse[i-1]])
+                parameters[video]["starting_frame"] = int(input("What frame to start with: "))
+                while not show_parameters_result(video, parameters[video]):
+                    parameters[video] = set_parameters(video, starting_frame=starting_frame, crop_frame=collect_crop)
+            with open(os.path.join(output_path_parameters, f"{video_name}_video_parameters.pickle"), 'wb') as f:
+                pickle.dump({video: parameters[video]}, f)
+    return output_path_parameters
 
 
 

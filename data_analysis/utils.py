@@ -5,6 +5,21 @@ import numpy as np
 from scipy.ndimage import label,sum_labels
 import os
 from scipy.optimize import curve_fit
+import cv2
+
+def bound_angle(angle):
+    above_2pi = angle > 2 * np.pi
+    below_0 = angle < 0
+    angle[above_2pi] = angle[above_2pi] - 2 * np.pi
+    angle[below_0] = angle[below_0] + 2 * np.pi
+    return angle
+
+
+def load_first_frame(video_path):
+    video = cv2.VideoCapture(video_path)
+    ret, frame = video.read()
+    return frame
+
 
 def calc_angle_matrix(a, b, c):
     """

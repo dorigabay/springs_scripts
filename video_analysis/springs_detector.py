@@ -5,7 +5,7 @@ from scipy.ndimage import label, generate_binary_structure, center_of_mass, maxi
 from skimage.measure import regionprops, find_contours
 from skimage.morphology import binary_dilation, binary_erosion, remove_small_objects
 # local imports:
-from utils import create_circular_mask, connect_blobs
+from general_video_scripts.utils import create_circular_mask, connect_blobs
 
 WHOLE_OBJECT_CLOSING_SIZE = 4
 # COLOR_CLOSING = np.ones((3, 3))
@@ -24,19 +24,22 @@ SPRINGS_PARTS_OVERLAP_SIZE = 10
 
 class Springs:
     def __init__(self, parameters, image, previous_detections):
-        self.binary_color_masks = self.mask_object_colors(parameters, image)
+        self.image= image
+        self.n_springs = parameters["n_springs"]
+        self.binary_color_masks_connected, self.binary_color_masks_unconnected = self.mask_object_colors(parameters, image)
         # self.whole_object_mask = self.close_element(self.combine_masks(list(self.binary_color_masks.values())),np.ones((15,15)))
-        self.whole_object_mask = connect_blobs(self.combine_masks(list(self.binary_color_masks.values())),WHOLE_OBJECT_CLOSING_SIZE)
+        self.whole_object_mask_unconnected = self.combine_masks(list(self.binary_color_masks_unconnected.values()))
+        self.whole_object_mask = connect_blobs(self.combine_masks(list(self.binary_color_masks_connected.values())),WHOLE_OBJECT_CLOSING_SIZE)
         # cv2.imshow("whole_object_mask",self.whole_object_mask.astype(np.uint8)*255)
         # cv2.waitKey(1)
         self.object_center, self.tip_point, self.mask_blue_full, self.blue_radius =\
-            self.detect_blue_stripe(self.binary_color_masks["b"], previous_detections = previous_detections)
-        self.green_mask = self.clean_mask(self.binary_color_masks["g"],MIN_GREEN_SIZE)
-        self.red_mask = self.clean_mask(self.binary_color_masks["r"],MIN_RED_SIZE)
+            self.detect_blue_stripe(self.binary_color_masks_connected["b"], previous_detections = previous_detections)
+        self.green_mask = self.clean_mask(self.binary_color_masks_connected["g"],MIN_GREEN_SIZE)
+        self.red_mask = self.clean_mask(self.binary_color_masks_connected["r"],MIN_RED_SIZE)
         # cv2.imshow("red_mask",self.red_mask.astype(np.uint8)*255)
         # cv2.waitKey(1)
         self.red_labeled, self.green_labeled, self.fixed_ends_labeled, self.free_ends_labeled, self.red_centers, self.green_centers = \
-            self.get_spring_parts(self.object_center,self.binary_color_masks["r"],self.green_mask)
+            self.get_spring_parts(self.object_center,self.binary_color_masks_connected["r"],self.green_mask)
         self.bundles_labeled, self.bundles_labels = self.create_bundles_labels()
         self.fixed_ends_bundles_labels, self.free_ends_bundles_labels, self.real_springs_bundles_labels = \
             self.assign_ends_to_bundles(self.bundles_labeled, self.fixed_ends_labeled,
@@ -60,7 +63,8 @@ class Springs:
         return image_zeros
 
     def mask_object_colors(self, parameters, image):
-        binary_color_masks = {x:None for x in parameters["colors_spaces"]}
+        binary_color_masks_connected = {x:None for x in parameters["colors_spaces"]}
+        binary_color_masks_unconnected = {x:None for x in parameters["colors_spaces"]}
         blurred = cv2.GaussianBlur(image, (3, 3), 0)
         hsv_image = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
         for color in parameters["colors_spaces"]:
@@ -70,9 +74,10 @@ class Springs:
                 mask2_np = self.numpy_masking(hsv_image, hsv_space[2], hsv_space[3])
                 binary_mask[(mask1_np+mask2_np)!=0] = 1
             # binary_mask = self.close_element(binary_mask,COLOR_CLOSING)
+            binary_color_masks_unconnected[color] = binary_mask
             binary_mask = connect_blobs(binary_mask,COLOR_CLOSING)
-            binary_color_masks[color] = binary_mask
-        return binary_color_masks
+            binary_color_masks_connected[color] = binary_mask
+        return binary_color_masks_connected, binary_color_masks_unconnected
 
     def close_element(self, mask, structure):
         mask = self.convert_bool_to_binary(binary_dilation(mask, structure))
@@ -87,7 +92,6 @@ class Springs:
 
     def detect_blue_stripe(self,mask_blue,closing_structure=BLUE_CLOSING,previous_detections=None):
         mask_blue_empty_closed = connect_blobs(mask_blue, closing_structure)
-        #find the center of the blue stripe
         lableled,_ = label(mask_blue_empty_closed)
         bulb_prop = regionprops(lableled)
         biggest_blub = bulb_prop[np.argmax([x.area for x in bulb_prop])].label
@@ -105,15 +109,9 @@ class Springs:
         # if the length between the center and the edge is not as the previous detection,
         # use the previous detection for the center:
         farthest_point, blue_radius = self.find_farthest_point(object_center,mask_blue_full)
-        # print(np.sqrt(np.sum(np.square(farthest_point-object_center))))
         BLUE_RADIUS_TOLERANCE = 0.05
         if previous_detections is not None:
             mean_radius = previous_detections[2]/previous_detections[3]
-            # print("blue_radius",blue_radius)
-            # print("previous_detections[2]",previous_detections[2])
-            # tolerance = np.abs(blue_radius-previous_detections[2])/previous_detections[2]>BLUE_RADIUS_TOLERANCE
-            # print("tolerance",tolerance)
-            # print(np.abs(blue_radius - previous_detections[2]))
             if np.abs(blue_radius-mean_radius)/mean_radius>BLUE_RADIUS_TOLERANCE:
                 object_center = previous_detections[0]
                 farthest_point, blue_radius = self.find_farthest_point(object_center,mask_blue_full)
@@ -121,13 +119,7 @@ class Springs:
                     farthest_point = previous_detections[1]
                     blue_radius = np.sqrt(np.sum(np.square(farthest_point-object_center)))
                     if np.abs(blue_radius-mean_radius)/mean_radius>BLUE_RADIUS_TOLERANCE:
-                        print("the problem is here")
-                        exit("blue radius is not as expected")
-        # if not previous_detections is None:
-        #     if np.sum(mask_blue_full) < np.sum(previous_detections[1])*BLUE_SIZE_DEVIATION:
-        #         mask_blue_full = previous_detections[1]
-        # cv2.imshow("inner_mask", (mask_blue_empty_closed*255).astype(np.uint8))
-        # cv2.waitKey(1)
+                        raise ValueError("There is a problem in the blue part detection")
         return object_center, farthest_point, mask_blue_full, blue_radius
 
     def find_farthest_point(self, point, mask):
@@ -197,8 +189,6 @@ class Springs:
         all_parts_mask = self.red_mask + self.green_mask
         all_parts_mask = self.close_element(all_parts_mask,closing_structure)
         # all_parts_mask = connect_blobs(all_parts_mask, closing_structure)
-        # cv2.imshow("all_parts_mask", self.convert_bool_to_binary(all_parts_mask.astype("bool")).astype(np.uint8)*255)
-        # cv2.waitKey(1)
         labeled_image, num_features = label(all_parts_mask, generate_binary_structure(2, 2))
         fied_ends_centers = center_of_mass(self.fixed_ends_labeled, labels=self.fixed_ends_labeled,
                                          index=np.unique(self.fixed_ends_labeled)[1:])
@@ -245,8 +235,8 @@ class Springs:
             free_ends_bundles_labels.append(bundles_labeled[y1, x1])
         for x1, y1 in red_centers.astype("int"):
             red_bundles_labels.append(bundles_labeled[y1, x1])
-        labels_to_keep = self.screen_bundles(fixed_ends_bundles_labels, free_ends_bundles_labels, red_bundles_labels)
-        return fixed_ends_bundles_labels, free_ends_bundles_labels, labels_to_keep
+        self.bundles_labels = self.screen_bundles(fixed_ends_bundles_labels, free_ends_bundles_labels, red_bundles_labels)
+        return fixed_ends_bundles_labels, free_ends_bundles_labels, self.bundles_labels
 
     def screen_bundles(self, fixed_labels, free_labels, red_labels):
         counts = np.array([fixed_labels.count(x) for x in fixed_labels])
@@ -259,9 +249,11 @@ class Springs:
 
     def remove_labels(self, labels_to_keep, labeled_image):
         labeled_image[np.isin(labeled_image, labels_to_keep, invert=True)] = 0
+        self.bundles_labels = labels_to_keep
         return labeled_image
 
     def find_bounderies_touches(self, labeled1, labeled2, bundles_labeled):
+
         maximum_filter_labeled1 = maximum_filter(labeled1, SPRINGS_PARTS_OVERLAP_SIZE)
         maximum_filter_labeled2 = maximum_filter(labeled2, SPRINGS_PARTS_OVERLAP_SIZE)
         overlap_labeled = np.zeros(maximum_filter_labeled1.shape, "int")

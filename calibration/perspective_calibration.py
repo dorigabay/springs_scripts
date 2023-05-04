@@ -11,12 +11,11 @@
 
 import cv2
 from skimage import filters
-from skimage.color import label2rgb
 import numpy as np
 import utils
 import copy
 from scipy.ndimage import label, center_of_mass
-import collect_color_parameters
+from general_video_scripts import collect_color_parameters
 from skimage import transform
 
 def extract_image(video_path,frame_number):
@@ -194,7 +193,7 @@ if __name__ =="__main__":
     warped = estimate_projective_transformation_parameters(frame)
     # perpective(warped)
     print("Please select the co-linear  coordinates:")
-    dst = collect_color_parameters.collect_points(warped,4)
+    dst = collect_color_parameters.collect_points(warped, 4)
     dst = utils.swap_columns(dst)
     distances = np.linalg.norm(dst[0]-dst[2]), np.linalg.norm(dst[1]-dst[3])
     print("distances",distances)

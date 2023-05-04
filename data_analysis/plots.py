@@ -4,7 +4,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 
-def plot_overall_behavior(analysed, start=0, end=None, window_size=1, title=""):
+def plot_overall_behavior(analysed, start=0, end=None, window_size=1, title="", output_dir=None):
     title = analysed.video_name
     # plt.close()
     plt.clf()
@@ -28,7 +28,7 @@ def plot_overall_behavior(analysed, start=0, end=None, window_size=1, title=""):
 
     # plot velocity
     # y = df["velocity"][start:end]
-    y = analysed.velocity_spaced[start:end]
+    y = analysed.angular_velocity[start:end]
     x = np.linspace(start, end, end - start)
     # plot the moving median of the velocity
     moving_median = pd.Series(y).rolling(window_size).median()
@@ -52,12 +52,12 @@ def plot_overall_behavior(analysed, start=0, end=None, window_size=1, title=""):
     # ax2.tick_params(axis="y", labelcolor=total_n_ants_color)
 
     # plot the mean pulling angles of the springs
-    fig.suptitle(f"angular_velocity (moving median) VS mean_springs_pulling_angles (moving mean) (movie:{title})")
+    fig.suptitle(f"angular_velocity (moving median) VS net_force (moving mean) (movie:{title})")
     ax2 = ax1.twinx()
-    y = analysed.pulling_angle[start:end]
+    y = analysed.net_force[start:end]
     moving_averages = np.convolve(y, np.ones((window_size,)) / window_size, mode='valid')
     ax2.plot(x[window_size - 1:], moving_averages, color=pulling_angle_color)
-    ax2.set_ylabel("pulling_angle (rad/ frame)", color=pulling_angle_color)
+    ax2.set_ylabel("net_force (rad/ frame)", color=pulling_angle_color)
     ax2.tick_params(axis="y", labelcolor=pulling_angle_color)
 
     #plot the mean pulling forces of the springs
@@ -107,10 +107,14 @@ def plot_overall_behavior(analysed, start=0, end=None, window_size=1, title=""):
     ax2.axhline(y=0, color="black", linestyle="--")
     ax1.axhline(y=0, color="black", linestyle="--")
 
-
     # limit the x axis to 0-30000
     ax1.set_xlim(0, 30000)
     ax2.set_xlim(0, 30000)
+
+    #set the y axis to have y=0 at the same place for both plots
+    ax1.set_ylim(-0.2, 0.2)
+    ax2.set_ylim(np.max(moving_averages) * -1.1, np.max(moving_averages) * 1.1)
+    # ax2.set_ylim(-0.0035,0.0035)
 
     # plot a line - red if True, green if False in df["nan_in_pulling_angle"], put the line at y=0
     # put the folowing plot on top of all the other plots
@@ -120,21 +124,21 @@ def plot_overall_behavior(analysed, start=0, end=None, window_size=1, title=""):
     # ax3.scatter(x, y, c=color, cmap="RdYlGn", s=10)
 
     fig.tight_layout()
-    plt.pause(1)
+    plt.show()
+    if output_dir is not None:
+        import os
+        print("Saving figure to path: ", os.path.join(output_dir, f"angular_velocity VS mean_springs_extension (movie {title}).png"))
+        plt.savefig(os.path.join(output_dir, f"angular_velocity VS mean_springs_extension (movie {title}).png"))
 
-# def correlation_rest_lengths_over_nest_direction(df, start=0, end=None, title=""):
-#     # plot a correlation matrix of the rest lengths for angles to nest direction
-#     plt.close()
-#     plt.clf()
-#     if end is None:
-#         end = df.shape[0]
-#     df = df[start:end]
-#     corr_matrix = df.corr()
-#     corr_matrix = corr_matrix[corr_matrix.columns[0:8]]
-#     corr_matrix = corr_matrix.loc[corr_matrix.index[0:8]]
-#     sns.heatmap(corr_matrix, annot=True, cmap="coolwarm")
-#     plt.title("correlation matrix of rest lengths for angles to nest direction"+title)
-#     plt.pause(1)
+def plot_pulling_angle_over_angle_to_nest(analysed, start=0, end=None, title=""):
+    # plot a scatter plot of the pulling angle over the angle to nest direction
+    plt.close()
+    plt.clf()
+    if end is None:
+        end = analysed.pulling_angle.shape[0]
+    plt.scatter(analysed.pulling_angle[start:end], analysed.angle_to_nest[start:end])
+    plt.title("pulling angle VS angle to nest direction")
+    plt.pause(1)
 
 def correlation_rest_lengths_over_nest_direction(df, start=0, end=None, title=""):
     # plot scatter plots of the rest lengths for angles to nest direction
