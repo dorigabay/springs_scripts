@@ -120,6 +120,7 @@ class Springs:
                     blue_radius = np.sqrt(np.sum(np.square(farthest_point-object_center)))
                     if np.abs(blue_radius-mean_radius)/mean_radius>BLUE_RADIUS_TOLERANCE:
                         raise ValueError("There is a problem in the blue part detection")
+        self.blue_area_size = np.sum(mask_blue_full)
         return object_center, farthest_point, mask_blue_full, blue_radius
 
     def find_farthest_point(self, point, mask):

@@ -44,6 +44,7 @@ def create_output_dir(video_path,args):
     :param video_path: The video path,
     :return: the output directory path, the video name.
     """
+    video_path = os.path.normpath(video_path)
     subdirs = video_path.split('\\')[5:-1]
     vid_name = video_path.split('\\')[-1].split('.')[0]
     if "output_dir" in args:
@@ -51,7 +52,7 @@ def create_output_dir(video_path,args):
     else:
         output_dir = os.path.join(args["dir_path"], subdirs,vid_name)
     os.makedirs(output_dir, exist_ok=True)
-    print("output_dir: ", output_dir)
+    print("Output_dir: ", output_dir)
     return output_dir, vid_name
 
 
@@ -159,4 +160,4 @@ if __name__ == '__main__':
 
 # python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/calibration3/ --output_dir Z:/Dor_Gabay/ThesisProject/data/calibration/post_slicing/ --collect_parameters --nCPU 10
 
-# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/plus0.3mm_force --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/plus0.3mm_force/S5280004.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/pics/ --complete_unanalyzed
+# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/plus0.3mm_force/S5280004.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/pics/ --complete_unanalyzed

@@ -1,15 +1,15 @@
 import cv2
 import numpy as np
-from scipy.ndimage import label, center_of_mass, maximum_filter
-from skimage.segmentation import clear_border
+from scipy.ndimage import label, center_of_mass
 from skimage.morphology import remove_small_objects, binary_closing, binary_opening
 #local imports:
-from general_video_scripts.utils import close_element, convert_bool_to_binary, extend_lines, connect_blobs
+from general_video_scripts.utils import extend_lines, connect_blobs
 
 OBJECT_DILATION_SIZE = 3
 ANTS_OPENING_CLOSING_STRUCTURE = np.ones((4, 4))
 MIN_ANTS_SIZE = 60
 ANTS_SPRINGS_OVERLAP_SIZE = 10
+
 
 class Ants:
     def __init__(self, image, springs):
@@ -47,39 +47,7 @@ class Ants:
         mask = remove_small_objects(mask, MIN_ANTS_SIZE)
 
         labeled_image, num_labels = label(connect_blobs(mask, overlap_size=4))
-        labeled_image = clear_border(labeled_image)
         self.labeled_ants = extend_lines(labeled_image, extend_by=5)
-        self.ant_centers = center_of_mass(labeled_image, labeled_image, range(1, num_labels + 1))
+        ants_centers = center_of_mass(labeled_image, labeled_image, range(1, num_labels+1))
+        self.ants_centers = np.array(ants_centers)
 
-
-if __name__ == "__main__":
-    import general_video_scripts.collect_color_parameters as ccp
-    import general_video_scripts.utils as utils
-    video_path = r"Z:\Dor_Gabay\ThesisProject\data\videos\15.9.22\plus0.3mm_force\S5280004.MP4"
-    import pickle
-    # parameters = ccp.set_parameters(video_path)
-    parameters_path = r"Z:\Dor_Gabay\ThesisProject\data\videos\15.9.22\parameters\S5280004_video_parameters.pickle"
-    parameters = pickle.load(open(parameters_path, "rb"))[video_path]
-    print(parameters["colors_spaces"])
-
-    cap = cv2.VideoCapture(video_path)
-    ret, frame = cap.read()
-    # # image = cv2.imread(r"Z:\Dor_Gabay\ThesisProject\data\pics\frame.png")
-    image = ccp.neutrlize_colour(frame)
-    masks = utils.mask_object_colors(parameters, image)
-
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    lower_val = np.array([0, 0, 0])
-    upper_val = np.array([179, 150, 170])
-    mask = cv2.inRange(hsv, lower_val, upper_val)
-    mask = mask>0
-    object_mask = np.zeros(mask.shape).astype(np.bool)
-    for m in masks:
-        object_mask[masks[m]>0] = True
-
-    mask[object_mask] = False
-    mask = binary_opening(mask, ANTS_OPENING_CLOSING_STRUCTURE)
-    mask = binary_closing(mask, ANTS_OPENING_CLOSING_STRUCTURE)
-    mask = remove_small_objects(mask, MIN_ANTS_SIZE)
-    cv2.imshow("ants",mask.astype(np.uint8)*255)
-    cv2.waitKey(0)
