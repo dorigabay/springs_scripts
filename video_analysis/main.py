@@ -13,7 +13,7 @@ import general_video_scripts
 
 def save_as_mathlab_matrix(output_dir):
     # output_dir = "Z:\\Dor_Gabay\\ThesisProject\\data\\videos\\15"
-    output_dir = os.path.join(output_dir, "raw_analysis")
+
     ants_centers_x = np.loadtxt(os.path.join(output_dir, "ants_centers_x.csv"), delimiter=",")
     ants_centers_y = np.loadtxt(os.path.join(output_dir, "ants_centers_y.csv"), delimiter=",")
     ants_centers = np.stack((ants_centers_x, ants_centers_y), axis=2)
@@ -24,7 +24,7 @@ def save_as_mathlab_matrix(output_dir):
     matlab_script_path = "Z:\\Dor_Gabay\\ThesisProject\\scripts\\munkres_tracker\\"
     os.chdir(matlab_script_path)
     os.system("PATH=$PATH:'C:\Program Files\MATLAB\R2022a\bin'")
-    execution_string = f"matlab -r ""ants_tracking('"+output_dir+"\\')"""
+    execution_string = f"matlab -r ""ants_tracking('" + output_dir + "\\')"""
     os.system(execution_string)
 
 
@@ -36,36 +36,40 @@ def save_blue_areas_median(output_dir):
 
 
 def save_data(output_dir, first_save=False, calculations=None, save_empty=False, n_springs=20):
-    output_dir = os.path.join(output_dir, "raw_analysis")
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     if save_empty:
-        empty = np.zeros((1,n_springs))
-        empty[empty == 0] = np.nan
-        empty_list = [np.nan for _ in range(n_springs)]
-        arrays = [empty for _ in range(11)]+[empty_list]
+        empty_springs = np.repeat(np.nan, n_springs).reshape(1, n_springs)
+        empty_blue_part = np.repeat(np.nan, 2).reshape(1, 2)
+        empty_ant_centers = np.repeat(np.nan, 100).reshape(1, 100)
+        empty_blue_area_size = np.repeat(np.nan, 1).reshape(1, 1)
+        empty_ants_attached_labels = [np.nan for _ in range(n_springs)]
+        arrays = [empty_springs, empty_springs, empty_springs, empty_springs, empty_springs, empty_springs,
+                  empty_blue_part, empty_blue_part, empty_ant_centers, empty_ant_centers, empty_blue_area_size,
+                  empty_ants_attached_labels]
     else:
-        arrays = [calculations.N_ants_around_springs,calculations.size_ants_around_springs,
+        arrays = [calculations.N_ants_around_springs, calculations.size_ants_around_springs,
                   calculations.fixed_ends_coordinates_x, calculations.fixed_ends_coordinates_y,
                   calculations.free_ends_coordinates_x, calculations.free_ends_coordinates_y,
                   calculations.blue_part_coordinates_x, calculations.blue_part_coordinates_y,
-                  calculations.ants_centers_x, calculations.ants_centers_y, np.array(calculations.blue_area_sizes).reshape(-1,1),
+                  calculations.ants_centers_x, calculations.ants_centers_y,
+                  np.array(calculations.blue_area_size).reshape(-1, 1),
                   calculations.ants_attached_labels]
-    names = ["N_ants_around_springs","size_ants_around_springs",
+    names = ["N_ants_around_springs", "size_ants_around_springs",
              "fixed_ends_coordinates_x", "fixed_ends_coordinates_y", "free_ends_coordinates_x",
              "free_ends_coordinates_y", "blue_part_coordinates_x", "blue_part_coordinates_y",
-             "ants_centers_x", "ants_centers_y","blue_area_sizes",
+             "ants_centers_x", "ants_centers_y", "blue_area_sizes",
              "ants_attached_labels"]
     if first_save:
-        for d,n in zip(arrays[:11],names[:11]):
-            with open(os.path.join(output_dir, str(n)+'.csv'), 'wb') as f:
+        for d, n in zip(arrays[:11], names[:11]):
+            with open(os.path.join(output_dir, str(n) + '.csv'), 'wb') as f:
                 np.savetxt(f, d, delimiter=',')
-        pickle.dump(arrays[-1], open(os.path.join(output_dir,"ants_attached_labels.pickle"), "wb"))
+        pickle.dump(arrays[11], open(os.path.join(output_dir, "ants_attached_labels.pickle"), "wb"))
     else:
-        for d,n in zip(arrays[:11],names[:11]):
-            with open(os.path.join(output_dir, str(n)+'.csv'), 'a') as f:
+        for d, n in zip(arrays[:11], names[:11]):
+            with open(os.path.join(output_dir, str(n) + '.csv'), 'a') as f:
                 np.savetxt(f, d, delimiter=',')
-        pickle.dump(arrays[-1], open(os.path.join(output_dir,"ants_attached_labels.pickle"), "ab"))
+        pickle.dump(arrays[11], open(os.path.join(output_dir, "ants_attached_labels.pickle"), "ab"))
 
 
 def present_analysis_result(frame, springs, calculations, ants):
@@ -85,7 +89,8 @@ def present_analysis_result(frame, springs, calculations, ants):
             if angle in springs.fixed_ends_edges_bundles_labels:
                 point = springs.fixed_ends_edges_centers[springs.fixed_ends_edges_bundles_labels.index(angle)]
                 image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 0, 0), 2)
-                image_to_illustrate = cv2.putText(image_to_illustrate, str(count_), point, cv2.FONT_HERSHEY_SIMPLEX, 1,(255, 0, 0), 2)
+                image_to_illustrate = cv2.putText(image_to_illustrate, str(count_), point, cv2.FONT_HERSHEY_SIMPLEX, 1,
+                                                  (255, 0, 0), 2)
                 image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 0, 0), 2)
             if angle in springs.free_ends_edges_bundles_labels:
                 point = springs.free_ends_edges_centers[springs.free_ends_edges_bundles_labels.index(angle)]
@@ -106,7 +111,8 @@ def present_analysis_result(frame, springs, calculations, ants):
     return image_to_illustrate, calculations.joints
 
 
-def main(video_path, output_dir, parameters,starting_frame=None):
+def main(video_path, output_dir, parameters, starting_frame=None):
+    output_dir = os.path.join(output_dir, "raw_analysis")
     cap = cv2.VideoCapture(video_path)
     if starting_frame is not None:
         cap.set(cv2.CAP_PROP_POS_FRAMES, starting_frame)
@@ -117,10 +123,6 @@ def main(video_path, output_dir, parameters,starting_frame=None):
     count = 0
     frames_analysed = 0
     sum_blue_radius = 0
-    first_save = True
-    import time
-    t0 = time.time()
-    # for i in range(10):
     while True:
         ret, frame = cap.read()
         if frame is None:
@@ -129,23 +131,21 @@ def main(video_path, output_dir, parameters,starting_frame=None):
         frame = neutrlize_colour(frame)
         if parameters["crop_coordinates"] != None:
             frame = general_video_scripts.utils.crop_frame_by_coordinates(frame, parameters["crop_coordinates"])
-        # try:
-        springs = Springs(parameters, frame, previous_detections)
-        ants = Ants(frame, springs)
-        calculations = Calculation(springs, ants, previous_detections)
-        frames_analysed += 1
-        sum_blue_radius += springs.blue_radius
-        previous_detections = [springs.object_center,springs.tip_point, sum_blue_radius, frames_analysed, calculations.springs_angles_ordered]
-        save_data(output_dir,calculations=calculations, first_save=first_save)
-        # present_analysis_result(frame, springs, calculations, ants)
-        # print("Analyzed frame number:",count, end="\r")
-        # except:
-        #     print("Skipped frame: ",count, end="\r")
-        #     save_data(output_dir, save_empty=True, first_save=first_save, n_springs=parameters["n_springs"])
+        try:
+            springs = Springs(parameters, frame, previous_detections)
+            ants = Ants(frame, springs)
+            calculations = Calculation(springs, ants, previous_detections)
+            frames_analysed += 1
+            sum_blue_radius += int(springs.blue_radius)
+            previous_detections = [springs.object_center, springs.tip_point, sum_blue_radius, frames_analysed,
+                                   calculations.springs_angles_reference_order]
+            save_data(output_dir, calculations=calculations, first_save=count == 0)
+            # present_analysis_result(frame, springs, calculations, ants)
+            print("Analyzed frame number:", count, end="\r")
+        except:
+            print("Skipped frame: ", count, end="\r")
+            save_data(output_dir, save_empty=True, first_save=count == 0, n_springs=parameters["n_springs"])
         count += 1
-        first_save = False
     cap.release()
-    print("Time: ", time.time()-t0)
     save_as_mathlab_matrix(output_dir)
     save_blue_areas_median(output_dir)
-

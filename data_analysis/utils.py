@@ -1,6 +1,5 @@
 import copy
 import glob
-
 import numpy as np
 from scipy.ndimage import label,sum_labels
 import os
@@ -19,6 +18,63 @@ def load_first_frame(video_path):
     video = cv2.VideoCapture(video_path)
     ret, frame = video.read()
     return frame
+
+
+# def projection_on_axis(X, Y, axis=0):
+#     X,Y = copy.copy(X).astype(float),copy.copy(Y).astype(float)
+#     if not axis in [0,1]:
+#         raise ValueError("axis must be 0 or 1")
+#     second_axis = 1-axis
+#     X_a = X[:,axis]+1j*X[:,second_axis]
+#     Y_a = Y[:,axis]+1j*Y[:,second_axis]
+#     X_angles = np.angle(X_a)
+#     # print(X_angles)
+#     # big_angles = (X_angles > np.pi/2)
+#     # small_angles = (X_angles < -np.pi/2)
+#     # X_angles[big_angles] = 0
+#     # X_angles[small_angles] = np.pi
+#     # X_angles -= X_angles
+#     # print(X_angles)
+#     X_angles = np.zeros_like(X_angles)
+#     X_ex = np.exp(1j*(-X_angles))
+#     X_a = X_a*X_ex
+#     Y_a = Y_a*X_ex
+#     X[:,axis] = X_a.real
+#     Y[:,axis] = Y_a.real
+#     X[:,second_axis] = X_a.imag
+#     Y[:,second_axis] = Y_a.imag
+#     return X,Y
+
+def projection_on_axis(X, Y, axis=0):
+    X,Y = copy.copy(X).astype(float),copy.copy(Y).astype(float)
+    if not axis in [0,1]:
+        raise ValueError("axis must be 0 or 1")
+    second_axis = 1-axis
+    X_a = np.sqrt(X[:,axis]**2+X[:,second_axis]**2)
+    X_angles = np.arctan2(X[:,second_axis],X[:,axis])
+    Y_a = np.sqrt(Y[:,axis]**2+Y[:,second_axis]**2)
+    Y_angles = np.arctan2(Y[:,second_axis],Y[:,axis])
+    X_Y_angles = X_angles - Y_angles
+    X[:,second_axis] = 0
+    X[:,axis] = X_a
+    Y[:,axis] = np.cos(X_Y_angles)*Y_a
+    Y[:,second_axis] = np.sin(X_Y_angles)*Y_a
+    return X,Y
+
+
+def calc_pulling_angle_matrix(a, b, c):
+    a,b,c  = copy.copy(a).astype(float),copy.copy(b).astype(float),copy.copy(c).astype(float)
+    a,b,c = a-b,b-b,c-b
+    for col in range(c.shape[1]):
+        a[:,col],c[:,col] = projection_on_axis(a[:,col],c[:,col],axis=1)
+    ba = a - b
+    bc = c - b
+    ba_y = ba[:,:,0]
+    ba_x = ba[:,:,1]
+    dot = ba_y*bc[:,:,0] + ba_x*bc[:,:,1]
+    det = ba_y*bc[:,:,1] - ba_x*bc[:,:,0]
+    angles = np.arctan2(det, dot)
+    return angles
 
 
 def calc_angle_matrix(a, b, c):
@@ -84,6 +140,7 @@ def difference(array,spacing=1):
 
 def calc_angular_velocity(angles,diff_spacing=1):
     # calculate the angular velocity of the angles
+
     THERSHOLD = 5.5
     diff = difference(angles,spacing=diff_spacing)
     diff[(diff>THERSHOLD)] = diff[diff>THERSHOLD]-2*np.pi

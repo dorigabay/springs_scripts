@@ -9,10 +9,10 @@ ANTS_SPRINGS_OVERLAP_SIZE = 10
 class Calculation:
     def __init__(self, springs, ants, previous_detections=None):
         self.n_springs = springs.n_springs
-        self.blue_area_sizes = springs.blue_area_size
+        self.blue_area_size = springs.blue_area_size
         self.make_ants_centers(ants)
         self.initiate_springs_angles_matrix(springs, previous_detections)
-        self.springs_angles_ordered = self.match_springs(springs, self.previous_springs_angles)
+        self.match_springs(springs, self.springs_angles_reference_order)
         self.N_ants_around_springs, self.size_ants_around_springs = self.occupied_springs(springs, ants, self.springs_angles_ordered)
         self.fixed_ends_coordinates_x, self.fixed_ends_coordinates_y, self.free_ends_coordinates_x,\
             self.free_ends_coordinates_y, self.blue_part_coordinates_x, self.blue_part_coordinates_y = self.reorder_coordinates(springs, self.springs_angles_ordered)
@@ -35,22 +35,25 @@ class Calculation:
                 exit("First frame should have exactly 20 springs. Different number of springs were detect,"
                      " please start the process from a different frame.")
             else:
-                self.previous_springs_angles = np.sort(springs.bundles_labels).reshape(1,self.n_springs)
+                self.springs_angles_reference_order = np.sort(springs.bundles_labels).reshape(1,self.n_springs)
         else:
-            self.previous_springs_angles = previous_detections[4]
+            self.springs_angles_reference_order = previous_detections[4]
 
-    def match_springs(self, springs, previous_springs_angles):
+    def match_springs(self, springs, springs_angles_reference_order):
         current_springs_angles = list(springs.bundles_labels)
         assigned_angles_classes = []
         for value in current_springs_angles:
-            cos_diff = np.cos(previous_springs_angles - value)
+            cos_diff = np.cos(springs_angles_reference_order - value)
             assigned_class = np.argmax(cos_diff)
             assigned_angles_classes.append(assigned_class)
         new_springs_row = np.array([np.nan for x in range(self.n_springs)])
         for angle_class, angle in zip(assigned_angles_classes, current_springs_angles):
             new_springs_row[angle_class] = angle
-        return new_springs_row
+        self.springs_angles_ordered =  new_springs_row
 
+        a = [springs.bundles_labels,springs.blue_area_size,springs.free_ends_labeled,springs.fixed_ends_edges_bundles_labels,
+             springs.fixed_ends_edges_centers,springs.free_ends_edges_bundles_labels,springs.free_ends_edges_centers,
+             springs.object_center,springs.tip_point,]
     # def calc_springs_lengths(self, springs, springs_order):# fixed_ends_coor, free_ends_coor, fixed_ends_labels, free_ends_labels):
     #     springs_length = np.empty((20))
     #     springs_length[:] = np.nan

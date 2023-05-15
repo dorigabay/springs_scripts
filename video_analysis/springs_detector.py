@@ -30,14 +30,10 @@ class Springs:
         # self.whole_object_mask = self.close_element(self.combine_masks(list(self.binary_color_masks.values())),np.ones((15,15)))
         self.whole_object_mask_unconnected = self.combine_masks(list(self.binary_color_masks_unconnected.values()))
         self.whole_object_mask = connect_blobs(self.combine_masks(list(self.binary_color_masks_connected.values())),WHOLE_OBJECT_CLOSING_SIZE)
-        # cv2.imshow("whole_object_mask",self.whole_object_mask.astype(np.uint8)*255)
-        # cv2.waitKey(1)
         self.object_center, self.tip_point, self.mask_blue_full, self.blue_radius =\
             self.detect_blue_stripe(self.binary_color_masks_connected["b"], previous_detections = previous_detections)
         self.green_mask = self.clean_mask(self.binary_color_masks_connected["g"],MIN_GREEN_SIZE)
         self.red_mask = self.clean_mask(self.binary_color_masks_connected["r"],MIN_RED_SIZE)
-        # cv2.imshow("red_mask",self.red_mask.astype(np.uint8)*255)
-        # cv2.waitKey(1)
         self.red_labeled, self.green_labeled, self.fixed_ends_labeled, self.free_ends_labeled, self.red_centers, self.green_centers = \
             self.get_spring_parts(self.object_center,self.binary_color_masks_connected["r"],self.green_mask)
         self.bundles_labeled, self.bundles_labels = self.create_bundles_labels()
@@ -49,6 +45,16 @@ class Springs:
             self.find_bounderies_touches(self.fixed_ends_labeled, self.red_labeled, self.bundles_labeled_after_removal)
         self.free_ends_edges_centers, self.free_ends_edges_bundles_labels = \
             self.find_bounderies_touches(self.free_ends_labeled, self.red_labeled, self.bundles_labeled_after_removal)
+        self.remove_variables()
+
+    def remove_variables(self):
+        #remove all self variables that are not in a
+        to_keep = ["n_springs","bundles_labeled","bundles_labels","blue_area_size","free_ends_labeled","fixed_ends_edges_bundles_labels",
+             "fixed_ends_edges_centers","free_ends_edges_bundles_labels","free_ends_edges_centers",
+             "object_center","tip_point","calc_angles","whole_object_mask_unconnected","blue_radius"]
+        for key in list(self.__dict__.keys()):
+            if key not in to_keep:
+                delattr(self, key)
 
     def combine_masks(self,list_of_masks):
         combined = list_of_masks[0]+list_of_masks[1]+list_of_masks[2]

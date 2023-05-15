@@ -161,3 +161,4 @@ if __name__ == '__main__':
 # python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/calibration3/ --output_dir Z:/Dor_Gabay/ThesisProject/data/calibration/post_slicing/ --collect_parameters --nCPU 10
 
 # python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/plus0.3mm_force/S5280004.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/pics/ --complete_unanalyzed
+# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking/ --complete_unanalyzed --iter_dir --nCPU 8

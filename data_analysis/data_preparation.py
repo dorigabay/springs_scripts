@@ -1,16 +1,20 @@
 import copy
 import numpy as np
-import matplotlib.pyplot as plt
-from scipy.signal import savgol_filter
+import pandas as pd
 import os
-from data_analysis import utils
 import pickle
+from scipy.signal import savgol_filter
 from calibration.utils import bound_angle
+from data_analysis import utils
 
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.linear_model import LinearRegression
+from sklearn.pipeline import make_pipeline
 
 class PostProcessing:
 
-    def __init__(self, directory, calibration_model):
+    def __init__(self, directory, calibration_model,length_models=None, angle_models=None):
+        # self.frame_center = np.array([1920, 540])/2
         self.directory = directory
         self.load_data(directory)
         self.n_ants_processing()
@@ -20,13 +24,15 @@ class PostProcessing:
         self.calibration_model = calibration_model
         self.find_fixed_coordinates(bias_equations_free=self.free_end_angle_to_blue_part_bias_equations,
                                     bias_equations_fixed=self.fixed_end_angle_to_blue_part_bias_equations)
-        self.calc_spring_length()
-        self.calc_pulling_angle(zero_angles=True)
+        # if length_models is not None:
+                # self.find_best_sectioning()
+            # length_models, angle_models = self.calc_pull_and_length()
+        self.calc_spring_length(models=length_models)
+        self.calc_pulling_angle(models=angle_models)
         self.calc_force(calibration_model)
         self.calculations()
 
     def load_data(self,directory):
-        print("-" * 60)
         print("loading data from:", directory)
         self.norm_size = pickle.load(open(os.path.join(directory,"blue_median_area.pickle"), "rb"))
         directory = os.path.join(directory, "raw_analysis")+"\\"
@@ -107,6 +113,26 @@ class PostProcessing:
         #     raise ValueError("more than one column on boundry")
         return columns_on_boundry
 
+    def norm_values_coordinates(self, X, Y, fit_idx):
+        from sklearn.preprocessing import PolynomialFeatures
+        from sklearn.linear_model import LinearRegression
+        from sklearn.pipeline import make_pipeline
+        from sklearn.metrics import mean_squared_error
+        from sklearn.model_selection import train_test_split
+        model = make_pipeline(PolynomialFeatures(degree=1), LinearRegression())
+        X_fit = X[fit_idx,:]
+        Y_fit = Y[fit_idx]
+        X_fit = X_fit[~np.isnan(Y_fit)]
+        Y_fit = Y_fit[~np.isnan(Y_fit)]
+        # X_train, X_test, y_train, y_test = train_test_split(X_fit, Y_fit, test_size=0.3, random_state=42)
+        model.fit(X_fit, Y_fit)
+        # print("mean_squared: ", mean_squared_error(y_test, model.predict(X_test)))
+
+        Y_pred = model.predict(X[~np.isnan(Y)])
+        Y_normed = Y
+        Y_normed[~np.isnan(Y)] -= Y_pred
+        return Y_normed
+
     def norm_values(self, X, Y, bias_bool=None, find_boundary_column=False, bias_equations=None):
         if bias_bool is not None:
             X_bias = copy.deepcopy(X)
@@ -121,11 +147,8 @@ class PostProcessing:
             for col in columns_on_boundary:
                 above_nonan = Y_bias[:, col] > np.pi
                 Y_bias[above_nonan, col] -= 2*np.pi
-            # above_nonan = Y_bias[:, column_on_boundary] > np.pi
-            # Y_bias[above_nonan, column_on_boundary] -= 2*np.pi
         Y_bias -= np.nanmedian(Y_bias, axis=0)
         normed_Y = np.zeros(Y.shape)
-        import pandas as pd
         if bias_equations is None:
             bias_equations = []
             for i in range(X.shape[1]):
@@ -137,8 +160,6 @@ class PostProcessing:
             for col in columns_on_boundary:
                 above = Y[:, col] > np.pi
                 Y[above, col] -= 2*np.pi
-            # above = Y[:, column_on_boundary] > np.pi
-            # Y[above, column_on_boundary] -= 2*np.pi
         for i in range(self.num_of_springs):
             bias_equation = bias_equations[i]
             normed_Y[:, i] = utils.normalize(Y[:, i], X[:, i], bias_equation)
@@ -146,52 +167,7 @@ class PostProcessing:
             for col in columns_on_boundary:
                 below = normed_Y[:, col] < 0
                 normed_Y[below, col] += 2*np.pi
-            # below = normed_Y[:, column_on_boundary] < 0
-            # normed_Y[below, column_on_boundary] += 2*np.pi
         return normed_Y, bias_equations
-
-    # def norm_values(self, X, Y, bias_bool=None, find_boundary_column=False, bias_equations=None):
-    #     if bias_bool is not None:
-    #         X_bias = copy.deepcopy(X)
-    #         Y_bias = copy.deepcopy(Y)
-    #         X_bias[np.invert(bias_bool)] = np.nan
-    #         Y_bias[np.invert(bias_bool)] = np.nan
-    #     else:
-    #         X_bias = X
-    #         Y_bias = Y
-    #     if find_boundary_column:
-    #         columns_on_boundary = self.find_column_on_boundry(Y)
-    #         for col in columns_on_boundary:
-    #             above_nonan = Y_bias[:, col] > np.pi
-    #             Y_bias[above_nonan, col] -= 2*np.pi
-    #         # above_nonan = Y_bias[:, column_on_boundary] > np.pi
-    #         # Y_bias[above_nonan, column_on_boundary] -= 2*np.pi
-    #     Y_bias -= np.nanmedian(Y_bias, axis=0)
-    #     normed_Y = np.zeros(Y.shape)
-    #     import pandas as pd
-    #     if bias_equations is None:
-    #         bias_equations = []
-    #         for i in range(X.shape[1]):
-    #             df = pd.DataFrame({"x": X_bias[:, i], "y": Y_bias[:, i]}).dropna()
-    #             bias_equation = utils.deduce_bias_equation(df["x"], df["y"])
-    #             bias_equations.append(bias_equation)
-    #     if find_boundary_column:
-    #         Y = copy.deepcopy(Y)
-    #         for col in columns_on_boundary:
-    #             above = Y[:, col] > np.pi
-    #             Y[above, col] -= 2*np.pi
-    #         # above = Y[:, column_on_boundary] > np.pi
-    #         # Y[above, column_on_boundary] -= 2*np.pi
-    #     for i in range(self.num_of_springs):
-    #         bias_equation = bias_equations[i]
-    #         normed_Y[:, i] = utils.normalize(Y[:, i], X[:, i], bias_equation)
-    #     if find_boundary_column:
-    #         for col in columns_on_boundary:
-    #             below = normed_Y[:, col] < 0
-    #             normed_Y[below, col] += 2*np.pi
-    #         # below = normed_Y[:, column_on_boundary] < 0
-    #         # normed_Y[below, column_on_boundary] += 2*np.pi
-    #     return normed_Y, bias_equations
 
     def find_fixed_coordinates(self,bias_equations_free,bias_equations_fixed):
         def calc_fixed(distance_to_object_center,end_type):
@@ -221,17 +197,6 @@ class PostProcessing:
             return fixed_coordinates
         self.fixed_end_fixed_coordinates = calc_fixed(self.object_center_to_fixed_end_distance,end_type="fixed")
         self.free_end_fixed_coordinates = calc_fixed(self.object_center_to_free_end_distance,end_type="free")
-
-        # self.video_path = "Z:\\Dor_Gabay\\ThesisProject\\data\\videos\\15.9.22\\plus0.3mm_force\\S5280006.MP4"
-        # frame = utils.load_first_frame(self.video_path)
-        # import cv2
-        # for fix, free in zip(self.fixed_end_fixed_coordinates[0], self.free_end_fixed_coordinates[0]):
-        #     print(fix, free)
-        #     frame = cv2.circle(frame, tuple(fix.astype(int)), 5, (0, 0, 255), -1)
-        #     frame = cv2.circle(frame, tuple(free.astype(int)), 5, (0, 255, 0), -1)
-        # cv2.imshow("frame", frame)
-        # cv2.waitKey(0)
-
         self.calc_fixed_coordinates_angles()
 
     def calc_fixed_coordinates_angles(self):
@@ -244,234 +209,194 @@ class PostProcessing:
                                                                     self.object_center_repeated,
                                                                     self.fixed_end_fixed_coordinates)+np.pi
 
-    def calc_pulling_angle(self,zero_angles=False):
-        self.pulling_angle = utils.calc_angle_matrix(self.free_end_fixed_coordinates,self.fixed_end_fixed_coordinates,self.object_center_repeated)+np.pi
-        self.pulling_angle, _ = self.norm_values(self.free_end_fixed_coordinates_angle_to_nest, self.pulling_angle, bias_bool=self.rest_bool, find_boundary_column=True)
-        self.pulling_angle = self.pulling_angle - np.pi
-        above = self.pulling_angle > 0
-        below = self.pulling_angle < 0
-        self.pulling_angle[above] = self.pulling_angle[above] - np.pi
-        self.pulling_angle[below] = self.pulling_angle[below] + np.pi
+    # def norm_to_sections(self,array,section_min_size):
+    #     import scipy.ndimage as ndi
+    #     if_rest = copy.copy(array)
+    #     if_rest[~self.rest_bool] = np.nan
+    #     for col in range(if_rest.shape[1]):
+    #         label_min_size = section_min_size
+    #         values = if_rest[:, col]
+    #         if label_min_size > np.sum(~np.isnan(values)):
+    #             label_min_size = np.sum(~np.isnan(values))
+    #         labeled, n_labels = ndi.label(~np.isnan(values))
+    #         labeled_nan, n_labels_nan = ndi.label(np.isnan(values))
+    #         if labeled_nan[0] == 1:
+    #             labeled_nan[(labeled_nan != 1) + (labeled_nan != 0)] -= 1
+    #         labeled_nan = labeled_nan + labeled
+    #         for i in range(1, n_labels + 1):
+    #             if np.sum(labeled == i) < label_min_size:
+    #                 labeled[labeled == i] = i + 1
+    #                 labeled_nan[labeled_nan == i] = i + 1
+    #             else:
+    #                 values[labeled_nan == i] = np.nanmedian(values[labeled == i])
+    #         if_rest[:, col] = values
+    #     return if_rest
 
-        pulling_angle_at_rest = copy.copy(self.pulling_angle)
-        pulling_angle_at_rest[~self.rest_bool] = np.nan
-        # pulling_angle_at_rest -= np.nanmedian(pulling_angle_at_rest,axis=0)
+    # def find_best_sectioning(self):
+    #     self.calc_spring_length()
+    #     self.calc_pulling_angle(zero_angles=True)
+    #     saved_pulling_angle = copy.copy(self.pulling_angle)
+    #     saved_spring_length = copy.copy(self.spring_length)
+    #     corr_results = []
+    #     section_sizes = range(1,70000,100)
+    #     for section_size in section_sizes:
+    #         self.pulling_angle = copy.copy(saved_pulling_angle)
+    #         pulling_angle_if_rest = self.norm_to_sections(self.pulling_angle, section_size)
+    #         self.pulling_angle -= pulling_angle_if_rest
+    #
+    #         self.spring_length = copy.copy(saved_spring_length)
+    #         median_spring_length_at_rest = self.norm_to_sections(self.spring_length, section_size)
+    #         self.spring_length /= median_spring_length_at_rest
+    #         self.spring_extension = self.spring_length - 1
+    #
+    #         self.calc_force(calibration_model)
+    #         self.calculations()
+    #         corr = self.test_correlation()
+    #         print("corr: ",corr)
+    #         corr_results.append(corr)
+    #
+    #     self.best_section_size = section_sizes[np.argmax(corr_results)]
+    #     self.pulling_angle = copy.copy(saved_pulling_angle)
+    #     pulling_angle_if_rest = self.norm_to_sections(self.pulling_angle, self.best_section_size)
+    #     self.pulling_angle -= pulling_angle_if_rest
+    #
+    #     self.spring_length = copy.copy(saved_spring_length)
+    #     median_spring_length_at_rest = self.norm_to_sections(self.spring_length, 1000)
+    #     self.spring_length /= median_spring_length_at_rest
+    #     self.spring_extension = self.spring_length - 1
+    #
+    #     self.calc_force(calibration_model)
+    #     self.calculations()
 
-        # pulling_angle_at_rest_diff = pulling_angle_at_rest - np.nanmean(pulling_angle_at_rest,axis=0)
-        pulling_angle_at_rest_diff = np.diff(pulling_angle_at_rest,axis=0)
-        lines_with_all_nans = np.all(np.isnan(pulling_angle_at_rest_diff),axis=1)
-        pulling_angle_at_rest_mean_diff = np.nanmean(pulling_angle_at_rest_diff[~lines_with_all_nans],axis=1)
+    # def calc_pull_and_length(self):
+    #     X_length = np.concatenate((self.fixed_ends_coordinates, np.expand_dims(self.fixed_end_angle_to_nest, axis=2)),axis=2)
+    #     # self.free_end_angle_to_nest[self.free_end_angle_to_nest > np.pi] -= 2 * np.pi
+    #     # self.free_end_angle_to_nest[self.free_end_angle_to_nest <0] *= -1
+    #     # print(self.free_end_angle_to_nest)
+    #     X_angle = np.concatenate((self.fixed_ends_coordinates,np.expand_dims(self.free_end_angle_to_nest,axis=2)),axis=2)
+    #     # X_angle[X_angle[:,:,2]>np.pi, :, 2] -= 2*np.pi
+    #     # X_angle[X_angle[:, :, 2] > np.pi, :, 2] *= -1
+    #     y_length = np.linalg.norm(self.free_ends_coordinates - self.fixed_ends_coordinates, axis=2)
+    #     pulling_angle = utils.calc_angle_matrix(self.free_ends_coordinates, self.fixed_ends_coordinates,
+    #                                             self.object_center_repeated)
+    #     above = pulling_angle > 0
+    #     below = pulling_angle < 0
+    #     pulling_angle[above] = pulling_angle[above] - np.pi
+    #     pulling_angle[below] = pulling_angle[below] + np.pi
+    #     # print(X_length)
+    #     # print(pulling_angle)
+    #     y_angle = pulling_angle
+    #     idx = self.rest_bool
+    #     models_lengths = []
+    #     models_angles = []
+    #     for col in range(y_length.shape[1]):
+    #         X_length_fit = X_length[idx[:, col], col,:]
+    #         X_angle_fit = X_angle[idx[:, col], col,:]
+    #         y_length_fit = y_length[idx[:, col], col]
+    #         y_angle_fit = y_angle[idx[:, col], col]
+    #         X_length_fit = X_length_fit[~np.isnan(y_length_fit)]
+    #         X_angle_fit = X_angle_fit[~np.isnan(y_angle_fit)]
+    #         y_length_fit = y_length_fit[~np.isnan(y_length_fit)]
+    #         y_angle_fit = y_angle_fit[~np.isnan(y_angle_fit)]
+    #         model_length = make_pipeline(PolynomialFeatures(degree=1), LinearRegression())
+    #         model_angle = make_pipeline(PolynomialFeatures(degree=1), LinearRegression())
+    #         models_lengths.append(model_length.fit(X_length_fit, y_length_fit))
+    #         models_angles.append(model_angle.fit(X_angle_fit, y_angle_fit))
 
-        pulling_angle_at_rest_mean_diff_matrix = np.zeros_like(pulling_angle_at_rest)
-        pulling_angle_at_rest_mean_diff_matrix[0, :] = np.nan
-        pulling_angle_at_rest_mean_diff_matrix[1:, :][lines_with_all_nans] = np.nan
-        pulling_angle_at_rest_mean_diff_matrix[1:, :][~lines_with_all_nans, :] = pulling_angle_at_rest_mean_diff[:, np.newaxis]
-        pulling_angle_at_rest_mean_diff_matrix = utils.interpolate_data(pulling_angle_at_rest_mean_diff_matrix, np.isnan(pulling_angle_at_rest_mean_diff_matrix))
-        # print(pulling_angle_at_rest_mean_diff_matrix)
-        # self.pulling_angle -= np.nanmedian(pulling_angle_at_rest,axis=0) - pulling_angle_at_rest_mean_diff_matrix
-        self.pulling_angle -= np.nanmedian(pulling_angle_at_rest,axis=0)
-        self.negative_pulling_angle = self.pulling_angle < 0
-        # self.pulling_angle[self.negative_pulling_angle] *= -1
-        # print(self.pulling_angle)
-        # self.pulling_angle = self.pulling_angle[self.pulling_angle>0][:1000]
+    #     return models_lengths, models_angles
 
-        # median_pulling_angle_at_rest = np.nanmedian(pulling_angle_at_rest, axis=0)
-        # pulling_angle_at_rest -= median_pulling_angle_at_rest
-        # print(pulling_angle_at_rest)
-        # pulling_angle_at_rest -= pulling_angle_at_rest_mean_diff[:,np.newaxis]
-        # # mean_diff = np.nanmean(np.diff(median_pulling_angle_at_rest),axis=1)
-        # print(pulling_angle_at_rest_mean_diff.shape, pulling_angle_at_rest.shape)
-        # # median_pulling_angle_at_rest_without_diff = median_pulling_angle_at_rest_without_diff - mean_diff[:,np.newaxis]
-        #
-        # self.pulling_angle -= pulling_angle_at_rest
-        import pandas as pd
-        # angular_velocity_moving_median = pd.Series(np.nanmedian(
-        #     utils.calc_angular_velocity(self.fixed_end_fixed_coordinates_angle_to_nest, diff_spacing=20), axis=1)).rolling(50).median()
-        # median_pulling_angle_at_rest_above = np.nanmedian(median_pulling_angle_at_rest[angular_velocity_moving_median > 0,:], axis=0)
-        # all lines between 5750 and 10450 are below
-        # median_pulling_angle_at_rest_below = np.nanmedian(median_pulling_angle_at_rest[5750:10450, :], axis=0)
-        # one = np.nanmedian(median_pulling_angle_at_rest[5750:10450, :], axis=0)
-        # two = np.nanmedian(median_pulling_angle_at_rest[:5750, :], axis=0)
-        # three = np.nanmedian(median_pulling_angle_at_rest[10450:, :], axis=0)
-        # median_pulling_angle_at_rest_matrix = np.zeros(self.pulling_angle.shape)
-        # median_pulling_angle_at_rest_matrix[5750:10450,:] = one
-        # median_pulling_angle_at_rest_matrix[:5750,:] = two
-        # median_pulling_angle_at_rest_matrix[10450:,:] = three
-        # print(median_pulling_angle_at_rest_below)
-        # all line not between 5750 and 10450 are above
-        # median_pulling_angle_at_rest_above = np.nanmedian(median_pulling_angle_at_rest[np.logical_and(5750 < np.arange(self.num_of_frames), np.arange(self.num_of_frames) > 10450),:], axis=0)
-        # print(median_pulling_angle_at_rest_above)
-        # median_pulling_angle_at_rest_below = np.nanmedian(median_pulling_angle_at_rest[angular_velocity_moving_median < 0,:], axis=0)
-        # median_pulling_angle_at_rest_matrix[np.logical_and(5750 < np.arange(self.num_of_frames), np.arange(self.num_of_frames) > 10450),:] = median_pulling_angle_at_rest_below
-        # median_pulling_angle_at_rest_above_no_nan = median_pulling_angle_at_rest_above[~np.isnan(median_pulling_angle_at_rest_above)]
-        # un_nan_len_above = np.sum(np.invert(np.isnan(median_pulling_angle_at_rest_above)))
-        # median_pulling_angle_at_rest_below = median_pulling_angle_at_rest[self.angular_velocity < 0]
-        # median_pulling_angle_at_rest_below_no_nan = median_pulling_angle_at_rest_below[~np.isnan(median_pulling_angle_at_rest_below)]
-        # un_nan_len_below = np.sum(np.invert(np.isnan(median_pulling_angle_at_rest_below)))
-        # max_un_nan = len(median_pulling_angle_at_rest_above_no_nan) if len(median_pulling_angle_at_rest_above_no_nan) < len(median_pulling_angle_at_rest_below_no_nan) else len(median_pulling_angle_at_rest_below_no_nan)
-        # median_pulling_angle_at_rest = np.concatenate((np.random.choice(median_pulling_angle_at_rest_above_no_nan, max_un_nan, replace=False), np.random.choice(median_pulling_angle_at_rest_below_no_nan, max_un_nan, replace=False)))
-        # median_pulling_angle_at_rest = np.median(median_pulling_angle_at_rest)
-        # self.pulling_angle -= median_pulling_angle_at_rest_matrix
+    def calc_pulling_angle(self,models):
+        self.pulling_angle = utils.calc_pulling_angle_matrix(self.fixed_ends_coordinates,self.object_center_repeated,
+                                                             self.free_ends_coordinates)
 
-        # self.pulling_angle_copy = copy.copy(self.pulling_angle)
-        # win = 100
-        # import pandas as pd
-        # self.pulling_angle_interpolated = utils.interpolate_data(self.pulling_angle,~self.rest_bool)
-        # pd_pulling_angle = pd.DataFrame(self.pulling_angle_interpolated)
-        # rolling_median = pd_pulling_angle.rolling(win).median()
-        #
-        #
-        # self.calc_force(calibration_model)
-        # net_force = np.nansum(self.total_force, axis=1)
-        #
-        # velocity_spaced = np.nanmedian(
-        #     utils.calc_angular_velocity(self.fixed_end_fixed_coordinates_angle_to_nest, diff_spacing=20), axis=1)
-        # corr_df = pd.DataFrame({"net_force": net_force, "angular_velocity": velocity_spaced})
-        # corr_df = corr_df.dropna()
-        # correlation_score = corr_df.rolling(win).corr()
-        # correlation_score = correlation_score.loc[correlation_score.index.get_level_values(1) == "net_force"]["angular_velocity"]
-        # correlation_score = correlation_score[correlation_score.index.get_level_values(0)%100==0]
-        # under_median = correlation_score[correlation_score < np.nanmedian(correlation_score)].index.get_level_values(0)
-        # diff_under_median = np.diff(under_median)
-        # print(diff_under_median>100)
-        # #create na array, with the size of the rolling median
-        # fixed_median = np.zeros(rolling_median.shape)
-        # fixed_median[:,:] = np.nan
-        # for i in under_median:
-        #     fixed_median[i-win:i,:] = rolling_median.loc[i,:].values
-        # #whatever is left empty, fill with the median
-        # for col in rolling_median.columns:
-        #     fixed_median[np.where(np.isnan(fixed_median[:,col])),col] = median_pulling_angle_at_rest[col]
-        # self.pulling_angle = self.pulling_angle_interpolated - fixed_median
+        angles_to_nest = np.expand_dims(self.fixed_end_angle_to_nest, axis=2)
+        fixed_end_distance = np.expand_dims(self.object_center_to_fixed_end_distance, axis=2)
+        free_end_distance = np.expand_dims(self.object_center_to_free_end_distance, axis=2)
+        object_center = np.expand_dims(self.object_center_repeated, axis=2)
+        blue_length = np.expand_dims(np.repeat(np.expand_dims(np.linalg.norm(
+            self.blue_tip_coordinates - self.object_center, axis=1), axis=1), self.num_of_springs, axis=1), axis=2)
+        X = np.concatenate((np.sin(angles_to_nest), np.cos(angles_to_nest)),axis=2)#,fixed_end_distance,self.object_center_repeated), axis=2)
+        rest_not_nan_idx = ~(np.isnan(self.pulling_angle) + np.isnan(X).any(axis=2)) * self.rest_bool
+        not_nan_idx = ~(np.isnan(self.pulling_angle) + np.isnan(X).any(axis=2))
+        for col in range(self.pulling_angle.shape[1]):
+            model = make_pipeline(PolynomialFeatures(degree=1), LinearRegression())
+            X_fit = X[rest_not_nan_idx[:,col],col,:]
+            y_fit = self.pulling_angle[rest_not_nan_idx[:,col],col]
+            # model = models[col]
+            model.fit(X_fit,y_fit)
+            y_pred = model.predict(X[not_nan_idx[:,col],col,:])
+            self.pulling_angle[not_nan_idx[:,col],col] -= y_pred
+        pulling_angle_if_rest = copy.copy(self.pulling_angle)
+        pulling_angle_copy = copy.copy(self.pulling_angle)
+        pulling_angle_if_rest[~self.rest_bool] = np.nan
+        pulling_angle_copy[self.rest_bool] = np.nan
+        self.pulling_angle -= np.nanmedian(pulling_angle_if_rest, axis=0)
 
-        # if zero_angles:
-        #     rest_slots = utils.column_dilation(self.rest_bool)
-        #     from scipy.ndimage import label
-        #     labeled, _ = label(rest_slots!=0)
-        #     labeled = labeled[:,list(range(0,labeled.shape[1],2))]
-        #     corrs = []
-        #     # sizes = [5,10,20,30,40,50,60,70,80,90,100,200,300,400,500,600,700,800,900,1000,1250,1500,1750,2000]
-        #     sizes = [1950,2000,2050,2100,2150,2200,2250,2300,2350,2400,2450,2500,2550,2600,2650,2700,2750,2800,2850,2900,2950,3000]
-        #     # sizes = list(range(5,2000,5))
-        #     for size in sizes:
-        #         self.pulling_angle = copy.copy(self.pulling_angle_copy)
-        #         for col in range(labeled.shape[1]):
-        #             slots = np.unique(labeled[:,col])[1:]
-        #             slots_idx = [np.where(labeled[:,col]==s)[0] for s in slots]
-        #             slots_median = [np.nanmedian(self.pulling_angle[labeled[:,col]==s,col]) for s in slots]
-        #             medians.append(np.nanmedian(slots_median))
-        #             big_slots = [(s,i,m) for s,i,m in zip(slots,slots_idx,slots_median) if len(i)>size]
-        #             for i, s in enumerate(big_slots):
-        #                 slot, slot_idx, slot_median = s
-        #                 bottom_dist = int(slot_idx[0]-big_slots[i-1][1][-1]/2) if i>0 else slot_idx[0]
-        #                 top_dist = int(big_slots[i+1][1][0]-slot_idx[-1]/2) if i<len(big_slots)-1 else len(self.pulling_angle)-slot_idx[-1]
-        #                 # print(bottom_dist, top_dist)
-        #                 self.pulling_angle[bottom_dist:top_dist,col] -= slot_median
-        #         self.calc_force(self.calibration_model)
-        #         corrs.append(self.test_correlation())
-        #     best_size = sizes[np.argmax(corrs)]
-        #     print("best size is: {}".format(best_size))
-        #     self.pulling_angle = copy.copy(self.pulling_angle_copy)
-        #     for col in range(labeled.shape[1]):
-        #         slots = np.unique(labeled[:, col])[1:]
-        #         slots_idx = [np.where(labeled[:, col] == s)[0] for s in slots]
-        #         slots_median = [np.nanmedian(self.pulling_angle[labeled[:, col] == s, col]) for s in slots]
-        #         medians.append(np.nanmedian(slots_median))
-        #         big_slots = [(s, i, m) for s, i, m in zip(slots, slots_idx, slots_median) if len(i) > best_size]
-        #         for i, s in enumerate(big_slots):
-        #             slot, slot_idx, slot_median = s
-        #             bottom_dist = int(slot_idx[0] - big_slots[i - 1][1][-1] / 2) if i > 0 else slot_idx[0]
-        #             top_dist = int(big_slots[i + 1][1][0] - slot_idx[-1] / 2) if i < len(big_slots) - 1 else len(
-        #                 self.pulling_angle) - slot_idx[-1]
-        #             # print(bottom_dist, top_dist)
-        #             self.pulling_angle[bottom_dist:top_dist, col] -= slot_median
-            #     for i, slot in enumerate(slots):
-            #         for s in slots[i:]:
-            #             s_idx = np.where(labeled[:, col] == s)[0]
-            #             if len(slot_idx) > 1000:
-            #                 self.slot_median = np.nanmedian(self.pulling_angle[s_idx, col])
-            #                 break
-            #         if slot != slots[-1]:
-            #             next_slot_idx = np.where(labeled[:,col]==slots[i+1])[0]
-            #             self.pulling_angle[slot_idx[-1]+1:next_slot_idx[0],col] -= self.slot_median
-            #         elif slot == slots[-1]:
-            #             self.pulling_angle[slot_idx[-1]+1:,col] -= self.slot_median
-            # median_pulling_angle_at_rest = copy.copy(self.pulling_angle)
-            # median_pulling_angle_at_rest[np.invert(self.rest_bool)] = np.nan
-            # median_pulling_angle_at_rest = np.nanmedian(median_pulling_angle_at_rest, axis=0)
-            # print(np.array(medians))
-            # print(median_pulling_angle_at_rest)
-            # self.pulling_angle -= median_pulling_angle_at_rest
+    # def calc_pulling_angle(self,models):
+    #     # self.pulling_angle = utils.calc_angle_matrix(self.free_ends_coordinates, self.fixed_ends_coordinates,
+    #     #                         self.object_center_repeated)
+    #     # above = self.pulling_angle > 0
+    #     # below = self.pulling_angle < 0
+    #     # self.pulling_angle[above] = self.pulling_angle[above] - np.pi
+    #     # self.pulling_angle[below] = self.pulling_angle[below] + np.pi
+    #     # # X = np.concatenate((self.fixed_ends_coordinates, np.expand_dims(self.free_end_angle_to_nest, axis=2)), axis=2)
+    #     # X = np.concatenate((self.fixed_ends_coordinates,self.free_ends_coordinates, self.object_center_repeated), axis=2)
+    #     # y = self.pulling_angle
+    #     # for col in range(y.shape[1]):
+    #     #     y_pred = models[col].predict(X[~np.isnan(y[:, col]), col, :])
+    #     #     self.pulling_angle[~np.isnan(y[:, col]), col] -= y_pred
+    #
+    #     self.pulling_angle = utils.calc_angle_matrix(self.free_end_fixed_coordinates,self.fixed_end_fixed_coordinates,self.object_center_repeated)+np.pi
+    #     self.pulling_angle, _ = self.norm_values(self.free_end_fixed_coordinates_angle_to_nest, self.pulling_angle, bias_bool=self.rest_bool, find_boundary_column=True)
+    #     self.pulling_angle = self.pulling_angle - np.pi
+    #     above = self.pulling_angle > 0
+    #     below = self.pulling_angle < 0
+    #     self.pulling_angle[above] = self.pulling_angle[above] - np.pi
+    #     self.pulling_angle[below] = self.pulling_angle[below] + np.pi
+    #     pulling_angle_if_rest = copy.copy(self.pulling_angle)
+    #     pulling_angle_if_rest[~self.rest_bool] = np.nan
+    #     self.pulling_angle -= np.nanmedian(pulling_angle_if_rest, axis=0)
+    #
+    #     # self.pulling_angle -= pulling_angle_if_rest
 
-    def calc_spring_length(self):
-        self.spring_length = np.linalg.norm(self.free_end_fixed_coordinates - self.fixed_end_fixed_coordinates , axis=2)
+    # def calc_spring_length(self,models):
+    #     self.spring_length = np.linalg.norm(self.free_ends_coordinates - self.fixed_end_fixed_coordinates, axis=2)
+    #     self.spring_length /= self.norm_size
+    #     self.spring_length = utils.interpolate_data(self.spring_length,utils.find_cells_to_interpolate(self.spring_length))
+    #     median_spring_length_at_rest = copy.copy(self.spring_length)
+    #     median_spring_length_at_rest[np.invert(self.rest_bool)] = np.nan
+    #     median_spring_length_at_rest = np.nanmedian(median_spring_length_at_rest, axis=0)
+    #     self.spring_length /= median_spring_length_at_rest
+    #     angles_to_nest = np.expand_dims(self.fixed_end_fixed_coordinates_angle_to_nest, axis=2)
+    #     X = np.concatenate((np.sin(angles_to_nest), np.cos(angles_to_nest),self.object_center_repeated), axis=2)
+    #     rest_not_nan_idx = ~(np.isnan(self.spring_length)+np.isnan(X[:,:,0]))*self.rest_bool
+    #     for col in range(self.spring_length.shape[1]):
+    #         model = make_pipeline(PolynomialFeatures(degree=1), LinearRegression())
+    #         X_fit = X[rest_not_nan_idx[:,col],col,:]
+    #         y_fit = self.spring_length[rest_not_nan_idx[:,col],col]
+    #         model.fit(X_fit,y_fit)
+    #         # model = models[col]
+    #         y_pred = model.predict(X[rest_not_nan_idx[:,col],col,:])
+    #         self.spring_length[rest_not_nan_idx[:,col],col] -= y_pred
+    #
+    #     self.spring_extension = self.spring_length -1
+    #     print("spring extension at rest: ", np.nanmedian(self.spring_extension[self.rest_bool]))
+    #     print("spring extension at no rest: ", np.nanmedian(self.spring_extension[~self.rest_bool]))
+
+    def calc_spring_length(self,models):
+        self.spring_length = np.linalg.norm(self.free_ends_coordinates - self.fixed_end_fixed_coordinates , axis=2)
+        # self.spring_length = np.linalg.norm(self.free_ends_coordinates - self.fixed_ends_coordinates, axis=2)
         self.spring_length = utils.interpolate_data(self.spring_length,
                                                        utils.find_cells_to_interpolate(self.spring_length))
-        self.spring_length = self.norm_values(self.fixed_end_angle_to_nest, self.spring_length, bias_bool=self.rest_bool, find_boundary_column=False)[0]
+        self.spring_length = self.norm_values(self.fixed_end_fixed_coordinates_angle_to_nest, self.spring_length, bias_bool=self.rest_bool, find_boundary_column=False)[0]
         self.spring_length /= self.norm_size
         median_spring_length_at_rest = copy.copy(self.spring_length)
         median_spring_length_at_rest[np.invert(self.rest_bool)] = np.nan
         median_spring_length_at_rest = np.nanmedian(median_spring_length_at_rest, axis=0)
         self.spring_length /= median_spring_length_at_rest
-        self.spring_extension = self.spring_length -1# np.repeat(median_spring_length_at_rest[np.newaxis, :], self.num_of_frames, axis=0)
-        # self.spring_extension = self.spring_length - np.repeat(median_spring_length_at_rest[np.newaxis, :], self.num_of_frames, axis=0)
-
-    def plot_pulling_angle_to_nest_angle(self,X,bool,spring):
-        # save_path = os.path.join(self.output_path, "plots","weights")
-        # os.makedirs(save_path, exist_ok=True)
-        # for processed in self.processed_list:
-        title = str(spring)
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2)
-        spring = 0
-        # x = self.fixed_end_fixed_coordinates_angle_to_nest[:,spring][bool]
-        x = np.arange(0,self.num_of_frames)[bool]
-        # above = x > np.pi
-        # below = x < np.pi
-        # x[above] = x[above] - np.pi
-        # x[below] = x[below] + np.pi
-        # x -= np.pi
-
-        y1 = X[:,0]
-        above = y1 > np.pi
-        below = y1 < np.pi
-        y1[above] = y1[above] - np.pi
-        y1[below] = y1[below] + np.pi
-        y1 -= np.pi
-        ax1.plot(x, y1, "o",alpha=0.5)
-        ax1.set_xlabel("Direction to the nest")
-        ax1.set_ylabel("Pulling direction")
-        ax1.set_title(f"spring: {title}")
-
-        y2 = X[:,1]
-        ax2.plot(x, y2, "o",alpha=0.5)
-        ax2.set_xlabel("Direction to the nest")
-        ax2.set_ylabel("Spring extension")
-
-        y_pred = self.calibration_model.predict(X)
-        y3 = y_pred#[:,0]
-        # direction_pred = y_pred[:, 0]
-        # above = y3 > 0
-        # below = y3 < 0
-        # y3[above] = y3[above] - np.pi
-        # y3[below] = y3[below] + np.pi
-        # direction_pred[above] = direction_pred[above] - np.pi
-        # direction_pred[below] = direction_pred[below] + np.pi
-        ax3.plot(x, y3, "o",alpha=0.5)
-        # ax3.plot(x, direction_pred, "o", color="red",alpha=0.1)
-        ax3.set_xlabel("Direction to the nest")
-        ax3.set_ylabel("Force direction")
-
-        y4 = y_pred[:, 1]
-        # extent_pred = y_pred[:, 1]
-        ax4.plot(x, y4, "o",alpha=0.5)
-        # ax4.plot(x, extent_pred, "o", color="red",alpha=0.1)
-        ax4.set_xlabel("Direction to the nest")
-        ax4.set_ylabel("Force magnitude")
-
-        fig.tight_layout()
-        fig.set_size_inches(7.5, 5)
-        plt.show()
-        # fig.savefig(os.path.join(save_path, f"weight_{title}.png"))
+        self.spring_extension = self.spring_length -1
+        # print("spring extension at rest: ", np.nanmedian(self.spring_extension[self.rest_bool]))
+        # print("spring extension at no rest: ", np.nanmedian(self.spring_extension[~self.rest_bool]))
 
     def calc_force(self,model):
         self.angular_force = True
@@ -488,44 +413,13 @@ class PostProcessing:
                 self.force_magnitude[un_nan_bool,s] = forces_predicted[:,1]
             else:
                 self.total_force[un_nan_bool,s] = forces_predicted
-        # self.total_force[self.negative_pulling_angle] *= -1
-        self.total_force *= -1
-        # import cv2
-        # video_path = "Z:\\Dor_Gabay\\ThesisProject\\data\\videos\\15.9.22\\plus0.3mm_force\\S5280006.MP4"
-        # video = cv2.VideoCapture(video_path)
-        # point = (int(self.object_center_repeated[0, 0, 0]), int(self.object_center_repeated[0, 0, 1]))
-        # point2 = (int(self.object_center_repeated[0, 0, 0]), int(self.object_center_repeated[0, 0, 1] + 20))
-        # point3 = (int(self.object_center_repeated[0, 0, 0]), int(self.object_center_repeated[0, 0, 1] + 40))
-        # point4 = (int(self.object_center_repeated[0, 0, 0]), int(self.object_center_repeated[0, 0, 1] + 60))
-        # for f in range(10000):
-        #     if f > 5000:
-        #         ret, frame = video.read()
-        #         cv2.putText(frame, f"pulling angle: {self.pulling_angle[f, 0]}", point, cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-        #                     (0, 0, 255), 2)
-        #         cv2.putText(frame, f"spring_extension: {self.spring_extension[f,0]}", point2,
-        #                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-        #         if not self.angular_force:
-        #             cv2.putText(frame, f"force_direction: {self.force_direction[f,0]}", point3,
-        #                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-        #             cv2.putText(frame, f"force_magnitude: {self.force_magnitude[f,0]}", point4,
-        #                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-        #         else:
-        #             cv2.putText(frame, f"total_force: {self.total_force[f,0]}", point3,
-        #                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-        #         cv2.imshow("frame", frame)
-        #         cv2.waitKey(10)
 
-        spring = 0
-        # print(f"min pulling_angel: {np.nanmin(self.pulling_angle[:, spring])}, max pulling_angel: {np.nanmax(self.pulling_angle[:, spring])}, mean pulling_angel: {np.nanmean(self.pulling_angle[:, spring])}")
-        # print(f"min spring_extension: {np.nanmin(self.spring_extension[:, spring])}, max spring_extension: {np.nanmax(self.spring_extension[:, spring])}, mean spring_extension: {np.nanmean(self.spring_extension[:, spring])}")
         if not self.angular_force:
             self.total_force = np.sin(self.force_direction) * self.force_magnitude
-            # print(f"y_pred force_direction min {np.nanmin(self.force_direction[:,spring])}, max {np.nanmax(self.force_direction[:,spring])}, mean {np.nanmean(self.force_direction[:,spring])}")
-            # print(f"y_pred force_magnitude min {np.nanmin(self.force_magnitude[:,spring])}, max {np.nanmax(self.force_magnitude[:,spring])}, mean {np.nanmean(self.force_magnitude[:,spring])}")
-        # print(f"norm length: {self.norm_length}")
+            # self.total_force[self.negative_pulling_angle] *= -1
+            self.total_force *= -1
         else:
-            pass
-            # print(f"total_force: min: {np.nanmin(self.total_force[spring])}, max: {np.nanmax(self.total_force[spring])}")
+            self.total_force *= -1
 
     def save_data(self, directory):
         print("-" * 60)
@@ -541,45 +435,111 @@ class PostProcessing:
         np.savetxt(f"{directory}force_magnitude.csv", self.force_magnitude, delimiter=",")
         np.savetxt(f"{directory}total_force.csv", self.total_force, delimiter=",")
 
+    def calculations(self):
+        self.net_force = np.nansum(self.total_force, axis=1)
+        self.net_force = np.array(pd.Series(self.net_force).rolling(window=5,center=True).median())
+        frame_velocity = utils.calc_angular_velocity(self.fixed_end_fixed_coordinates_angle_to_nest, diff_spacing=20)/20
+        # for col in range(frame_velocity.shape[1]):
+        #     frame_velocity[:,col] = pd.Series(frame_velocity[:,col]).rolling(self.velocity_spacing).median()
+        self.angular_velocity = np.nanmedian(frame_velocity, axis=1)
+        self.total_n_ants = np.nansum(self.N_ants_around_springs, axis=1)
+        self.sum_pulling_angle = np.nansum(self.pulling_angle, axis=1)
+        self.angle_to_nest = np.nansum(self.fixed_end_fixed_coordinates_angle_to_nest, axis=1)
+        self.spring_extension = np.nanmean(self.spring_length, axis=1)
+        self.total_force[np.isnan(self.pulling_angle)] = np.nan
+
     def test_correlation(self):
-        print("-"*60)
-        # total_force = np.sin(object.force_direction) * object.force_magnitude
-        # total_force = self.total_force
-        net_force = np.nansum(self.total_force, axis=1)
-        import pandas as pd
-        velocity_spaced = np.nanmedian(utils.calc_angular_velocity(self.fixed_end_fixed_coordinates_angle_to_nest, diff_spacing=20), axis=1)
-        corr_df = pd.DataFrame({"net_force": net_force, "angular_velocity": velocity_spaced})
+        corr_df = pd.DataFrame({"net_force": self.net_force, "angular_velocity": self.angular_velocity})
         corr_df = corr_df.dropna()
         correlation_score = corr_df.corr()["net_force"]["angular_velocity"]
         print(f"correlation score between net force and angular velocity: {correlation_score}")
         return correlation_score
 
-    def calculations(self):
-        # self.velocity = np.nanmedian(utils.calc_angular_velocity(self.fixed_end_angle_to_nest, diff_spacing=1), axis=1)
-        self.angular_velocity = np.nanmedian(utils.calc_angular_velocity(self.fixed_end_fixed_coordinates_angle_to_nest, diff_spacing=20), axis=1)
-        self.total_n_ants = np.nansum(self.N_ants_around_springs, axis=1)
-        self.sum_pulling_angle = np.nansum(self.pulling_angle, axis=1)
-        self.angle_to_nest = np.nansum(self.fixed_end_fixed_coordinates_angle_to_nest, axis=1)
-        self.spring_extension = np.nanmean(self.spring_length, axis=1)
-        # self.total_force = np.sin(self.force_direction) * self.force_magnitude
-        # print(np.sum(np.isnan(self.pulling_angle[:30000]))/(self.pulling_angle[:30000].shape[0]*self.pulling_angle[:30000].shape[1]))
-        # print(np.sum(self.total_force==0),self.total_force.shape[0]*self.total_force.shape[1])
-        self.total_force[np.isnan(self.pulling_angle)] = np.nan
-        self.net_force = np.nansum(self.total_force,axis=1)
-        # print("total force at frame 9882:", self.total_force[9882])
-        # self.net_force = np.nansum(self.force, axis=1)
+def create_model():
+    calibration_dir = "Z:\\Dor_Gabay\\ThesisProject\\data\\calibration\\post_slicing\\calibration_perfect2\\sliced_videos\\"
+    calibration_model = pickle.load(open(calibration_dir + "calibration_model.pkl", "rb"))
+    X = None
+    y_length = None
+    y_angle = None
+    idx = None
+    # for count,i in enumerate([1,3,4,5]):#,6,7,8,9]):
+    for count,i in enumerate([1]):#,6,7,8,9]):
+        data_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\exp_collected_data\\15.9.22\\plus0.3mm_force\\S528000{i}\\"
+        object = PostProcessing(data_dir, calibration_model=calibration_model)
+        if count == 0:
+            angles_to_nest = np.expand_dims(object.fixed_end_fixed_coordinates_angle_to_nest,axis=2)
+            X = np.concatenate((np.sin(angles_to_nest),np.cos(angles_to_nest),object.object_center_repeated),axis=2)
+            y_length = np.linalg.norm(object.free_end_fixed_coordinates - object.fixed_end_fixed_coordinates,axis=2)
+            y_length /= object.norm_size
+            # pulling_angle = utils.calc_angle_matrix(object.free_ends_coordinates,object.fixed_ends_coordinates,object.object_center_repeated)
+            pulling_angle = utils.calc_angle_matrix(object.free_end_fixed_coordinates,
+                                                         object.fixed_end_fixed_coordinates,
+                                                         object.object_center_repeated)
+            above = pulling_angle > 0
+            below = pulling_angle < 0
+            pulling_angle[above] = pulling_angle[above] - np.pi
+            pulling_angle[below] = pulling_angle[below] + np.pi
+            # pulling_angle[pulling_angle<0] *= -1
+            pulling_angle_if_rest = copy.copy(pulling_angle)
+            pulling_angle_if_rest[~object.rest_bool] = np.nan
+            pulling_angle -= np.nanmedian(pulling_angle_if_rest, axis=0)
+            y_angle = pulling_angle
+            idx = object.rest_bool
+        else:
+            angles_to_nest = np.expand_dims(object.fixed_end_fixed_coordinates_angle_to_nest,axis=2)
+            X = np.concatenate((X,np.concatenate((np.sin(angles_to_nest),np.cos(angles_to_nest),object.object_center_repeated),axis=2)),axis=0)
+            y_length = np.concatenate((y_length,np.linalg.norm(object.free_end_fixed_coordinates - object.fixed_end_fixed_coordinates , axis=2)),axis=0)
+            y_length /= object.norm_size
+            # pulling_angle = utils.calc_angle_matrix(object.free_ends_coordinates, object.fixed_ends_coordinates,
+            #                                         object.object_center_repeated)
+            pulling_angle = utils.calc_angle_matrix(object.free_end_fixed_coordinates,
+                                                         object.fixed_end_fixed_coordinates,
+                                                         object.object_center_repeated)
+            above = pulling_angle > 0
+            below = pulling_angle < 0
+            pulling_angle[above] = pulling_angle[above] - np.pi
+            pulling_angle[below] = pulling_angle[below] + np.pi
+            pulling_angle_if_rest = copy.copy(pulling_angle)
+            pulling_angle_if_rest[~object.rest_bool] = np.nan
+            pulling_angle -= np.nanmedian(pulling_angle_if_rest, axis=0)
+            y_angle = np.concatenate((y_angle,pulling_angle),axis=0)
+            idx = np.concatenate((idx,object.rest_bool),axis=0)
+    models_lengths = []
+    models_angles = []
+    for col in range(y_length.shape[1]):
+        X_fit = X[idx[:,col],col]
+        y_length_fit = y_length[idx[:,col],col]
+        y_angle_fit = y_angle[idx[:,col],col]
+        X_fit = X_fit[~np.isnan(y_length_fit)]
+        y_length_fit = y_length_fit[~np.isnan(y_length_fit)]
+        y_angle_fit = y_angle_fit[~np.isnan(y_angle_fit)]
+        model_length = make_pipeline(PolynomialFeatures(degree=1), LinearRegression())
+        model_angle = make_pipeline(PolynomialFeatures(degree=1), LinearRegression())
+        models_lengths.append(model_length.fit(X_fit, y_length_fit))
+        models_angles.append(model_angle.fit(X_fit, y_angle_fit))
+    return models_lengths,models_angles
 
 if __name__=="__main__":
-    calibration_dir = "Z:\\Dor_Gabay\\ThesisProject\\data\\calibration\\post_slicing\\calibration_perfect2\\sliced_videos\\"
-    data_dir = "Z:\\Dor_Gabay\\ThesisProject\\data\\exp_collected_data\\15.9.22\\plus0.3mm_force\\S5280006\\"
-    calibration_model = pickle.load(open(calibration_dir + "calibration_model.pkl", "rb"))
-    object = PostProcessing(data_dir, calibration_model=calibration_model)
-    object.test_correlation()
-    object.calculations()
+    # models_lengths,models_angles = create_model()
+    for i in [1,3,4,5,6,7,8,9]:
+    # for i in range(9,10):
+        print("-" * 60)
+        calibration_dir = "Z:\\Dor_Gabay\\ThesisProject\\data\\calibration\\post_slicing\\calibration_perfect2\\sliced_videos\\"
+        # calibration_dir = "Z:\\Dor_Gabay\\ThesisProject\\data\\calibration\\post_slicing\\calibration2\\"
+        data_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\exp_collected_data\\15.9.22\\plus0.3mm_force\\S528000{i}\\"
+        calibration_model = pickle.load(open(calibration_dir + "calibration_model.pkl", "rb"))
+        object = PostProcessing(data_dir, calibration_model=calibration_model)#, length_models=models_lengths, angle_models=models_angles)
+        correlation_score = object.test_correlation()
+        # object.calculations()
 
-    from data_analysis import plots
-    object.video_name = "S5280006"
-    plots.plot_overall_behavior(object, start=0, end=None, window_size=50, title="S5280006", output_dir=data_dir)
-    # object.save_data(data_dir)
-    print("-"*60)
+        from data_analysis import plots
+        object.video_name = data_dir.split("\\")[-2]
+        out = "Z:\\Dor_Gabay\\ThesisProject\\data\\exp_collected_data\\15.9.22\\plus0.3mm_force\\figures_adjustments2\\"
+        os.makedirs(out, exist_ok=True)
+
+        plots.plot_overall_behavior(object, start=0, end=None, window_size=200,
+                                    title=object.video_name+"_corr"+str(np.round(correlation_score,2)),
+                                    output_dir=out)
+        # object.save_data(data_dir)
+        # print("-"*60)
 
