@@ -14,17 +14,12 @@ class DataAnalyser(object):
     def load_data(self,directory):
         directory = os.path.join(directory, "post_processed_data")
         self.N_ants_around_springs = np.loadtxt(os.path.join(directory, "N_ants_around_springs.csv"), delimiter=",")
-        self.spring_length = np.loadtxt(os.path.join(directory, "spring_length.csv"), delimiter=",")
-        self.fixed_end_fixed_coordinates_angle_to_nest = np.loadtxt(os.path.join(directory, "fixed_end_fixed_coordinates_angle_to_nest.csv"), delimiter=",")
-        self.pulling_angle = np.loadtxt(os.path.join(directory, "pulling_angle.csv"), delimiter=",")
-        # if self.n_springs == 1:
-        #     self.N_ants_around_springs = np.expand_dims(self.N_ants_around_springs, axis=1)
-        #     self.spring_length = np.expand_dims(self.spring_length, axis=1)
-        #     self.fixed_end_angle_to_nest = np.expand_dims(self.fixed_end_angle_to_nest, axis=1)
-        #     self.pulling_angle = np.expand_dims(self.pulling_angle, axis=1)
+        self.fixed_end_angle_to_nest = np.loadtxt(os.path.join(directory, "fixed_end_angle_to_nest.csv"), delimiter=",")
         self.force_direction = np.loadtxt(os.path.join(directory, "force_direction.csv"), delimiter=",")
         self.force_magnitude = np.loadtxt(os.path.join(directory, "force_magnitude.csv"), delimiter=",")
-        self.force = np.loadtxt(os.path.join(directory, "force.csv"), delimiter=",")
+        # self.pulling_angle = np.loadtxt(os.path.join(directory, "pulling_angle.csv"), delimiter=",")
+        # self.spring_length = np.loadtxt(os.path.join(directory, "spring_length.csv"), delimiter=",")
+        # self.force = np.loadtxt(os.path.join(directory, "force.csv"), delimiter=",")
 
     def calculations(self):
         # self.velocity = np.nanmedian(utils.calc_angular_velocity(self.fixed_end_angle_to_nest, diff_spacing=1), axis=1)

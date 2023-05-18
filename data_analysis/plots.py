@@ -33,7 +33,8 @@ def plot_overall_behavior(analysed, start=0, end=None, window_size=1, title="", 
     # plot the mean pulling angles of the springs
     fig.suptitle(f"angular_velocity (moving median) VS net_force (moving mean) (movie:{title})")
     ax2 = ax1.twinx()
-    net_force = analysed.net_force[start:end]
+    # net_force = analysed.net_force[start:end]
+    net_force = analysed.net_magnitude[start:end]
     net_force = pd.Series(net_force).rolling(window_size).median()
     # moving_averages = np.convolve(y, np.ones((window_size,)) / window_size, mode='valid')
     ax2.plot(x, net_force, color=pulling_angle_color)
@@ -47,7 +48,7 @@ def plot_overall_behavior(analysed, start=0, end=None, window_size=1, title="", 
 
     # set the y axis to have y=0 at the same place for both plots
     ax1.set_ylim(np.nanmax(angular_velocity) * -1.1, np.nanmax(angular_velocity) * 1.1)
-    ax2.set_ylim(np.nanmax(net_force) * -1.1, np.nanmax(net_force) * 1.1)
+    ax2.set_ylim(np.nanmax(analysed.net_force[start:end]) * -1.1, np.nanmax(analysed.net_force[start:end]) * 1.1)
 
     fig.tight_layout()
     #fig size should be 1920x1080

@@ -1,5 +1,4 @@
 import os
-import re
 import glob
 import argparse
 import multiprocessing as mp
@@ -7,18 +6,6 @@ import multiprocessing as mp
 import general_video_scripts.collect_color_parameters as collect_color_parameters
 import video_analysis.main as main
 
-# args = {'dir_path': 'Z:/Dor_Gabay/ThesisProject/data/videos/12.9.22/',
-#         'vid_path': r'Z:\Dor_Gabay\ThesisProject\data\videos\12.9.22\plus0_force\S5220003.MP4',
-#         'iter_dir': True,
-#         'collect_parameters': False,
-#         'collect_crop': True,
-#         'collect_start_frame': True,
-#         'starting_frame': None,
-#         'complete_unanalyzed': True,
-#         'skip': 1,
-#         'output_dir': 'Z:\Dor_Gabay\ThesisProject\data/exp_collected_data/',
-#         'nCPU': 5,
-#         }
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Detecting soft pendulum object')
@@ -109,8 +96,7 @@ if __name__ == '__main__':
     if not args["iter_dir"]:
         if args['collect_parameters']:
             print("Collecting parameters for all videos in directory: ",args["dir_path"])
-            # make parameters file:
-            collect_color_parameters.main([args["vid_path"]], args["dir_path"], starting_frame=args["collect_start_frame"], collect_crop=args["collect_crop"])
+            collect_color_parameters.main([args["vid_path"]], args["dir_path"], starting_frame=args["collect_start_frame"], collect_crop=args["collect_crop"]) # make parameters file:
         run_analysis(([args["vid_path"],args]))
     elif args["iter_dir"]:
         videos_to_analyze = find_videos_to_analyze(args)
@@ -118,47 +104,12 @@ if __name__ == '__main__':
         if args['collect_parameters']:
             print("Collecting parameters for all videos in directory: ",args["dir_path"])
             collect_color_parameters.main(videos_to_analyze, args["dir_path"], starting_frame=args["collect_start_frame"], collect_crop=args["collect_crop"])
-        # analyze videos:
         print("Number of processors exist:",mp.cpu_count())
         print("Mumber of processors used for this task:",str(args["nCPU"]))
-        # __spec__ = "ModuleSpec(name='builtins', loader=<class '_frozen_importlib.BuiltinImporter'>)"
         pool = mp.Pool(args["nCPU"])
         videos_to_analyze = [(x,args) for x in videos_to_analyze]
         pool.map(run_analysis, videos_to_analyze)
-        # for v in videos_to_analyze:
-        #     print("Start processing video: ", v)
-        #     run_analysis(v)
-        # pool.close()
+        pool.close()
 
 
-# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/videos_analysis_data/ --complete_unanalyzed --nCPU 8
-# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/videos_analysis_data/ --complete_unanalyzed --nCPU 2
-# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/videos_analysis_data/ --complete_unanalyzed --nCPU 8
-
-# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/plus0.3mm_force/S5280002.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/test5/ --complete_unanalyzed
-# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/plus0.5mm_force/S5290002.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/test5/ --complete_unanalyzed --start_frame 5355
-# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/plus0.5mm_force/S5290001.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/test5/ --complete_unanalyzed --start_frame 30320
-
-# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/plus0.5mm_force/S5290002.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/test1/ --complete_unanalyzed --start_frame 13625
-
-# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9/plus0_force/S5200009.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/test6/ --complete_unanalyzed
-# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9/plus0.1_force/S5200003.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/test6/ --complete_unanalyzed
-# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/plus0.3mm_force/S5280006.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/test1/ --complete_unanalyzed
-# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/test6/ --complete_unanalyzed --nCPU 2
-
-# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/calibration/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/calibration/S5300001_sliced.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/calibration/ --collect_parameters
-# python command_line_operator.py --iter_dir --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/calibration/ --output_dir Z:/Dor_Gabay/ThesisProject/data/calibration_test/ --collect_parameters
-# python command_line_operator.py --iter_dir --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/calibration2/ --output_dir Z:/Dor_Gabay/ThesisProject/data/calibration_test/ --complete_unanalyzed --nCPU 8
-
-
-
-# python video_analysis/command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/test6/
-# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/12.9.22/ --iter_dir --output_dir Z:/Dor_Gabay/ThesisProject/data/exp_collected_data/ -cu --nCPU 5
-
-# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/calibration2/ --output_dir Z:/Dor_Gabay/ThesisProject/data/calibration/post_slicing/ --collect_parameters
-# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/calibration3/ --output_dir Z:/Dor_Gabay/ThesisProject/data/calibration/pre_slicing/ --collect_parameters --nCPU 10
-
-# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/calibration3/ --output_dir Z:/Dor_Gabay/ThesisProject/data/calibration/post_slicing/ --collect_parameters --nCPU 10
-
-# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/plus0.3mm_force/S5280004.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/pics/ --complete_unanalyzed
-# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking/ --complete_unanalyzed --iter_dir --nCPU 8
+# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking3/ --complete_unanalyzed --iter_dir --nCPU 3

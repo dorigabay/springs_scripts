@@ -69,6 +69,6 @@ output_dir = "Z:/Dor_Gabay/ThesisProject/data/calibration/post_slicing/"
 # command_line2 = f"python Z:\Dor_Gabay\ThesisProject\scripts\springs_scripts\command_line_operator.py --dir_path {os.path.normpath(os.path.join(dir_path,'sliced_videos'))} --output_dir {output_dir} --nCPU {nCPU} --complete_unanalyzed --iter_dir"
 # os.system(command_line2)
 
-import utils
-for video in glob.glob(os.path.join(os.path.normpath(os.path.join(dir_path,'sliced_videos')),"*.MP4")):
-    utils.collect_normalization_length(video,os.path.join(output_dir,calibration_videos_dirname,"sliced_videos"))
+# import utils
+# for video in glob.glob(os.path.join(os.path.normpath(os.path.join(dir_path,'sliced_videos')),"*.MP4")):
+#     utils.collect_normalization_length(video,os.path.join(output_dir,calibration_videos_dirname,"sliced_videos"))

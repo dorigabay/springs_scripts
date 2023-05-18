@@ -751,49 +751,49 @@ def iter_dirs(spring_type_directories,function):
             # springs_analysed[spring_type][video_name] = object
     return springs_analysed
 
-def collect_normalization_length(video_path,data_dir):
-    import cv2
-    from general_video_scripts.collect_color_parameters import neutrlize_colour
-    video_folder = "\\".join(video_path.split("\\")[:-1])
-    video_name = video_path.split("\\")[-1].split(".")[0]
-    preferences_path = "\\".join(video_path.split("\\")[:-2]+["video_preferences.pickle"])
-    # with open(os.path.join(video_folder,"parameters", f"{video_name}_video_parameters.pickle"), "rb") as f:
-    with open(os.path.normpath(preferences_path), "rb") as f:
-        video_parameters = pickle.load(f)[video_path]
-    video = cv2.VideoCapture(video_path)
-    # collect the fixed ends mask
-    from video_analysis.springs_detector import Springs
-    areas_medians = []
-    blue_areas_medians = []
-    # while frame is not None:
-    for i in range(100):
-        ret, frame = video.read()
-        frame = neutrlize_colour(frame)
-        springs = Springs(video_parameters,image=frame,previous_detections=None)
-        fixed_ends_labeled = springs.bundles_labeled
-        # turn to zero all labels that are not in springs.fixed_ends_bundles_labels , without a loop
-        fixed_ends_labeled[np.isin(fixed_ends_labeled, springs.fixed_ends_bundles_labels, invert=True)] = 0
-        # find the area size of each label
-        from scipy.ndimage import label
-        fixed_ends_labeled, num_labels = label(fixed_ends_labeled)
-        # find the label with the biggest area
-        from scipy.ndimage import sum
-        areas = sum(fixed_ends_labeled, fixed_ends_labeled, index=np.arange(1, num_labels + 1))/np.arange(1, num_labels + 1)
-        blue_labeled, num_labels = label(springs.mask_blue_full)
-        blue_areas = sum(blue_labeled, blue_labeled, index=np.arange(1, num_labels + 1))/np.arange(1, num_labels + 1)
-        if len(areas) > 0 and len(blue_areas) > 0:
-            median_area = np.median(areas)
-            blue_median_area = np.median(blue_areas)
-            areas_medians.append(median_area)
-            blue_areas_medians.append(blue_median_area)
-    # save the median area in data folder
-    median_medians = np.median(areas_medians)
-    blue_median_medians = np.median(blue_areas_medians)
-    # print(f"median area is {median_medians}, median blue area is {blue_median_medians}")
-    # print("median area/median blue area", median_medians/blue_median_medians)
-    with open(os.path.join(data_dir, "blue_median_area.pickle"), "wb") as f:
-        pickle.dump(blue_median_medians, f)
-    return blue_median_medians
+# def collect_normalization_length(video_path,data_dir):
+    # import cv2
+    # from general_video_scripts.collect_color_parameters import neutrlize_colour
+    # video_folder = "\\".join(video_path.split("\\")[:-1])
+    # video_name = video_path.split("\\")[-1].split(".")[0]
+    # preferences_path = "\\".join(video_path.split("\\")[:-2]+["video_preferences.pickle"])
+    # # with open(os.path.join(video_folder,"parameters", f"{video_name}_video_parameters.pickle"), "rb") as f:
+    # with open(os.path.normpath(preferences_path), "rb") as f:
+    #     video_parameters = pickle.load(f)[video_path]
+    # video = cv2.VideoCapture(video_path)
+    # # collect the fixed ends mask
+    # from video_analysis.springs_detector import Springs
+    # areas_medians = []
+    # blue_areas_medians = []
+    # # while frame is not None:
+    # for i in range(100):
+    #     ret, frame = video.read()
+    #     frame = neutrlize_colour(frame)
+    #     springs = Springs(video_parameters,image=frame,previous_detections=None)
+    #     fixed_ends_labeled = springs.bundles_labeled
+    #     # turn to zero all labels that are not in springs.fixed_ends_bundles_labels , without a loop
+    #     fixed_ends_labeled[np.isin(fixed_ends_labeled, springs.fixed_ends_bundles_labels, invert=True)] = 0
+    #     # find the area size of each label
+    #     from scipy.ndimage import label
+    #     fixed_ends_labeled, num_labels = label(fixed_ends_labeled)
+    #     # find the label with the biggest area
+    #     from scipy.ndimage import sum
+    #     areas = sum(fixed_ends_labeled, fixed_ends_labeled, index=np.arange(1, num_labels + 1))/np.arange(1, num_labels + 1)
+    #     blue_labeled, num_labels = label(springs.mask_blue_full)
+    #     blue_areas = sum(blue_labeled, blue_labeled, index=np.arange(1, num_labels + 1))/np.arange(1, num_labels + 1)
+    #     if len(areas) > 0 and len(blue_areas) > 0:
+    #         median_area = np.median(areas)
+    #         blue_median_area = np.median(blue_areas)
+    #         areas_medians.append(median_area)
+    #         blue_areas_medians.append(blue_median_area)
+    # # save the median area in data folder
+    # median_medians = np.median(areas_medians)
+    # blue_median_medians = np.median(blue_areas_medians)
+    # # print(f"median area is {median_medians}, median blue area is {blue_median_medians}")
+    # # print("median area/median blue area", median_medians/blue_median_medians)
+    # with open(os.path.join(data_dir, "blue_median_area.pickle"), "wb") as f:
+    #     pickle.dump(blue_median_medians, f)
+    # return blue_median_medians
 
 if __name__ == "__main__":
     data_dir = "Z:\\Dor_Gabay\\ThesisProject\\data\\exp_collected_data\\15.9.22\\plus0.3mm_force\\S5280006\\"

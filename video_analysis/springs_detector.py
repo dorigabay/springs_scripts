@@ -24,37 +24,36 @@ SPRINGS_PARTS_OVERLAP_SIZE = 10
 
 class Springs:
     def __init__(self, parameters, image, previous_detections):
-        self.image= image
         self.n_springs = parameters["n_springs"]
-        self.binary_color_masks_connected, self.binary_color_masks_unconnected = self.mask_object_colors(parameters, image)
+        self.previous_detections = previous_detections
+        binary_color_masks_connected, binary_color_masks_unconnected = self.mask_object_colors(parameters, image)
         # self.whole_object_mask = self.close_element(self.combine_masks(list(self.binary_color_masks.values())),np.ones((15,15)))
-        self.whole_object_mask_unconnected = self.combine_masks(list(self.binary_color_masks_unconnected.values()))
-        self.whole_object_mask = connect_blobs(self.combine_masks(list(self.binary_color_masks_connected.values())),WHOLE_OBJECT_CLOSING_SIZE)
-        self.object_center, self.tip_point, self.mask_blue_full, self.blue_radius =\
-            self.detect_blue_stripe(self.binary_color_masks_connected["b"], previous_detections = previous_detections)
-        self.green_mask = self.clean_mask(self.binary_color_masks_connected["g"],MIN_GREEN_SIZE)
-        self.red_mask = self.clean_mask(self.binary_color_masks_connected["r"],MIN_RED_SIZE)
-        self.red_labeled, self.green_labeled, self.fixed_ends_labeled, self.free_ends_labeled, self.red_centers, self.green_centers = \
-            self.get_spring_parts(self.object_center,self.binary_color_masks_connected["r"],self.green_mask)
-        self.bundles_labeled, self.bundles_labels = self.create_bundles_labels()
-        self.fixed_ends_bundles_labels, self.free_ends_bundles_labels, self.real_springs_bundles_labels = \
-            self.assign_ends_to_bundles(self.bundles_labeled, self.fixed_ends_labeled,
-                                          self.free_ends_labeled,self.red_centers, self.green_labeled)
-        self.bundles_labeled_after_removal = self.remove_labels(self.real_springs_bundles_labels, self.bundles_labeled)
+        self.whole_object_mask_unconnected = self.combine_masks(list(binary_color_masks_unconnected.values()))
+        # self.whole_object_mask = connect_blobs(self.combine_masks(list(binary_color_masks_connected.values())),WHOLE_OBJECT_CLOSING_SIZE)
+        self.object_center, self.tip_point, self.blue_radius,self.blue_area_size =\
+            self.detect_blue_stripe(binary_color_masks_connected["b"])
+        green_mask = self.clean_mask(binary_color_masks_connected["g"],MIN_GREEN_SIZE)
+        red_mask = self.clean_mask(binary_color_masks_connected["r"],MIN_RED_SIZE)
+        red_labeled, green_labeled, fixed_ends_labeled, self.free_ends_labeled, self.red_centers, self.green_centers = \
+            self.get_spring_parts(self.object_center,binary_color_masks_connected["r"],green_mask)
+        self.bundles_labeled, self.bundles_labels = self.create_bundles_labels(red_mask,green_mask,fixed_ends_labeled)
+        real_springs_bundles_labels = \
+            self.assign_ends_to_bundles(self.bundles_labeled, fixed_ends_labeled,
+                                          self.free_ends_labeled,self.red_centers, green_labeled)
+        bundles_labeled_after_removal = self.remove_labels(real_springs_bundles_labels, self.bundles_labeled)
         self.fixed_ends_edges_centers, self.fixed_ends_edges_bundles_labels = \
-            self.find_bounderies_touches(self.fixed_ends_labeled, self.red_labeled, self.bundles_labeled_after_removal)
+            self.find_bounderies_touches(fixed_ends_labeled, red_labeled, bundles_labeled_after_removal)
         self.free_ends_edges_centers, self.free_ends_edges_bundles_labels = \
-            self.find_bounderies_touches(self.free_ends_labeled, self.red_labeled, self.bundles_labeled_after_removal)
-        self.remove_variables()
+            self.find_bounderies_touches(self.free_ends_labeled, red_labeled, bundles_labeled_after_removal)
 
-    def remove_variables(self):
-        #remove all self variables that are not in a
-        to_keep = ["n_springs","bundles_labeled","bundles_labels","blue_area_size","free_ends_labeled","fixed_ends_edges_bundles_labels",
-             "fixed_ends_edges_centers","free_ends_edges_bundles_labels","free_ends_edges_centers",
-             "object_center","tip_point","calc_angles","whole_object_mask_unconnected","blue_radius"]
-        for key in list(self.__dict__.keys()):
-            if key not in to_keep:
-                delattr(self, key)
+    # def remove_variables(self):
+    #     #remove all self variables that are not in a
+    #     to_keep = ["n_springs","bundles_labeled","bundles_labels","blue_area_size","free_ends_labeled","fixed_ends_edges_bundles_labels",
+    #          "fixed_ends_edges_centers","free_ends_edges_bundles_labels","free_ends_edges_centers",
+    #          "object_center","tip_point","calc_angles","whole_object_mask_unconnected","blue_radius"]
+    #     for key in list(self.__dict__.keys()):
+    #         if key not in to_keep:
+    #             delattr(self, key)
 
     def combine_masks(self,list_of_masks):
         combined = list_of_masks[0]+list_of_masks[1]+list_of_masks[2]
@@ -96,7 +95,7 @@ class Springs:
         binary_mask[bool_mask] = 1
         return binary_mask
 
-    def detect_blue_stripe(self,mask_blue,closing_structure=BLUE_CLOSING,previous_detections=None):
+    def detect_blue_stripe(self,mask_blue,closing_structure=BLUE_CLOSING):
         mask_blue_empty_closed = connect_blobs(mask_blue, closing_structure)
         lableled,_ = label(mask_blue_empty_closed)
         bulb_prop = regionprops(lableled)
@@ -110,24 +109,24 @@ class Springs:
         if not np.isnan(np.sum(inner_mask_center)):
             object_center = [int(x) for x in inner_mask_center]
             object_center = np.array([object_center[1],object_center[0]])
-        else: object_center = previous_detections[0]
+        else: object_center = self.previous_detections[0]
 
         # if the length between the center and the edge is not as the previous detection,
         # use the previous detection for the center:
         farthest_point, blue_radius = self.find_farthest_point(object_center,mask_blue_full)
         BLUE_RADIUS_TOLERANCE = 0.05
-        if previous_detections is not None:
-            mean_radius = previous_detections[2]/previous_detections[3]
+        if self.previous_detections[0] is not None:
+            mean_radius = self.previous_detections[3]/self.previous_detections[4]
             if np.abs(blue_radius-mean_radius)/mean_radius>BLUE_RADIUS_TOLERANCE:
-                object_center = previous_detections[0]
+                object_center = self.previous_detections[0]
                 farthest_point, blue_radius = self.find_farthest_point(object_center,mask_blue_full)
                 if np.abs(blue_radius-mean_radius)/mean_radius>BLUE_RADIUS_TOLERANCE:
-                    farthest_point = previous_detections[1]
+                    farthest_point = self.previous_detections[1]
                     blue_radius = np.sqrt(np.sum(np.square(farthest_point-object_center)))
                     if np.abs(blue_radius-mean_radius)/mean_radius>BLUE_RADIUS_TOLERANCE:
                         raise ValueError("There is a problem in the blue part detection")
-        self.blue_area_size = np.sum(mask_blue_full)
-        return object_center, farthest_point, mask_blue_full, blue_radius
+        blue_area_size = np.sum(mask_blue_full)
+        return object_center, farthest_point, blue_radius, blue_area_size
 
     def find_farthest_point(self, point, mask):
         contour = (find_contours(mask)[0]).astype(int)
@@ -191,14 +190,14 @@ class Springs:
         array[:, [0, 1]] = array[:, [1, 0]]
         return array
 
-    def create_bundles_labels(self,closing_structure=BUNDLES_CLOSING):
+    def create_bundles_labels(self,red_mask,green_mask,fixed_ends_labeled,closing_structure=BUNDLES_CLOSING):
         #TODO: fix the bug that crushes the program when using connect_blobs
-        all_parts_mask = self.red_mask + self.green_mask
+        all_parts_mask = red_mask + green_mask
         all_parts_mask = self.close_element(all_parts_mask,closing_structure)
         # all_parts_mask = connect_blobs(all_parts_mask, closing_structure)
         labeled_image, num_features = label(all_parts_mask, generate_binary_structure(2, 2))
-        fied_ends_centers = center_of_mass(self.fixed_ends_labeled, labels=self.fixed_ends_labeled,
-                                         index=np.unique(self.fixed_ends_labeled)[1:])
+        fied_ends_centers = center_of_mass(fixed_ends_labeled, labels=fixed_ends_labeled,
+                                         index=np.unique(fixed_ends_labeled)[1:])
         fied_ends_centers = np.array([np.array([x, y]).astype("int") for x, y in fied_ends_centers])
         self.bundles_centers = fied_ends_centers
         center = np.array([self.object_center[1],self.object_center[0]])
@@ -242,8 +241,8 @@ class Springs:
             free_ends_bundles_labels.append(bundles_labeled[y1, x1])
         for x1, y1 in red_centers.astype("int"):
             red_bundles_labels.append(bundles_labeled[y1, x1])
-        self.bundles_labels = self.screen_bundles(fixed_ends_bundles_labels, free_ends_bundles_labels, red_bundles_labels)
-        return fixed_ends_bundles_labels, free_ends_bundles_labels, self.bundles_labels
+        bundles_labels = self.screen_bundles(fixed_ends_bundles_labels, free_ends_bundles_labels, red_bundles_labels)
+        return  bundles_labels
 
     def screen_bundles(self, fixed_labels, free_labels, red_labels):
         counts = np.array([fixed_labels.count(x) for x in fixed_labels])
@@ -279,3 +278,29 @@ class Springs:
         counts = np.array([labels.count(x) for x in labels])
         labels_array[counts > 1] = 0
         return list(labels_array)
+
+# Springs = Springs
+#
+# class SpringsVariable(Springs):
+#     def __init__(self, parameters, image, previous_detections):
+#         super(Springs)
+#         self.n_springs = parameters["n_springs"]
+#         binary_color_masks_connected, binary_color_masks_unconnected = self.mask_object_colors(parameters, image)
+#         # self.whole_object_mask = self.close_element(self.combine_masks(list(self.binary_color_masks.values())),np.ones((15,15)))
+#         self.whole_object_mask_unconnected = self.combine_masks(list(binary_color_masks_unconnected.values()))
+#         # self.whole_object_mask = connect_blobs(self.combine_masks(list(binary_color_masks_connected.values())),WHOLE_OBJECT_CLOSING_SIZE)
+#         self.object_center, self.tip_point, self.blue_radius,self.blue_area_size =\
+#             self.detect_blue_stripe(binary_color_masks_connected["b"], previous_detections = previous_detections)
+#         green_mask = self.clean_mask(binary_color_masks_connected["g"],MIN_GREEN_SIZE)
+#         red_mask = self.clean_mask(binary_color_masks_connected["r"],MIN_RED_SIZE)
+#         red_labeled, green_labeled, fixed_ends_labeled, self.free_ends_labeled, self.red_centers, self.green_centers = \
+#             self.get_spring_parts(self.object_center,binary_color_masks_connected["r"],green_mask)
+#         self.bundles_labeled, self.bundles_labels = self.create_bundles_labels(red_mask,green_mask,fixed_ends_labeled)
+#         real_springs_bundles_labels = \
+#             self.assign_ends_to_bundles(self.bundles_labeled, fixed_ends_labeled,
+#                                           self.free_ends_labeled,self.red_centers, green_labeled)
+#         bundles_labeled_after_removal = self.remove_labels(real_springs_bundles_labels, self.bundles_labeled)
+#         self.fixed_ends_edges_centers, self.fixed_ends_edges_bundles_labels = \
+#             self.find_bounderies_touches(fixed_ends_labeled, red_labeled, bundles_labeled_after_removal)
+#         self.free_ends_edges_centers, self.free_ends_edges_bundles_labels = \
+#             self.find_bounderies_touches(self.free_ends_labeled, red_labeled, bundles_labeled_after_removal)
