@@ -3,7 +3,7 @@ import numpy as np
 from scipy.ndimage import label, center_of_mass
 from skimage.morphology import remove_small_objects, binary_closing, binary_opening
 #local imports:
-from general_video_scripts.utils import extend_lines, connect_blobs
+from video_analysis.utils import extend_lines, connect_blobs
 from video_analysis.springs_detector import Springs
 
 OBJECT_DILATION_SIZE = 5

@@ -7,7 +7,7 @@ from general_video_scripts.collect_color_parameters import neutrlize_colour
 import datetime
 # local imports:
 from video_analysis.calculator import Calculation
-import general_video_scripts
+from video_analysis import utils
 
 
 def save_as_mathlab_matrix(output_dir):
@@ -32,7 +32,21 @@ def save_blue_areas_median(output_dir):
         pickle.dump(median_blue_area_size, f)
 
 
-def save_data(output_dir, snap_data, calculations, n_springs=20):
+# def get_csv_line_count(csv_file):
+#     import subprocess
+#     cmd = f'wc -l {csv_file}'
+#     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+#     print(result)
+#     output = result.stdout.strip()
+#     line_count = int(output.split()[0])
+#     return line_count
+
+def get_csv_line_count(csv_file):
+    with open(csv_file, 'r') as file:
+        line_count = sum(1 for _ in file)
+    return line_count
+
+def save_data(output_dir, snap_data, calculations, n_springs=20,continue_from_last=False):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     if calculations is None:
@@ -66,7 +80,14 @@ def save_data(output_dir, snap_data, calculations, n_springs=20):
     else:
         for d, n in zip(arrays[:], names[:]):
             with open(os.path.join(output_dir, str(n) + '.csv'), 'a') as f:
-                np.savetxt(f, d, delimiter=',')
+                if continue_from_last:
+                    line_count = get_csv_line_count(os.path.join(output_dir, str(n) + '.csv'))
+                    if line_count == snap_data[5]+1:
+                        continue
+                    else:
+                        np.savetxt(f, d, delimiter=',')
+                else:
+                        np.savetxt(f, d, delimiter=',')
                 f.close()
 
 
@@ -109,16 +130,24 @@ def save_data(output_dir, snap_data, calculations, n_springs=20):
 #     return image_to_illustrate, calculations.joints
 
 
-def main(video_path, output_dir, parameters, starting_frame=None):
+def main(video_path, output_dir, parameters, starting_frame=None, continue_from_last=False):
     output_dir = os.path.join(output_dir, "raw_analysis")
     cap = cv2.VideoCapture(video_path)
+    if continue_from_last:
+        snaps = [f for f in os.listdir(output_dir) if f.startswith("snap_data")]
+        snap_data = pickle.load(open(os.path.join(output_dir, snaps[-1]), "rb"))
+        parameters["starting_frame"] = snap_data[5]
+        snap_data[6] = datetime.datetime.now().strftime("%d.%m.%Y-%H%M")
+    else:
+        snap_data = [None, None ,None, 0, 0, 0,datetime.datetime.now().strftime("%d.%m.%Y-%H%M")]
+        # snap_data: object_center, tip_point, springs_angles_reference_order,
+        # sum_blue_radius, frames_analysed, count, current_time
     if starting_frame is not None:
         cap.set(cv2.CAP_PROP_POS_FRAMES, starting_frame)
     else:
         cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["starting_frame"])
     parameters["n_springs"] = 20
-
-    snap_data = [None, None ,None, 0, 0, 0,datetime.datetime.now().strftime("%d.%m.%Y-%H%M")] #object_center,tip_point,springs_angles_reference_order,sum_blue_radius,frames_analysed,count
+    count = 0
     while True:
     # for i in range(50):
         ret, frame = cap.read()
@@ -127,20 +156,29 @@ def main(video_path, output_dir, parameters, starting_frame=None):
             break
         frame = neutrlize_colour(frame)
         if parameters["crop_coordinates"] != None:
-            frame = general_video_scripts.utils.crop_frame_by_coordinates(frame, parameters["crop_coordinates"])
+            frame = utils.crop_frame_by_coordinates(frame, parameters["crop_coordinates"])
         try:
             calculations = Calculation(parameters, frame, snap_data)
             snap_data = [calculations.object_center, calculations.tip_point, calculations.springs_angles_reference_order,
                                    snap_data[3]+int(calculations.blue_radius), snap_data[4]+1, snap_data[5], snap_data[6]]
-            save_data(output_dir, calculations=calculations, snap_data=snap_data)
+            save_data(output_dir, calculations=calculations, snap_data=snap_data, continue_from_last=continue_from_last)
             del calculations, ret, frame
             # present_analysis_result(frame, springs, calculations, ants)
             print("Analyzed frame number:", snap_data[5], end="\r")
         except:
             print("Skipped frame: ", snap_data[5], end="\r")
-            save_data(output_dir, snap_data=snap_data, calculations=None, n_springs=parameters["n_springs"])
+            save_data(output_dir, snap_data=snap_data, calculations=None, n_springs=parameters["n_springs"],continue_from_last=continue_from_last)
         snap_data[5] += 1
+        continue_from_last = False
     cap.release()
     save_as_mathlab_matrix(output_dir)
     save_blue_areas_median(output_dir)
 
+
+if __name__ == "__main__":
+    video_path = "Z:\\Dor_Gabay\\ThesisProject\\data\\videos\\15.9.22\\plus0.3mm_force\\S5280007.MP4"
+    output_dir = "Z:\\Dor_Gabay\\ThesisProject\\data\\analysed_with_tracking_tesss\\"
+    parameters_dir = "Z:\\Dor_Gabay\\ThesisProject\\data\\videos\\15.9.22\\parameters\\"
+    from general_video_scripts.collect_color_parameters import get_parameters
+    parameters = get_parameters(parameters_dir,video_path)
+    main(video_path, output_dir, parameters,starting_frame=0, continue_from_last=True)

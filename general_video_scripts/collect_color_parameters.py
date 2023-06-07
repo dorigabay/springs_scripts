@@ -241,7 +241,7 @@ def show_parameters_result(video, parameters):
             parameters["crop_coordinates"][2]:parameters["crop_coordinates"][3]]
     image = neutrlize_colour(image)
     print("Are you happy with the result?:")
-    import general_video_scripts.utils as utils
+    import video_analysis.utils as utils
     binary_color_masks = utils.mask_object_colors(parameters, image)
     for mask_color in binary_color_masks:
         while True:

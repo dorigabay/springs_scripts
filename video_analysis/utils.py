@@ -1,5 +1,4 @@
 import copy
-
 import cv2
 import numpy as np
 from skimage.morphology import skeletonize, thin
@@ -11,14 +10,23 @@ from scipy.ndimage import maximum_filter, minimum_filter, label
 COLOR_CLOSING = np.ones((3, 3))
 
 
+def find_farthest_point(point, contour):
+    point = np.array([point[1],point[0]])
+    distances = np.sqrt(np.sum(np.square(contour-point),1))
+    # take the average of the 50 farthest points
+    farthest_points = np.argsort(distances)[-50:]
+    farthest_point = np.mean(contour[farthest_points],0).astype(int)
+    farthest_point = np.array([farthest_point[1],farthest_point[0]])
+    return farthest_point, np.max(distances)
+
+
 def swap_columns(array):
     array[:, [0, 1]] = array[:, [1, 0]]
     return array
 
 
 def connect_blobs(mask, overlap_size=1):
-    if mask.dtype==np.bool:
-        mask = convert_bool_to_binary(mask)
+    mask = mask.astype(np.uint8)
     labeled, _ = label(mask)
     maximum_filter_labeled1 = maximum_filter(labeled, overlap_size)
     max_val = np.max(labeled)+1
@@ -31,40 +39,21 @@ def connect_blobs(mask, overlap_size=1):
 
 
 def extend_lines(matrix, extend_by=3):
-    # Find the indices of the non-zero elements in the matrix
     indices = np.nonzero(matrix)
-
-    # Extract the coordinates of the non-zero elements
     points = np.transpose(indices)
-
-    # Extract the labels for the non-zero elements
     values = matrix[indices]
-
-    # Calculate the slope and intercept of the line
-    # slope, intercept = fit_line(points)
-
-    # Initialize a copy of the matrix with all elements set to 0
     extended_matrix = np.zeros_like(matrix)
-
-    # Iterate through the unique labels
     for label in np.unique(values):
         slope, intercept = fit_line(points[values == label])
-        # Select the points with the current label
         label_points = points[values == label]
-        # Calculate the points that the line goes through
         x1 = min(label_points[:, 1]) - extend_by
-        # y1 = int(slope * x1 + intercept)
         x2 = max(label_points[:, 1]) + extend_by
-        # y2 = int(slope * x2 + intercept)
-        # Generate a sequence of x coordinates for the line
         x = np.linspace(x1, x2, abs(x2 - x1) + 1, dtype=int)
-        # Calculate the corresponding y coordinates for the line
         y = (slope * x + intercept).astype(int)
         x_bounded_x = x[(x >= 0) & (x < matrix.shape[1])]
         y_bounded_x = y[(x >= 0) & (x < matrix.shape[1])]
         y_bounded_xy = y_bounded_x[(y_bounded_x >= 0) & (y_bounded_x < matrix.shape[0])]
         x_bounded_xy = x_bounded_x[(y_bounded_x >= 0) & (y_bounded_x < matrix.shape[0])]
-        # Set the elements in the matrix corresponding to the extended line to the label value
         extended_matrix[y_bounded_xy,x_bounded_xy] = label
     extended_matrix[matrix!=0] = matrix[matrix!=0]
     return extended_matrix
@@ -115,10 +104,8 @@ def create_circular_mask(image_dim, center=None, radius=None):
     return mask
 
 def combine_masks(list_of_masks):
-    # combined = [np.zeros(list_of_masks[0].shape,"int")+x for x in list_of_masks][0]
     combined = list_of_masks[0] + list_of_masks[1] + list_of_masks[2]
-    combined = convert_bool_to_binary(combined.astype("bool"))
-    return combined
+    return combined.astype("bool").astype(np.uint8)
 
 def mask_object_colors(parameters, image):
     binary_color_masks = {x: None for x in parameters["colors_spaces"]}
@@ -135,14 +122,14 @@ def mask_object_colors(parameters, image):
     return binary_color_masks
 
 def close_element(mask, structure):
-    mask = convert_bool_to_binary(binary_dilation(mask, structure))
-    mask = convert_bool_to_binary(binary_erosion(mask, structure))
+    mask = binary_dilation(mask, structure).astype(np.uint8)
+    mask = binary_erosion(mask, structure).astype(np.uint8)
     return mask
 
-def convert_bool_to_binary(bool_mask):
-    binary_mask = np.zeros(bool_mask.shape,"int")
-    binary_mask[bool_mask] = 1
-    return binary_mask
+# def convert_bool_to_binary(bool_mask):
+#     binary_mask = np.zeros(bool_mask.shape,"int")
+#     binary_mask[bool_mask] = 1
+#     return binary_mask
 
 def correct_by_boundry(hue, boundry):
     """
@@ -366,19 +353,6 @@ def remove_rectangle(frame,coordinates,element_color_by_name):
     cv2.rectangle(frame, start_point, end_point, color, 2)
     return frame
 
-#
-# def create_mask(frame,hsv_space):
-#     hsv_lower1, hsv_upper1, hsv_lower2, hsv_upper2 = hsv_space
-#     # blurred = cv2.GaussianBlur(frame, (3 ,3), 0)
-#     blurred = frame
-#     imgHSV = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
-#     mask1 = cv2.inRange(imgHSV, hsv_lower1, hsv_upper1)
-#     mask2 = cv2.inRange(imgHSV, hsv_lower2, hsv_upper2)
-#     mask = mask1+mask2
-#     mask = cv2.bitwise_not(mask)
-#     masked = cv2.bitwise_and(frame, frame, mask=mask)
-#     masked = cv2.cvtColor(masked, cv2.COLOR_HSV2BGR)
-#     return masked,mask
 
 def create_mask_with_contour(spaces,frame):
     image_contours = copy.copy(frame)
@@ -386,21 +360,6 @@ def create_mask_with_contour(spaces,frame):
         contours = obtain_dilated_contour(frame, space)
         image_contours = cv2.drawContours(image_contours, contours, -1, (0, 255, 0), -1)
     return image_contours
-
-# def skeletonize(mask):
-#     height, width = mask.shape
-#     skel = np.zeros([height, width], dtype=np.uint8)  # [height,width,3]
-#     kernel = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
-#     temp_nonzero = np.count_nonzero(mask)
-#     while (np.count_nonzero(mask) != 0):
-#         eroded = cv2.erode(mask, kernel)
-#         cv2.imshow("eroded", eroded)
-#         temp = cv2.dilate(eroded, kernel)
-#         cv2.imshow("dilate", temp)
-#         temp = cv2.subtract(mask, temp)
-#         skel = cv2.bitwise_or(skel, temp)
-#         mask = eroded.copy()
-#     return skel
 
 
 def find_lines(skel,frame):

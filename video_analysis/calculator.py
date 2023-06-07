@@ -29,14 +29,19 @@ class Calculation(Ants):
         self.ants_centers_y[:, :ants_centers_y.shape[1]] = ants_centers_y
 
     def initiate_springs_angles_matrix(self):
-        if self.previous_detections[0] is None:
-            if len(self.bundles_labels)!=self.n_springs:
-                exit("First frame should have exactly 20 springs. Different number of springs were detect,"
-                     " please start the process from a different frame.")
+        linspace_angles = np.linspace(-np.pi, np.pi-np.pi/self.n_springs, self.n_springs).reshape(1, self.n_springs)
+        if self.previous_detections[2] is not None:
+            if np.sum(linspace_angles-self.previous_detections[2])==0:
+                if len(self.bundles_labels) == self.n_springs:
+                    self.springs_angles_reference_order = np.sort(self.bundles_labels).reshape(1, self.n_springs)
+                else:
+                    self.springs_angles_reference_order = self.previous_detections[2]
             else:
-                self.springs_angles_reference_order = np.sort(self.bundles_labels).reshape(1,self.n_springs)
+                self.springs_angles_reference_order = self.previous_detections[2]
+        elif len(self.bundles_labels) == self.n_springs:
+            self.springs_angles_reference_order = np.sort(self.bundles_labels).reshape(1, self.n_springs)
         else:
-            self.springs_angles_reference_order = self.previous_detections[2]
+            self.springs_angles_reference_order = linspace_angles
 
     def match_springs(self, springs_angles_reference_order):
         current_springs_angles = list(self.bundles_labels)

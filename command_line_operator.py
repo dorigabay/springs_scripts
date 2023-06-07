@@ -17,6 +17,7 @@ def parse_args():
     # parser.add_argument('--Ymargin', type=int, help='Margins from contour to cut frames (X_value)"')
     parser.add_argument('--output_dir','-o', type=str, help='Path to output directory. If not given the program will create a directory within the input folder')
     parser.add_argument('--collect_start_frame', help='If True, then the program will request frame to start analysing for each vidoe',action='store_true')
+    parser.add_argument('--continue_from_last', '-con', help='If True, then the program will continue from the last frame analysed',action='store_true')
     parser.add_argument('--starting_frame', help='Frame to start with',type=int,default=None)
     parser.add_argument('--skip', type=int, help='Number of skipping frames',default=1)
     parser.add_argument('--collect_crop',help='Number of pixels to slice out from each direction (top,bottom,left,right)',action='store_true')
@@ -86,7 +87,7 @@ def run_analysis(video_path_args):
     print("Start processing video: ",video_path)
     video_parameters = collect_color_parameters.get_parameters(os.path.join(args["dir_path"], "parameters"), video_path)
     # video_parameters["crop_coordinates"] = None #only for calibration videos
-    main.main(video_path, output_dir, video_parameters,starting_frame=args["starting_frame"])
+    main.main(video_path, output_dir, video_parameters,starting_frame=args["starting_frame"],continue_from_last=args["continue_from_last"])
     print("Finished processing video: ", video_path)
     # remove vidoe path from 'Unanalyzed_videos.txt' file:
     # write_or_remove_files_paths_in_txt_file(video_path=video_path)
@@ -112,4 +113,5 @@ if __name__ == '__main__':
         pool.close()
 
 
-# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking3/ --complete_unanalyzed --iter_dir --nCPU 3
+# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking/ --complete_unanalyzed --iter_dir --nCPU 9 -con
+# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/plus0.3mm_force/S5280007.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/S5280007/ --complete_unanalyzed --nCPU 1 -con

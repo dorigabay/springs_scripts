@@ -8,6 +8,7 @@
 # Then it takes the points which are assigned to those distances, and it finds their center of mass,
 # and calls it camera_closets.
 # Eventually it returns camera_closest coordinates, and the coordinates of all other points.
+import os.path
 
 import cv2
 from skimage import filters
@@ -17,6 +18,7 @@ import copy
 from scipy.ndimage import label, center_of_mass
 from general_video_scripts import collect_color_parameters
 from skimage import transform
+from video_analysis import utils as utils_video_analysis
 
 def extract_image(video_path,frame_number):
     cap = cv2.VideoCapture(video_path)
@@ -28,7 +30,7 @@ def crop_image(image):
     print("Please select the crop coordinates:")
     crop_ccordinates = collect_color_parameters.pick_points(image, "crop").flatten()
     crop_ccordinates = crop_ccordinates[[0, 2, 1, 3]]
-    image_cropped = utils.crop_frame_by_coordinates(copy.copy(image), crop_ccordinates)
+    image_cropped = utils_video_analysis.crop_frame_by_coordinates(copy.copy(image), crop_ccordinates)
     return image_cropped
 
 def find_blobs(frame):
@@ -112,10 +114,17 @@ def present_distances(frame,distances,centers,labels):
     # write the number next to each center, with small font:
     for i in range(len(centers)):
         center = tuple(centers[i][[1,0]].astype(int))
-        cv2.putText(frame_copy, str(i), center, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+        # cv2.putText(frame_copy, str(i), center, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
 
     cv2.imshow("frame_copy", frame_copy)
     cv2.waitKey(0)
+
+    #save the image
+    output_path = "Z:\\Dor_Gabay\\ThesisProject\\data\\calibration\\perspective\\"
+    os.makedirs(output_path,exist_ok=True)
+    cv2.imwrite(os.path.join(output_path,"distances_measured.jpg"), frame_copy)
+    cv2.imwrite(os.path.join(output_path,"real_frame.jpg"), frame)
+
 
 
 
@@ -158,7 +167,7 @@ def estimate_projective_transformation_parameters(image):
     distance = np.linalg.norm(dst[0]-dst[1])
     start_point = dst[0]
     src = np.array([start_point, start_point + [distance, 0], start_point + [distance, distance], start_point + [0, distance]])
-    dst = utils.swap_columns(dst)
+    dst = utils_video_analysis.swap_columns(dst)
 
     tform3 = transform.ProjectiveTransform()
     tform3.estimate(src, dst)
@@ -184,7 +193,7 @@ def perpective(image):
     return image, centers
 
 if __name__ =="__main__":
-    video_path = "Z:\\Dor_Gabay\\ThesisProject\\data\\videos\\perspective_calibration\\S5260001.MP4"
+    video_path = "Z:\\Dor_Gabay\\ThesisProject\\data\\videos\\calibrations\\perspective_calibration\\S5260001.MP4"
     # video_path = "Z:\\Dor_Gabay\\ThesisProject\\data\\videos\\15.9.22\\plus0.3mm_force\\S5280003.MP4"
     frame_number = 43
 
@@ -194,6 +203,6 @@ if __name__ =="__main__":
     # perpective(warped)
     print("Please select the co-linear  coordinates:")
     dst = collect_color_parameters.collect_points(warped, 4)
-    dst = utils.swap_columns(dst)
+    dst = utils_video_analysis.swap_columns(dst)
     distances = np.linalg.norm(dst[0]-dst[2]), np.linalg.norm(dst[1]-dst[3])
     print("distances",distances)
