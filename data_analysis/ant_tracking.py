@@ -2,7 +2,7 @@ import os
 import numpy as np
 import scipy.io as sio
 from scipy.ndimage.morphology import binary_closing
-
+from time import sleep
 
 def first_tracking_calculation(directory,sub_dirs_names):
     complete_ants_centers_x = np.array([])
@@ -22,7 +22,7 @@ def first_tracking_calculation(directory,sub_dirs_names):
     ants_centers_mat = np.zeros((ants_centers.shape[0], 1), dtype=np.object)
     for i in range(ants_centers.shape[0]):
         ants_centers_mat[i, 0] = ants_centers[i, :, :]
-    output_dir = os.path.join(directory, "ant_tracking")
+    output_dir = os.path.join(directory, "post_processing", f"{data_set[0]}-{data_set[-1]}")
     os.makedirs(output_dir, exist_ok=True)
     print(f"saving to: {output_dir}")
     sio.savemat(os.path.join(output_dir, "ants_centers.mat"), {"ants_centers": ants_centers_mat})
@@ -36,7 +36,7 @@ def first_tracking_calculation(directory,sub_dirs_names):
 from line_profiler_pycharm import profile
 
 # @profile
-def correct_tracked_ants(directory, tracked_ants, frame_size=(1920, 1080)):
+def correct_tracked_ants(tracked_ants, frame_size=(1920, 1080)):
     "This function removes all new labels that were create inside the frame, and not on the boundries (10% of the frame)"
     def test_if_in_boundries(coords):
         if coords[0] > frame_size[1] * 0.1 and coords[0] < frame_size[0] - frame_size[1] * 0.1 and coords[1] > frame_size[1] * 0.1 and coords[1] < frame_size[1] * 0.9:
@@ -121,34 +121,45 @@ def correct_tracked_ants(directory, tracked_ants, frame_size=(1920, 1080)):
         if occurrences < 20:
             idx = np.where(tracked_ants[:, 2, :] == unique_label)
             tracked_ants[idx[0], 2, idx[1]] = 0
-    sio.savemat(os.path.join(os.path.join(directory), "tracking_data_corrected.mat"),{"tracked_blobs_matrix": tracked_ants})
     return tracked_ants
 
 
-def assign_ants_to_springs(tracked_ants,ants_attached_labels,num_of_frames):
-    ants_assigned_to_springs = np.zeros((num_of_frames, np.nanmax(tracked_ants[:,2,:]).astype(np.int32)))
-    for i in range(num_of_frames):
-        labels = tracked_ants[~np.isnan(ants_attached_labels[i]),2,i]
-        labels = labels[~np.isnan(labels)].astype(int)
-        springs = ants_attached_labels[i,~np.isnan(ants_attached_labels[i])].astype(int)
-        ants_assigned_to_springs[i,labels-1] = springs+1
-    interpolate_assigned_ants(ants_assigned_to_springs,num_of_frames)
-    return ants_assigned_to_springs
+def assign_ants_to_springs(directory,sub_dirs_sets):
+    for data_set in sub_dirs_sets:
+        path_post_processing = os.path.join(directory, "post_processing", f"{data_set[0]}-{data_set[-1]}")
+        print(f"Processing {path_post_processing}...")
+        tracked_ants = sio.loadmat(os.path.join(path_post_processing, "tracking_data_corrected.mat"))["tracked_blobs_matrix"].astype(np.uint32)
+        unique_elements, indices = np.unique(tracked_ants[:,2,:], return_inverse=True)
+        tracked_ants[:,2,:] = indices.reshape(tracked_ants[:,2,:].shape)
+        N_ants_around_springs = np.load(os.path.join(path_post_processing, "N_ants_around_springs.npz"))["arr_0"].astype(np.uint8)
+        ants_attached_labels = np.load(os.path.join(path_post_processing, "ants_attached_labels.npz"))["arr_0"]
+        num_of_frames = ants_attached_labels.shape[0]
+        ants_assigned_to_springs = np.zeros((num_of_frames, len(unique_elements)-1)).astype(np.uint8)
+        for i in range(num_of_frames):
+            bool = (~np.isnan(ants_attached_labels[i]))*(tracked_ants[:,2,i]>0)
+            labels = tracked_ants[bool,2,i].astype(int)
+            springs = ants_attached_labels[i,bool].astype(int)
+            ants_assigned_to_springs[i,labels-1] = springs+1
+        ants_assigned_to_springs = interpolate_assigned_ants(ants_assigned_to_springs,num_of_frames)
+        ants_assigned_to_springs = remove_artificial_cases(N_ants_around_springs, ants_assigned_to_springs)
+        np.savez_compressed(os.path.join(path_post_processing, "ants_assigned_to_springs.npz"), ants_assigned_to_springs)
+        np.savez_compressed(os.path.join(path_post_processing, "ants_labels.npz"), unique_elements[1:])
 
 
 def interpolate_assigned_ants(ants_assigned_to_springs,num_of_frames,max_gap=30):
-    aranged_frames = np.arange(num_of_frames)
+    arranged_frames = np.arange(num_of_frames)
     for ant in range(ants_assigned_to_springs.shape[1]):
-        array = ants_assigned_to_springs[:,ant]
-        closing_bool = binary_closing(array.astype(bool).reshape(1,num_of_frames), np.ones((1, max_gap)))
+        array = ants_assigned_to_springs[:, ant]
+        closing_bool = binary_closing(array.astype(bool).reshape(1, num_of_frames), np.ones((1, max_gap)))
         closing_bool = closing_bool.reshape(closing_bool.shape[1])
-        xp = aranged_frames[~closing_bool+(array!=0)]
+        xp = arranged_frames[~closing_bool+(array != 0)]
         fp = array[xp]
-        x = aranged_frames[~closing_bool+(array==0)]
-        ants_assigned_to_springs[x,ant] = np.round(np.interp(x, xp, fp))
+        x = arranged_frames[~closing_bool+(array == 0)]
+        ants_assigned_to_springs[x, ant] = np.round(np.interp(x, xp, fp))
+    return ants_assigned_to_springs
 
 
-def remove_artificial_cases(N_ants_around_springs,ants_assigned_to_springs):
+def remove_artificial_cases(N_ants_around_springs, ants_assigned_to_springs):
     print("Removing artificial cases...")
     unreal_ants_attachments = np.full(N_ants_around_springs.shape, np.nan)
     switch_attachments = np.full(N_ants_around_springs.shape, np.nan)
@@ -188,39 +199,15 @@ def remove_artificial_cases(N_ants_around_springs,ants_assigned_to_springs):
     return ants_assigned_to_springs
 
 
-def tracking_correction(directory,sub_dirs_names):
-    tracked_ants = sio.loadmat(os.path.join(directory, "ant_tracking", "tracking_data.mat"))["tracked_blobs_matrix"]
-    print("Correcting tracking...")
-    tracked_ants = correct_tracked_ants(os.path.join(directory, "ant_tracking"), tracked_ants)
-    # tracked_ants = sio.loadmat(os.path.join(directory, "ant_tracking", "tracking_data_corrected.mat"))["tracked_blobs_matrix"]
-    N_ants_around_springs = np.load(os.path.join(directory,"two_vars_post_processing", "N_ants_around_springs.npz"))["arr_0"]
-    last_frame = 0
-    for count, sub_dir in enumerate(sub_dirs_names):
-        print(f"Processing {sub_dir}...")
-        path_raw_analysis = os.path.join(directory, sub_dir, "raw_analysis")
-        path_post_processing = os.path.join(directory, sub_dir, "two_vars_post_processing")
-        ants_attached_labels = np.loadtxt(os.path.join(path_raw_analysis, "ants_attached_labels.csv"), delimiter=",")
-        ants_assigned_to_springs = assign_ants_to_springs(
-                                            tracked_ants[:, :, last_frame:last_frame+ants_attached_labels.shape[0]],
-                                            ants_attached_labels,
-                                            ants_attached_labels.shape[0])
-        ants_assigned_to_springs = remove_artificial_cases(
-                        N_ants_around_springs[last_frame:last_frame+ants_attached_labels.shape[0], :], ants_assigned_to_springs)
-        np.savez_compressed(os.path.join(directory,"two_vars_post_processing", "ants_assigned_to_springs.npz"), ants_assigned_to_springs)
-        last_frame += ants_attached_labels.shape[0]
-    print("Done!")
-
 if __name__=="__main__":
     directory = "Z:\\Dor_Gabay\\ThesisProject\\data\\analysed_with_tracking\\15.9.22\\plus0.3mm_force\\"
-    sub_dirs_names = [f"S528000{i}" for i in [8, 9]]
-    first_tracking_calculation(directory,sub_dirs_names)
-    # # wait for 3 hours
-    from time import sleep
-    sleep(2*60*60)
-    tracking_correction(directory, sub_dirs_names)
-    # sub_dirs_names = [f"S528000{i}" for i in [3, 4, 5, 6, 7]]
-    # first_tracking_calculation(directory,sub_dirs_names)
-    # # # wait for 3 hours
-    # from time import sleep
-    # sleep(4*60*60)
-    # tracking_correction(directory, sub_dirs_names)
+    sub_dirs_sets = [[f"S528000{i}" for i in [3, 4, 5, 6, 7]], [f"S528000{i}" for i in [8, 9]]]
+    # for count, data_set in enumerate(sub_dirs_sets):
+    #     first_tracking_calculation(directory, data_set)
+    #     sleep(5*60*60)
+    #     print("Correcting tracking...")
+    #     path_post_processing = os.path.join(directory, "post_processing", f"{data_set[0]}-{data_set[-1]}")
+    #     tracked_ants = correct_tracked_ants(sio.loadmat(os.path.join(path_post_processing, "tracking_data.mat"))["tracked_blobs_matrix"])
+    #     sio.savemat(os.path.join(path_post_processing, "tracking_data_corrected.mat"), {"tracked_blobs_matrix": tracked_ants})
+    assign_ants_to_springs(directory,sub_dirs_sets)
+    print("Done!")

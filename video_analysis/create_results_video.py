@@ -4,16 +4,16 @@ import os
 from data_analysis.data_preparation import PostProcessing
 from data_analysis.analysis import DataAnalyser
 import pickle
-
+import scipy.io as sio
 
 # class TrackingResultVideo(PostProcessing):
 class TrackingResultVideo():
-    def __init__(self, data_path, video_path, calibration_model,n_frames_to_save=None):
+    def __init__(self, data_path, video_path, n_frames_to_save=None, start_frame=None):
         print("_"*50)
         # super().__init__(data_path, calibration_model,correct_tracking=False)
         # super().__init__(data_path)
         self.load(data_path)
-        self.save_path = os.path.join(data_path, "ants_tracking_corrected.MP4")
+        self.save_path = os.path.join(data_path, "ants_tracking_corrected_assigned.MP4")
         print("Creating tracking results video, for video: ", video_path)
         print("Save the video in: ", self.save_path)
         self.collect_cropping_coordinates(video_path)
@@ -23,8 +23,8 @@ class TrackingResultVideo():
         print("Finished creating tracking results video")
 
     def load(self,data_path):
-        import scipy.io as sio
-        data_path = os.path.join(data_path, "two_vars_post_processing")
+        # data_path = os.path.join(data_path, "post_processing")
+        self.ants_assigned_to_springs = np.load(os.path.join(data_path, "ants_assigned_to_springs.npz"))['arr_0']
         self.tracked_ants = sio.loadmat(os.path.join(data_path,"tracking_data_corrected.mat"))["tracked_blobs_matrix"]
         self.N_ants_around_springs = np.load(os.path.join(data_path, "N_ants_around_springs.npz"))['arr_0']
 
@@ -41,10 +41,14 @@ class TrackingResultVideo():
         # self.left_upper_corner = np.array([0,0])
         # put circle on the object_center
         self.left_upper_corner = np.array([0,0])
-        tracked_ants = self.tracked_ants[~np.isnan(self.tracked_ants[:, 0, frame_num]), :, frame_num]
-        for i in range(tracked_ants.shape[0]):
-            ant_label = tracked_ants[i, 2]
-            ant_coordinates = tracked_ants[i, :2]
+        tracked_ants = self.tracked_ants[~np.isnan(self.tracked_ants[:, 0, frame_num]), :, frame_num].astype(int)
+        assinged_ants = self.ants_assigned_to_springs[frame_num]
+        # for i in range(tracked_ants.shape[0]):
+        for count, spring in enumerate(assinged_ants):
+            # ant_label = tracked_ants[i, 2]
+            ant_label = count+1
+            # ant_coordinates = tracked_ants[i, :2]
+            ant_coordinates = tracked_ants[tracked_ants[:,2]==ant_label, :2]
             object_center = ant_coordinates.astype(int)
             cv2.circle(frame, tuple(object_center), 5, (0, 0, 255), -1)
             # put text on the object_center
@@ -287,16 +291,16 @@ class ResultVideo(DataAnalyser):
 
 if __name__ == "__main__":
     # for i in [1,3,4,5,6,7,8,9]:
-    for i in [1]:
+    for i in [3]:
         vidname = f"S528000{i}"
         calibration_dir = "Z:\\Dor_Gabay\\ThesisProject\\data\\calibration\\post_slicing\\calibration_perfect2\\sliced_videos\\"
-        data_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\analysed_with_tracking\\15.9.22\\plus0.3mm_force\\{vidname}\\"
+        data_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\analysed_with_tracking\\15.9.22\\plus0.3mm_force\\post_processing\\S5280003-S5280007\\"
         video_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\videos\\15.9.22\\plus0.3mm_force\\{vidname}.MP4"
 
-        calibration_model = pickle.load(open(calibration_dir + "calibration_model.pkl", "rb"))
+        # calibration_model = pickle.load(open(calibration_dir + "calibration_model.pkl", "rb"))
         # ResultVideo(data_path, video_path, calibration_model)
-        ResultVideo(data_path, video_path, calibration_model,n_frames_to_save=1000)
+        # ResultVideo(data_path, video_path, calibration_model,n_frames_to_save=1000)
         # data_path = "Z:\\Dor_Gabay\\ThesisProject\\data\\analysed_with_tracking\\15.9.22\\plus0.3mm_force\\S5280008\\two_vars_post_processing"
-        # TrackingResultVideo(data_path, video_path, calibration_model,n_frames_to_save=5000)
+        TrackingResultVideo(data_path, video_path, n_frames_to_save=1000)
 
 

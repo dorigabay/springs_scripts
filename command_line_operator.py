@@ -111,7 +111,10 @@ if __name__ == '__main__':
         videos_to_analyze = [(x,args) for x in videos_to_analyze]
         pool.map(run_analysis, videos_to_analyze)
         pool.close()
+    print("-"*80)
+    print("Finished processing all videos in directory: ", args["dir_path"])
 
-
-# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking/ --complete_unanalyzed --iter_dir --nCPU 9 -con
-# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/ --vid_path Z:/Dor_Gabay/ThesisProject/data/videos/15.9.22/plus0.3mm_force/S5280007.MP4 --output_dir Z:/Dor_Gabay/ThesisProject/data/S5280007/ --complete_unanalyzed --nCPU 1 -con
+# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking/ --complete_unanalyzed --iter_dir --nCPU 5
+# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/11.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking/ --complete_unanalyzed --iter_dir --nCPU 5
+# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking/ --complete_unanalyzed --iter_dir --nCPU 5
+# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/14.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking/ --complete_unanalyzed --iter_dir --nCPU 5

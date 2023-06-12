@@ -57,7 +57,7 @@ def save_data(output_dir, snap_data, calculations, n_springs=20,continue_from_la
         empty_ants_attached_labels = np.array([np.nan for _ in range(100)]).reshape(1, 100)
         arrays = [empty_springs, empty_springs, empty_springs, empty_springs, empty_springs, empty_springs,
                   empty_blue_part, empty_blue_part, empty_ant_centers, empty_ant_centers, empty_blue_area_size,
-                  empty_ants_attached_labels]
+                  empty_ants_attached_labels, empty_ants_attached_labels]
     else:
         arrays = [calculations.N_ants_around_springs, calculations.size_ants_around_springs,
                   calculations.fixed_ends_coordinates_x, calculations.fixed_ends_coordinates_y,
@@ -65,12 +65,13 @@ def save_data(output_dir, snap_data, calculations, n_springs=20,continue_from_la
                   calculations.blue_part_coordinates_x, calculations.blue_part_coordinates_y,
                   calculations.ants_centers_x, calculations.ants_centers_y,
                   np.array(calculations.blue_area_size).reshape(-1, 1),
-                  calculations.ants_attached_labels.reshape(1, 100)]
+                  calculations.ants_attached_labels.reshape(1, 100),
+                  calculations.ants_attached_forgotten_labels.reshape(1, 100)]
     names = ["N_ants_around_springs", "size_ants_around_springs",
              "fixed_ends_coordinates_x", "fixed_ends_coordinates_y", "free_ends_coordinates_x",
              "free_ends_coordinates_y", "blue_part_coordinates_x", "blue_part_coordinates_y",
              "ants_centers_x", "ants_centers_y", "blue_area_sizes",
-             "ants_attached_labels"]
+             "ants_attached_labels", "ants_attached_forgotten_labels"]
     pickle.dump(snap_data, open(os.path.join(output_dir, f"snap_data_{snap_data[6]}.pickle"), "wb"))
     if snap_data[5]==0:
         for d, n in zip(arrays[:], names[:]):
@@ -91,43 +92,29 @@ def save_data(output_dir, snap_data, calculations, n_springs=20,continue_from_la
                 f.close()
 
 
-# def present_analysis_result(frame, springs, calculations, ants):
-#     # angles_to_object_free = calculations.angles_to_object_free[-1,:]+np.pi
-#     # angles_to_object_fixed = calculations.angles_to_object_fixed[-1,:]+np.pi
-#     # pulling_angle = angles_to_object_free- angles_to_object_fixed
-#     # pulling_angle = (pulling_angle+np.pi)%(2*np.pi)-np.pi
-#     # pulling_angle = np.round(pulling_angle,4)
-#     # number_of_ants = calculations.N_ants_around_springs[-1,:]
-#     image_to_illustrate = frame
-#     for point_green in springs.green_centers:
-#         image_to_illustrate = cv2.circle(image_to_illustrate, point_green.astype(int), 1, (0, 255, 0), 2)
-#     for point_red in springs.red_centers:
-#         image_to_illustrate = cv2.circle(image_to_illustrate, point_red.astype(int), 1, (0, 0, 255), 2)
-#     for count_, angle in enumerate(calculations.springs_angles_ordered):
-#         if angle != 0:
-#             if angle in springs.fixed_ends_edges_bundles_labels:
-#                 point = springs.fixed_ends_edges_centers[springs.fixed_ends_edges_bundles_labels.index(angle)]
-#                 image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 0, 0), 2)
-#                 image_to_illustrate = cv2.putText(image_to_illustrate, str(count_), point, cv2.FONT_HERSHEY_SIMPLEX, 1,
-#                                                   (255, 0, 0), 2)
-#                 image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 0, 0), 2)
-#             if angle in springs.free_ends_edges_bundles_labels:
-#                 point = springs.free_ends_edges_centers[springs.free_ends_edges_bundles_labels.index(angle)]
-#                 image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 0, 0), 2)
-#                 # image_to_illustrate = cv2.putText(image_to_illustrate, str(pulling_angle[count_]), point, cv2.FONT_HERSHEY_SIMPLEX, 1,(255, 0, 0), 2)
-#                 # image_to_illustrate = cv2.putText(image_to_illustrate, str(number_of_ants[count_]), point, cv2.FONT_HERSHEY_SIMPLEX, 1,(255, 0, 0), 2)
-#                 # image_to_illustrate = cv2.putText(image_to_illustrate, str(count_), point, cv2.FONT_HERSHEY_SIMPLEX, 1,(255, 0, 0), 2)
-#
-#     image_to_illustrate = cv2.circle(image_to_illustrate, springs.object_center, 1, (0, 0, 0), 2)
-#     # print("object center: ", springs.object_center)
-#     image_to_illustrate = cv2.circle(image_to_illustrate, springs.tip_point, 1, (255, 0, 0), 2)
-#     # try:
-#     #     ants.labeled_ants[~np.isin(ants.labeled_ants, calculations.ants_attached)] = 0
-#     #     image_to_illustrate = label2rgb(ants.labeled_ants, image=image_to_illustrate, bg_label=0)
-#     # except: pass
-#     cv2.imshow("frame", image_to_illustrate)
-#     cv2.waitKey(1)
-#     return image_to_illustrate, calculations.joints
+def present_analysis_result(frame, calculations):
+    image_to_illustrate = frame
+    for point_green in calculations.green_centers:
+        image_to_illustrate = cv2.circle(image_to_illustrate, point_green.astype(int), 1, (0, 255, 0), 2)
+    for point_red in calculations.red_centers:
+        image_to_illustrate = cv2.circle(image_to_illustrate, point_red.astype(int), 1, (0, 0, 255), 2)
+    for count_, angle in enumerate(calculations.springs_angles_ordered):
+        if angle != 0:
+            if angle in calculations.fixed_ends_edges_bundles_labels:
+                point = calculations.fixed_ends_edges_centers[calculations.fixed_ends_edges_bundles_labels.index(angle)]
+                image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 0, 0), 2)
+                image_to_illustrate = cv2.putText(image_to_illustrate, str(count_), point, cv2.FONT_HERSHEY_SIMPLEX, 1,
+                                                  (255, 0, 0), 2)
+                image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 0, 0), 2)
+            if angle in calculations.free_ends_edges_bundles_labels:
+                point = calculations.free_ends_edges_centers[calculations.free_ends_edges_bundles_labels.index(angle)]
+                image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 0, 0), 2)
+
+    image_to_illustrate = cv2.circle(image_to_illustrate, calculations.object_center, 1, (0, 0, 0), 2)
+    image_to_illustrate = cv2.circle(image_to_illustrate, calculations.tip_point, 1, (255, 0, 0), 2)
+    cv2.imshow("frame", image_to_illustrate)
+    cv2.waitKey(1)
+    return image_to_illustrate, calculations.joints
 
 
 def main(video_path, output_dir, parameters, starting_frame=None, continue_from_last=False):
@@ -140,16 +127,13 @@ def main(video_path, output_dir, parameters, starting_frame=None, continue_from_
         snap_data[6] = datetime.datetime.now().strftime("%d.%m.%Y-%H%M")
     else:
         snap_data = [None, None ,None, 0, 0, 0,datetime.datetime.now().strftime("%d.%m.%Y-%H%M")]
-        # snap_data: object_center, tip_point, springs_angles_reference_order,
-        # sum_blue_radius, frames_analysed, count, current_time
+        # in snap_data: object_center, tip_point, springs_angles_reference_order, sum_blue_radius, frames_analysed, count, current_time
     if starting_frame is not None:
         cap.set(cv2.CAP_PROP_POS_FRAMES, starting_frame)
     else:
         cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["starting_frame"])
     parameters["n_springs"] = 20
-    count = 0
     while True:
-    # for i in range(50):
         ret, frame = cap.read()
         if frame is None:
             print("End of video")
@@ -162,8 +146,8 @@ def main(video_path, output_dir, parameters, starting_frame=None, continue_from_
             snap_data = [calculations.object_center, calculations.tip_point, calculations.springs_angles_reference_order,
                                    snap_data[3]+int(calculations.blue_radius), snap_data[4]+1, snap_data[5], snap_data[6]]
             save_data(output_dir, calculations=calculations, snap_data=snap_data, continue_from_last=continue_from_last)
+            # present_analysis_result(frame, calculations)
             del calculations, ret, frame
-            # present_analysis_result(frame, springs, calculations, ants)
             print("Analyzed frame number:", snap_data[5], end="\r")
         except:
             print("Skipped frame: ", snap_data[5], end="\r")

@@ -8,18 +8,18 @@ from video_analysis.springs_detector import Springs
 
 OBJECT_DILATION_SIZE = 5
 ANTS_OPENING_CLOSING_STRUCTURE = np.ones((4, 4))
-MIN_ANTS_SIZE = 50
+MIN_ANTS_SIZE = 150
 
 
 class Ants(Springs):
     def __init__(self,parameters, image, previous_detections):
         super().__init__(parameters, image, previous_detections)
-        self.label_ants(image, self.whole_object_mask_unconnected)
+        self.label_ants(image, self.whole_object_mask_connected)
 
     def label_ants(self, image, object_mask):
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         lower_val = np.array([0, 0, 0])
-        upper_val = np.array([179, 255, 200])
+        upper_val = np.array([179, 255, 210])
         mask = cv2.inRange(hsv, lower_val, upper_val)
         mask = mask>0
 

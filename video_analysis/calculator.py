@@ -59,22 +59,27 @@ class Calculation(Ants):
         self.ants_centers_coordinates = ants.ants_centers
 
     def occupied_springs(self, springs_order):
-        dilated_ends = maximum_filter(self.free_ends_labeled,ANTS_SPRINGS_OVERLAP_SIZE)
-        dilated_ants = maximum_filter(self.labeled_ants,ANTS_SPRINGS_OVERLAP_SIZE)
+        dilated_ends = maximum_filter(self.free_ends_labeled, ANTS_SPRINGS_OVERLAP_SIZE)
+        dilated_ants = maximum_filter(self.labeled_ants, ANTS_SPRINGS_OVERLAP_SIZE)
         joints = ((dilated_ends != 0) * (dilated_ants != 0))
         self.joints = joints
-        ends_occupied = np.unique(self.bundles_labeled[joints])
-        ends_occupied = ends_occupied[np.where(ends_occupied != 0)]
-        N_ants_around_springs = np.zeros(self.n_springs)
-        size_ants_around_springs = np.zeros(self.n_springs)
-        self.ants_attached_labels = np.array([np.nan for x in range(100)])
-        for end in ends_occupied:
-            spring_position = springs_order==end
-            ends_i = np.unique(dilated_ants[(self.bundles_labeled == end)*(dilated_ends != 0)])[1:]
-            if np.sum(spring_position)==1:
-                self.ants_attached_labels[ends_i-1] = np.arange(self.n_springs)[spring_position][0]
-            N_ants_around_springs[spring_position] = len(ends_i)
-            size_ants_around_springs[spring_position] = np.sum(np.isin(self.labeled_ants,ends_i))
+        spring_ends_occupied = np.unique(self.bundles_labeled[joints])
+        spring_ends_occupied = spring_ends_occupied[np.where(spring_ends_occupied != 0)]
+        N_ants_around_springs = np.zeros(self.n_springs).astype(np.uint8)
+        size_ants_around_springs = np.zeros(self.n_springs).astype(np.uint32)
+        self.ants_attached_labels = np.full(100, 0).astype(np.uint8)
+        self.ants_attached_forgotten_labels = np.full(100, 0).astype(np.uint8)
+        for spring_end in spring_ends_occupied:
+            spring_position = springs_order == spring_end
+            ants_on_spring_end = np.unique(dilated_ants[(self.bundles_labeled == spring_end)*(dilated_ends != 0)])[1:]
+            if np.sum(spring_position) == 1:
+                springs_forgotten = self.ants_attached_labels[ants_on_spring_end-1]
+                ants_on_two_springs = ants_on_spring_end[springs_forgotten != 0]
+                springs_forgotten = springs_forgotten[springs_forgotten != 0]
+                self.ants_attached_forgotten_labels[ants_on_two_springs-1] = springs_forgotten
+                self.ants_attached_labels[ants_on_spring_end-1] = np.arange(1, self.n_springs+1)[spring_position][0]
+            N_ants_around_springs[spring_position] = len(ants_on_spring_end)
+            size_ants_around_springs[spring_position] = np.sum(np.isin(self.labeled_ants,ants_on_spring_end))
         return N_ants_around_springs.reshape(1,self.n_springs), size_ants_around_springs.reshape(1,self.n_springs)
 
     def reorder_coordinates(self,springs_order):

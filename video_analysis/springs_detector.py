@@ -8,7 +8,7 @@ from skimage.morphology import binary_dilation, binary_erosion, remove_small_obj
 from video_analysis import utils
 
 WHOLE_OBJECT_CLOSING_SIZE = 4
-COLOR_CLOSING = 3
+COLOR_CLOSING = 5
 BLUE_CLOSING = 9
 BLUE_SIZE_DEVIATION = 0.85
 BLUE_SIZE_DEVIATION_CENTER = 0.98
@@ -24,65 +24,62 @@ class Springs:
         self.n_springs = parameters["n_springs"]
         self.previous_detections = previous_detections
         binary_color_masks_connected, binary_color_masks_unconnected = self.mask_object_colors(parameters, image)
-        self.whole_object_mask_unconnected = self.combine_masks(list(binary_color_masks_unconnected.values()))
-        self.object_center, self.tip_point, self.blue_radius,self.blue_area_size =\
-            self.detect_blue_stripe(binary_color_masks_connected["b"])
+        self.whole_object_mask_unconnected = np.any(np.stack(list(binary_color_masks_unconnected.values()), axis=-1), axis=-1)
+        self.whole_object_mask_connected = np.any(np.stack(list(binary_color_masks_connected.values()), axis=-1), axis=-1)
+        self.object_center, self.tip_point, self.blue_radius,self.blue_area_size =self.detect_blue_stripe(binary_color_masks_connected["b"])
         green_mask = self.clean_mask(binary_color_masks_connected["g"],MIN_GREEN_SIZE)
         red_mask = self.clean_mask(binary_color_masks_connected["r"],MIN_RED_SIZE)
         red_labeled, green_labeled, fixed_ends_labeled, self.free_ends_labeled, self.red_centers, self.green_centers = \
             self.get_spring_parts(self.object_center,binary_color_masks_connected["r"],green_mask)
         self.bundles_labeled, self.bundles_labels = self.create_bundles_labels(red_mask,green_mask,fixed_ends_labeled)
-        real_springs_bundles_labels = \
-            self.assign_ends_to_bundles(self.bundles_labeled, fixed_ends_labeled,
-                                          self.free_ends_labeled,self.red_centers, green_labeled)
+        real_springs_bundles_labels = self.assign_ends_to_bundles(self.bundles_labeled, fixed_ends_labeled, self.free_ends_labeled, self.red_centers, green_labeled)
         bundles_labeled_after_removal = self.remove_labels(real_springs_bundles_labels, self.bundles_labeled)
-        self.fixed_ends_edges_centers, self.fixed_ends_edges_bundles_labels = \
-            self.find_bounderies_touches(fixed_ends_labeled, red_labeled, bundles_labeled_after_removal)
-        self.free_ends_edges_centers, self.free_ends_edges_bundles_labels = \
-            self.find_bounderies_touches(self.free_ends_labeled, red_labeled, bundles_labeled_after_removal)
+        self.fixed_ends_edges_centers, self.fixed_ends_edges_bundles_labels = self.find_bounderies_touches(fixed_ends_labeled, red_labeled, bundles_labeled_after_removal)
+        self.free_ends_edges_centers, self.free_ends_edges_bundles_labels = self.find_bounderies_touches(self.free_ends_labeled, red_labeled, bundles_labeled_after_removal)
 
-    def combine_masks(self,list_of_masks):
-        combined = list_of_masks[0]+list_of_masks[1]+list_of_masks[2]
-        combined = combined.astype(np.bool).astype(np.uint8)
-        return combined
+    # def combine_masks(self,list_of_masks):
+    #     # create a new array with all masks in new dimension
+    #     combined = np.any(np.stack(list_of_masks, axis=-1), axis=-1)
+    #     combined = list_of_masks[0]+list_of_masks[1]+list_of_masks[2]
+    #     combined = combined.astype(np.bool).astype(np.uint8)
+    #     return combined
 
     def mask_object_colors(self, parameters, image):
-        binary_color_masks_connected = {x:None for x in parameters["colors_spaces"]}
-        binary_color_masks_unconnected = {x:None for x in parameters["colors_spaces"]}
+        boolean_color_masks_connected = {x:None for x in parameters["colors_spaces"]}
+        boolean_color_masks_unconnected = {x:None for x in parameters["colors_spaces"]}
         blurred = cv2.GaussianBlur(image, (3, 3), 0)
         hsv_image = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
         for color in parameters["colors_spaces"]:
-            binary_mask = np.zeros(hsv_image.shape[:-1],"int")
+            boolean_mask = np.full(hsv_image.shape[:-1], False, dtype="bool")
             for hsv_space in parameters["colors_spaces"][color]:
-                mask1 = cv2.inRange(hsv_image, hsv_space[0], hsv_space[1])
-                mask2 = cv2.inRange(hsv_image, hsv_space[2], hsv_space[3])
-                binary_mask[(mask1+mask2)!=0] = 1
-            binary_color_masks_unconnected[color] = binary_mask
-            binary_mask = utils.connect_blobs(binary_mask,COLOR_CLOSING)
-            binary_color_masks_connected[color] = binary_mask
-        return binary_color_masks_connected, binary_color_masks_unconnected
+                mask1 = cv2.inRange(hsv_image, hsv_space[0], hsv_space[1]).astype(bool)
+                mask2 = cv2.inRange(hsv_image, hsv_space[2], hsv_space[3]).astype(bool)
+                boolean_mask[mask1+mask2] = True
+            boolean_color_masks_unconnected[color] = boolean_mask
+            boolean_mask = utils.connect_blobs(boolean_mask,COLOR_CLOSING)
+            boolean_color_masks_connected[color] = boolean_mask
+        return boolean_color_masks_connected, boolean_color_masks_unconnected
 
     def close_element(self, mask, structure):
-        mask = binary_dilation(mask, structure).astype(int)
-        mask = binary_erosion(mask, structure[:-2,:-2]).astype(int)
-        return mask
+        mask = binary_dilation(mask.astype(int), structure)
+        mask = binary_erosion(mask.astype(int), structure[:-2,:-2])
+        return mask.astype(bool)
 
     def detect_blue_stripe(self,mask_blue,closing_structure=BLUE_CLOSING):
         mask_blue_empty_closed = utils.connect_blobs(mask_blue, closing_structure)
-        lableled,_ = label(mask_blue_empty_closed)
-        bulb_prop = regionprops(lableled)
-        biggest_blub = bulb_prop[np.argmax([x.area for x in bulb_prop])].label
-        mask_blue_empty_closed[np.invert(lableled==biggest_blub)] = 0
-        mask_blue_full = np.zeros(mask_blue_empty_closed.shape,"int")
+        labeled,_ = label(mask_blue_empty_closed)
+        blob_prop = regionprops(labeled)
+        biggest_blob = blob_prop[np.argmax([x.area for x in blob_prop])].label
+        mask_blue_empty_closed[np.invert(labeled==biggest_blob)] = 0
+        mask_blue_full = np.zeros(mask_blue_empty_closed.shape,"uint8")
         binary_fill_holes(mask_blue_empty_closed,output=mask_blue_full)
         inner_mask = mask_blue_full - mask_blue_empty_closed
         inner_mask_center = center_of_mass(inner_mask)
-        # if the center is not found, use the previous detection
+        # if the center is not found, use the previous detection:
         if not np.isnan(np.sum(inner_mask_center)):
             object_center = [int(x) for x in inner_mask_center]
             object_center = np.array([object_center[1],object_center[0]])
         else: object_center = self.previous_detections[0]
-
         # if the length between the center and the edge is not as the previous detection,
         # use the previous detection for the center:
         mask_blue_full_contour = find_contours(mask_blue_full)[0].astype(int)
@@ -113,31 +110,32 @@ class Springs:
         return farthest_point, np.max(distances)
 
     def clean_mask(self,mask,min_size):
+        mask = mask.astype(bool)
         inner_circle_mask = utils.create_circular_mask(mask.shape, center=self.object_center, radius=self.blue_radius)
         outer_circle_mask = utils.create_circular_mask(mask.shape, center=self.object_center, radius=self.blue_radius*3)
-        mask[inner_circle_mask] = 0
-        mask[np.invert(outer_circle_mask)] = 0
-        mask = binary_fill_holes(mask).astype(np.uint8)
+        mask[inner_circle_mask] = False
+        mask[np.invert(outer_circle_mask)] = False
+        mask = binary_fill_holes(mask.astype(np.uint8)).astype(bool)
         mask = self.remove_small_blobs(mask, min_size)
         return mask
 
-    def remove_small_blobs(self, binary_mask: np.ndarray, min_size: int = 0):
+    def remove_small_blobs(self, bool_mask, min_size: int = 0):
         """
         Removes from the input mask all the blobs having less than N adjacent pixels.
         We set the small objects to the background label 0.
         """
+        bool_mask = bool_mask.astype(bool)
         if min_size > 0:
-            dtype = binary_mask.dtype
-            binary_mask = remove_small_objects(binary_mask.astype(bool), min_size=min_size)
-            binary_mask = binary_mask.astype(dtype)
-        return binary_mask
+            # dtype = bool_mask.dtype
+            bool_mask = remove_small_objects(bool_mask, min_size=min_size)
+            # bool_mask = bool_mask.astype(dtype)
+        return bool_mask
 
     def screen_small_labels(self, labeled, threshold=0.5):
         # calculate the number of pixels in each label, and remove labels with too few pixels, by the being smaller than the mean by a threshold
         label_counts = np.bincount(labeled.ravel())
         too_small = np.arange(len(label_counts))[label_counts < np.mean(label_counts[1:]) * threshold]
         labeled[np.isin(labeled, too_small)] = 0
-
         return label(labeled)
 
     def get_spring_parts(self,object_center,red_mask,green_mask):
@@ -172,7 +170,7 @@ class Springs:
         self.bundles_centers = fied_ends_centers
         center = np.array([self.object_center[1],self.object_center[0]])
         tipp = np.array([self.tip_point[1],self.tip_point[0]])
-        fied_ends_angles = self.calc_angles(fied_ends_centers, center, tipp)
+        fied_ends_angles = utils.calc_angles(fied_ends_centers, center, tipp)
         labeled_image_sorted = np.zeros(labeled_image.shape)
         for pnt,angle in zip(fied_ends_centers,fied_ends_angles):
             bundle_label = labeled_image[pnt[0],pnt[1]]
@@ -187,15 +185,15 @@ class Springs:
             labeled_image_sorted[labeled_image==bad_label] = 0
         return labeled_image_sorted, fied_ends_angles
 
-    def calc_angles(self, points_to_measure, object_center, tip_point):
-        ba = points_to_measure - object_center
-        bc = (tip_point - object_center)
-        ba_y = ba[:,0]
-        ba_x = ba[:,1]
-        dot = ba_y*bc[0] + ba_x*bc[1]
-        det = ba_y*bc[1] - ba_x*bc[0]
-        angles = np.arctan2(det, dot)
-        return angles
+    # def calc_angles(self, points_to_measure, object_center, tip_point):
+    #     ba = points_to_measure - object_center
+    #     bc = (tip_point - object_center)
+    #     ba_y = ba[:,0]
+    #     ba_x = ba[:,1]
+    #     dot = ba_y*bc[0] + ba_x*bc[1]
+    #     det = ba_y*bc[1] - ba_x*bc[0]
+    #     angles = np.arctan2(det, dot)
+    #     return angles
 
     def assign_ends_to_bundles(self,bundles_labeled,fixed_ends_labeled,free_ends_labeled,red_centers,green_labeled):
         fixed_ends_centers = utils.swap_columns(np.array(

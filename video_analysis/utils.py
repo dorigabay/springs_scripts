@@ -26,7 +26,7 @@ def swap_columns(array):
 
 
 def connect_blobs(mask, overlap_size=1):
-    mask = mask.astype(np.uint8)
+    mask = mask.astype(bool)
     labeled, _ = label(mask)
     maximum_filter_labeled1 = maximum_filter(labeled, overlap_size)
     max_val = np.max(labeled)+1
@@ -35,7 +35,7 @@ def connect_blobs(mask, overlap_size=1):
     boolean_overlap = (maximum_filter_labeled1 != 0) * (minimum_filter_labeled2 != 0)
     labeled[boolean_overlap] = 1
     labeled[labeled == max_val] = 0
-    return labeled.astype(bool).astype("int")
+    return labeled.astype(bool)
 
 
 def extend_lines(matrix, extend_by=3):
@@ -384,3 +384,13 @@ def combine_masks(list_of_masks):
     result = result.clip(0, 255).astype("uint8")
     return result
 
+
+def calc_angles(points_to_measure, object_center, tip_point):
+    ba = points_to_measure - object_center
+    bc = (tip_point - object_center)
+    ba_y = ba[:,0]
+    ba_x = ba[:,1]
+    dot = ba_y*bc[0] + ba_x*bc[1]
+    det = ba_y*bc[1] - ba_x*bc[0]
+    angles = np.arctan2(det, dot)
+    return angles
