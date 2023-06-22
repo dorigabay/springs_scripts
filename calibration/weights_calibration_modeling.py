@@ -11,7 +11,7 @@ from sklearn.model_selection import train_test_split
 import pickle
 
 
-class Calibration:
+class CalibrationModeling:
     def __init__(self, directories, weights, output_path, video_paths=None):
         self.directories = directories
         self.weights = weights
@@ -56,7 +56,7 @@ class Calibration:
         cap = cv2.VideoCapture(video_path)
         ret, frame = cap.read()
         #collect two points from the user
-        from general_video_scripts.collect_color_parameters import collect_points
+        from general_video_scripts.collect_analysis_parameters import collect_points
         points = collect_points(frame, 2)
         upper_point = points[0]
         lower_point = points[1]
@@ -173,8 +173,9 @@ class Calibration:
 
     def load_data(self,directory):
         self.num_of_springs = 1
-        self.norm_size = pickle.load(open(os.path.join(directory,"blue_median_area.pickle"), "rb"))
+        # self.norm_size = pickle.load(open(os.path.join(directory,"blue_median_area.pickle"), "rb"))
         directory = os.path.join(directory, "raw_analysis")+"\\"
+        self.norm_size = np.median(np.loadtxt(os.path.join(directory, "blue_area_sizes.csv"), delimiter=","))
         fixed_ends_coordinates_x = np.loadtxt(os.path.join(directory,"fixed_ends_coordinates_x.csv"), delimiter=",")
         fixed_ends_coordinates_y = np.loadtxt(os.path.join(directory,"fixed_ends_coordinates_y.csv"), delimiter=",")
         self.fixed_ends_coordinates = np.stack((np.expand_dims(fixed_ends_coordinates_x,1), np.expand_dims(fixed_ends_coordinates_y,1)), axis=2)
@@ -260,7 +261,7 @@ class Calibration:
 
 
 if __name__ == "__main__":
-    data_dir = "Z:\\Dor_Gabay\\ThesisProject\\data\\exp_collected_data\\15.9.22\\plus0.3mm_force\\S5280006\\"
+    # data_dir = "Z:\\Dor_Gabay\\ThesisProject\\data\\exp_collected_data\\15.9.22\\plus0.3mm_force\\S5280006\\"
 
     # calibration_dir1 = "Z:\\Dor_Gabay\\ThesisProject\\data\\calibration\\post_slicing\\calibration1\\"
     # directories_1 = [os.path.join(calibration_dir1, o) for o in os.listdir(calibration_dir1)
@@ -295,7 +296,7 @@ if __name__ == "__main__":
     video_paths4 = [os.path.join(calibration_video_dir4, o) for o in os.listdir(calibration_video_dir4)
                     if "MP4" in os.path.basename(o) and "plots" not in os.path.basename(o)]#]# and "_sliced" in os.path.basename(o)]# and "S5430006_sliced" not in os.path.basename(o)]
 
-    Calibration(directories=directories_4, weights=weights4, output_path=calibration_dir4, video_paths=video_paths4)
+    CalibrationModeling(directories=directories_4, weights=weights4, output_path=calibration_dir4, video_paths=video_paths4)
     # Calibration(directories=directories_3, weights=weights3, output_path=calibration_dir3, video_paths=video_paths3)
     # Calibration(directories=directories_2, weights=weights2, output_path=calibration_dir2, video_paths=video_paths2)
     print("-"*60)

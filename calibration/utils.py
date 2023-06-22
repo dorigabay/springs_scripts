@@ -2,7 +2,7 @@ import os
 import pickle
 import numpy as np
 import cv2
-from general_video_scripts.collect_color_parameters import neutrlize_colour
+from general_video_scripts.collect_analysis_parameters import neutrlize_colour
 from video_analysis.springs_detector import Springs
 from scipy.ndimage import label, sum
 

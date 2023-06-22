@@ -16,7 +16,7 @@ import numpy as np
 import utils
 import copy
 from scipy.ndimage import label, center_of_mass
-from general_video_scripts import collect_color_parameters
+from general_video_scripts import collect_analysis_parameters
 from skimage import transform
 from video_analysis import utils as utils_video_analysis
 

@@ -3,7 +3,7 @@ import glob
 import argparse
 import multiprocessing as mp
 #local packages
-import general_video_scripts.collect_color_parameters as collect_color_parameters
+import general_video_scripts.collect_analysis_parameters as collect_color_parameters
 import video_analysis.main as main
 
 
@@ -114,7 +114,7 @@ if __name__ == '__main__':
     print("-"*80)
     print("Finished processing all videos in directory: ", args["dir_path"])
 
-# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking/ --complete_unanalyzed --iter_dir --nCPU 5
-# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/11.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking/ --complete_unanalyzed --iter_dir --nCPU 5
-# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking/ --complete_unanalyzed --iter_dir --nCPU 5
-# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/14.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking/ --complete_unanalyzed --iter_dir --nCPU 5
+# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking/ --complete_unanalyzed --iter_dir --nCPU 5 -con
+# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/11.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking/ --complete_unanalyzed --iter_dir --nCPU 5 -con
+# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/14.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking/ --complete_unanalyzed --iter_dir --nCPU 2 -con
+# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking/ --complete_unanalyzed --iter_dir --nCPU 1 -con

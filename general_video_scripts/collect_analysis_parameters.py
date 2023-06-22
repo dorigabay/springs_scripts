@@ -274,6 +274,7 @@ def crop_frame_by_coordinates(frame, crop_coordinates):
     """
     return frame[crop_coordinates[0]:crop_coordinates[1], crop_coordinates[2]:crop_coordinates[3]]
 
+
 def add_colors_parameters(frame_with_mask,colors_dict, color_name):
     margin = np.array([12, 30, 30])
     boundary_hsv = np.array([179, 255, 255])
@@ -286,7 +287,8 @@ def add_colors_parameters(frame_with_mask,colors_dict, color_name):
     colors_dict[color_name] += color_spaces
     return colors_dict
 
-def set_parameters(video, starting_frame=False, stiff_object=False, crop_frame=False,image=False):
+
+def set_parameters(video, starting_frame=False, stiff_object=False, crop_frame=False,image=False, n_springs=20):
     """Collects the parameters and returns them in a dictionary.
     """
     if not image:
@@ -320,17 +322,18 @@ def set_parameters(video, starting_frame=False, stiff_object=False, crop_frame=F
         color_spaces = create_color_space_from_points(frame_cropped, points, margin, boundary_hsv)
         print(f"color_spaces for color {color_name}: {color_spaces}")
         colors[short_name] = color_spaces
-    parameters = {"crop_coordinates": crop_coordinates, "colors_spaces": colors, "starting_frame": start_frame}
+    parameters = {"crop_coordinates": crop_coordinates, "colors_spaces": colors, "starting_frame": start_frame, "n_springs": n_springs}
     while not show_parameters_result(video, parameters):
-        parameters = set_parameters(video, starting_frame=starting_frame, stiff_object=stiff_object, crop_frame=crop_frame)
+        parameters = set_parameters(video, starting_frame=starting_frame, stiff_object=stiff_object, crop_frame=crop_frame, n_springs=n_springs)
     return parameters
 
 
-def main(videos_to_analyse,output_folder,starting_frame=False,collect_crop=False):
+def main(videos_to_analyse,output_folder,starting_frame=False,collect_crop=False, n_springs=None):
     output_path_parameters = os.path.join(output_folder, "parameters")
     os.makedirs(output_path_parameters, exist_ok=True)
     parameters = {}
     first = True
+    if n_springs is None: n_springs = int(input("How many springs attached to the object?"))
     for video,i in zip(videos_to_analyse,range(len(videos_to_analyse))):
         print("Collecting prefernces for: ", video)
         video_name = os.path.basename(video).split(".")[0]
@@ -345,13 +348,13 @@ def main(videos_to_analyse,output_folder,starting_frame=False,collect_crop=False
                 first = False
         elif reuse == 'n':
             if first:
-                parameters[video] = set_parameters(video, starting_frame=starting_frame, crop_frame=collect_crop)
+                parameters[video] = set_parameters(video, starting_frame=starting_frame, crop_frame=collect_crop, n_springs=n_springs)
                 first = False
             elif not first:
                 parameters[video] = copy.copy(parameters[videos_to_analyse[i-1]])
                 parameters[video]["starting_frame"] = int(input("What frame to start with: "))
                 while not show_parameters_result(video, parameters[video]):
-                    parameters[video] = set_parameters(video, starting_frame=starting_frame, crop_frame=collect_crop)
+                    parameters[video] = set_parameters(video, starting_frame=starting_frame, crop_frame=collect_crop, n_springs=n_springs)
             with open(os.path.join(output_path_parameters, f"{video_name}_video_parameters.pickle"), 'wb') as f:
                 pickle.dump({video: parameters[video]}, f)
     return output_path_parameters

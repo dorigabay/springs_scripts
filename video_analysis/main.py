@@ -3,7 +3,7 @@ import os
 import numpy as np
 import scipy.io as sio
 import pickle
-from general_video_scripts.collect_color_parameters import neutrlize_colour
+from general_video_scripts.collect_analysis_parameters import neutrlize_colour
 import datetime
 # local imports:
 from video_analysis.calculator import Calculation
@@ -25,26 +25,18 @@ def save_as_mathlab_matrix(output_dir):
     os.system(execution_string)
 
 
-def save_blue_areas_median(output_dir):
-    blue_area_sizes = np.loadtxt(os.path.join(output_dir, "blue_area_sizes.csv"), delimiter=",")
-    median_blue_area_size = np.median(blue_area_sizes)
-    with open(os.path.join(output_dir, "blue_median_area.pickle"), 'wb') as f:
-        pickle.dump(median_blue_area_size, f)
+# def save_blue_areas_median(output_dir):
+#     blue_area_sizes = np.loadtxt(os.path.join(output_dir, "blue_area_sizes.csv"), delimiter=",")
+#     median_blue_area_size = np.median(blue_area_sizes)
+#     with open(os.path.join(output_dir, "blue_median_area.pickle"), 'wb') as f:
+#         pickle.dump(median_blue_area_size, f)
 
-
-# def get_csv_line_count(csv_file):
-#     import subprocess
-#     cmd = f'wc -l {csv_file}'
-#     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-#     print(result)
-#     output = result.stdout.strip()
-#     line_count = int(output.split()[0])
-#     return line_count
 
 def get_csv_line_count(csv_file):
     with open(csv_file, 'r') as file:
         line_count = sum(1 for _ in file)
     return line_count
+
 
 def save_data(output_dir, snap_data, calculations, n_springs=20,continue_from_last=False):
     if not os.path.exists(output_dir):
@@ -119,8 +111,9 @@ def present_analysis_result(frame, calculations):
 
 def main(video_path, output_dir, parameters, starting_frame=None, continue_from_last=False):
     output_dir = os.path.join(output_dir, "raw_analysis")
+    os.makedirs(output_dir, exist_ok=True)
     cap = cv2.VideoCapture(video_path)
-    if continue_from_last:
+    if continue_from_last and len([f for f in os.listdir(output_dir) if f.startswith("snap_data")]) != 0:
         snaps = [f for f in os.listdir(output_dir) if f.startswith("snap_data")]
         snap_data = pickle.load(open(os.path.join(output_dir, snaps[-1]), "rb"))
         parameters["starting_frame"] = snap_data[5]
@@ -132,7 +125,7 @@ def main(video_path, output_dir, parameters, starting_frame=None, continue_from_
         cap.set(cv2.CAP_PROP_POS_FRAMES, starting_frame)
     else:
         cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["starting_frame"])
-    parameters["n_springs"] = 20
+    # parameters["n_springs"] = 20
     while True:
         ret, frame = cap.read()
         if frame is None:
@@ -146,7 +139,7 @@ def main(video_path, output_dir, parameters, starting_frame=None, continue_from_
             snap_data = [calculations.object_center, calculations.tip_point, calculations.springs_angles_reference_order,
                                    snap_data[3]+int(calculations.blue_radius), snap_data[4]+1, snap_data[5], snap_data[6]]
             save_data(output_dir, calculations=calculations, snap_data=snap_data, continue_from_last=continue_from_last)
-            # present_analysis_result(frame, calculations)
+            present_analysis_result(frame, calculations)
             del calculations, ret, frame
             print("Analyzed frame number:", snap_data[5], end="\r")
         except:
@@ -155,14 +148,16 @@ def main(video_path, output_dir, parameters, starting_frame=None, continue_from_
         snap_data[5] += 1
         continue_from_last = False
     cap.release()
-    save_as_mathlab_matrix(output_dir)
-    save_blue_areas_median(output_dir)
+    if not os.path.exists(os.path.join(output_dir, f"analysis_ended_{snap_data[6]}.pickle")):
+        save_as_mathlab_matrix(output_dir)
+        # save_blue_areas_median(output_dir)
+    pickle.dump("video_ended", open(os.path.join(output_dir, f"analysis_ended_{snap_data[6]}.pickle"), "wb"))
 
 
 if __name__ == "__main__":
     video_path = "Z:\\Dor_Gabay\\ThesisProject\\data\\videos\\15.9.22\\plus0.3mm_force\\S5280007.MP4"
     output_dir = "Z:\\Dor_Gabay\\ThesisProject\\data\\analysed_with_tracking_tesss\\"
     parameters_dir = "Z:\\Dor_Gabay\\ThesisProject\\data\\videos\\15.9.22\\parameters\\"
-    from general_video_scripts.collect_color_parameters import get_parameters
+    from general_video_scripts.collect_analysis_parameters import get_parameters
     parameters = get_parameters(parameters_dir,video_path)
     main(video_path, output_dir, parameters,starting_frame=0, continue_from_last=True)

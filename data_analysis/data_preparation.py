@@ -52,7 +52,8 @@ class PostProcessing:
             [np.loadtxt(os.path.join(self.directory, sub_dir, "raw_analysis", "blue_part_coordinates_y.csv"), delimiter=",") for sub_dir in self.sub_dirs_names], axis=0)), axis=2)
         self.object_center = blue_part_coordinates[:, 0, :]
         self.blue_tip_coordinates = blue_part_coordinates[:, -1, :]
-        self.norm_size = np.array([pickle.load(open(os.path.join(self.directory, sub_dir, "raw_analysis", "blue_median_area.pickle"), "rb")) for sub_dir in self.sub_dirs_names])
+        # self.norm_size = np.array([pickle.load(open(os.path.join(self.directory, sub_dir, "raw_analysis", "blue_median_area.pickle"), "rb")) for sub_dir in self.sub_dirs_names])
+        self.norm_size = np.array([np.median(np.loadtxt(os.path.join(self.directory, sub_dir, "raw_analysis", "blue_area_sizes.csv"), delimiter=",")) for sub_dir in self.sub_dirs_names])
         self.num_of_frames_per_video = np.array(
             [np.loadtxt(os.path.join(self.directory, sub_dir, "raw_analysis", "N_ants_around_springs.csv"), delimiter=",").shape[0] for sub_dir in self.sub_dirs_names])
         self.make_sets_idx()
