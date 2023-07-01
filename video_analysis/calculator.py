@@ -29,9 +29,10 @@ class Calculation(Ants):
         self.ants_centers_y[:, :ants_centers_y.shape[1]] = ants_centers_y
 
     def initiate_springs_angles_matrix(self):
+        #TODO: make the 3rd line in this function to be functional (if np.sum(np.abs(linspace_angles-self.previous_detections[2]))==0:)
         linspace_angles = np.linspace(-np.pi, np.pi-np.pi/self.n_springs, self.n_springs).reshape(1, self.n_springs)
         if self.previous_detections[2] is not None:
-            if np.sum(linspace_angles-self.previous_detections[2])==0:
+            if np.sum(np.abs(linspace_angles-self.previous_detections[2]))==0:
                 if len(self.bundles_labels) == self.n_springs:
                     self.springs_angles_reference_order = np.sort(self.bundles_labels).reshape(1, self.n_springs)
                 else:
@@ -42,18 +43,25 @@ class Calculation(Ants):
             self.springs_angles_reference_order = np.sort(self.bundles_labels).reshape(1, self.n_springs)
         else:
             self.springs_angles_reference_order = linspace_angles
+            min_index = np.argmin(np.abs(np.array(self.bundles_labels)))
+            diff = np.abs(np.array(self.bundles_labels)[min_index])
+            self.springs_angles_reference_order -= diff
 
     def match_springs(self, springs_angles_reference_order):
-        current_springs_angles = list(self.bundles_labels)
+        subtraction_combinations = np.cos(springs_angles_reference_order[0][:, np.newaxis] - self.bundles_labels)
+        sort = np.argsort(subtraction_combinations, axis=1)[0]
+        current_springs_angles = list(np.array(self.bundles_labels)[sort])
         assigned_angles_classes = []
         for value in current_springs_angles:
             cos_diff = np.cos(springs_angles_reference_order - value)
-            assigned_class = np.argmax(cos_diff)
+            assigned_class = np.argsort(cos_diff)[0][-1]
+            if assigned_class in assigned_angles_classes:
+                assigned_class = np.argsort(cos_diff)[0][-2]
             assigned_angles_classes.append(assigned_class)
         new_springs_row = np.array([np.nan for x in range(self.n_springs)])
         for angle_class, angle in zip(assigned_angles_classes, current_springs_angles):
             new_springs_row[angle_class] = angle
-        self.springs_angles_ordered =  new_springs_row
+        self.springs_angles_ordered = new_springs_row
 
     def ants_centers(self, ants):
         self.ants_centers_coordinates = ants.ants_centers

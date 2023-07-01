@@ -167,9 +167,9 @@ def interpolate_data(array,undetected_bool,period=None):
         else: array[:,col] = np.interp(xp, xp_nonan, fp_nonan)
     return array
 
-def find_cells_to_interpolate(array):
+def find_cells_to_interpolate(array, min_size=8):
     undetected_springs_bool = np.isnan(array)
-    undetected_springs_for_long_time = filter_continuity(convert_bool_to_binary(undetected_springs_bool),min_size=8)
+    undetected_springs_for_long_time = filter_continuity(convert_bool_to_binary(undetected_springs_bool),min_size=min_size)
     cells_to_interpolate = copy.copy(undetected_springs_bool)
     cells_to_interpolate[undetected_springs_for_long_time] = False
     return cells_to_interpolate

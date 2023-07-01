@@ -164,26 +164,27 @@ class Springs:
         all_parts_mask = self.close_element(all_parts_mask,closing_structure)
         # all_parts_mask = utils.connect_blobs(all_parts_mask, closing_structure)
         labeled_image, num_features = label(all_parts_mask, generate_binary_structure(2, 2))
-        fied_ends_centers = center_of_mass(fixed_ends_labeled, labels=fixed_ends_labeled,
+        fixed_ends_centers = center_of_mass(fixed_ends_labeled, labels=fixed_ends_labeled,
                                          index=np.unique(fixed_ends_labeled)[1:])
-        fied_ends_centers = np.array([np.array([x, y]).astype("int") for x, y in fied_ends_centers])
-        self.bundles_centers = fied_ends_centers
+        fixed_ends_centers = np.array([np.array([x, y]).astype("int") for x, y in fixed_ends_centers])
+        self.bundles_centers = fixed_ends_centers
         center = np.array([self.object_center[1],self.object_center[0]])
         tipp = np.array([self.tip_point[1],self.tip_point[0]])
-        fied_ends_angles = utils.calc_angles(fied_ends_centers, center, tipp)
+        fixed_ends_angles = utils.calc_angles(fixed_ends_centers, center, tipp)
+        # print(len(np.unique(fixed_ends_angles)))
         labeled_image_sorted = np.zeros(labeled_image.shape)
-        for pnt,angle in zip(fied_ends_centers,fied_ends_angles):
+        for pnt,angle in zip(fixed_ends_centers,fixed_ends_angles):
             bundle_label = labeled_image[pnt[0],pnt[1]]
             if bundle_label != 0:
                 labeled_image_sorted[labeled_image == bundle_label] = angle
-        bundels_labels_fixed_centers = [labeled_image[x[0],x[1]] for x in fied_ends_centers]
+        bundels_labels_fixed_centers = [labeled_image[x[0],x[1]] for x in fixed_ends_centers]
         # bad_bundels = np.unique(bundels_labels_fixed_centers)
 
         counts = np.array([bundels_labels_fixed_centers.count(x) for x in bundels_labels_fixed_centers])
         melted_bundles = np.unique(np.array(bundels_labels_fixed_centers)[counts > 1])
         for bad_label in melted_bundles:
             labeled_image_sorted[labeled_image==bad_label] = 0
-        return labeled_image_sorted, fied_ends_angles
+        return labeled_image_sorted, fixed_ends_angles
 
     # def calc_angles(self, points_to_measure, object_center, tip_point):
     #     ba = points_to_measure - object_center

@@ -125,7 +125,7 @@ def main(video_path, output_dir, parameters, starting_frame=None, continue_from_
         cap.set(cv2.CAP_PROP_POS_FRAMES, starting_frame)
     else:
         cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["starting_frame"])
-    # parameters["n_springs"] = 20
+    parameters["n_springs"] = 20
     while True:
         ret, frame = cap.read()
         if frame is None:
@@ -139,7 +139,7 @@ def main(video_path, output_dir, parameters, starting_frame=None, continue_from_
             snap_data = [calculations.object_center, calculations.tip_point, calculations.springs_angles_reference_order,
                                    snap_data[3]+int(calculations.blue_radius), snap_data[4]+1, snap_data[5], snap_data[6]]
             save_data(output_dir, calculations=calculations, snap_data=snap_data, continue_from_last=continue_from_last)
-            present_analysis_result(frame, calculations)
+            # present_analysis_result(frame, calculations)
             del calculations, ret, frame
             print("Analyzed frame number:", snap_data[5], end="\r")
         except:

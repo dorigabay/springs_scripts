@@ -53,7 +53,7 @@ def plot_ant_profiles(analysed, window_size=1, title="", output_dir=None):
 
     #plot number of cases
     plt.clf()
-    y = np.sum(analysed.profiles_start_with_one_ant, axis=0)
+    y = np.sum(analysed.single_ant_profiles, axis=0)
     y = y[y>50]
     x = np.arange(0, y.shape[0], 1)
     plt.plot(x, y, color="purple")
@@ -63,15 +63,15 @@ def plot_ant_profiles(analysed, window_size=1, title="", output_dir=None):
     plt.savefig(os.path.join(output_dir, f"number of profiles (movie {title}).png"))
 
     force_magnitude_copy = np.copy(analysed.all_profiles_force_magnitude)
-    force = np.abs(analysed.all_profiles_force_magnitude * np.sin(analysed.all_profiles_force_direction))
-    for y_ori, y_title in zip([force_magnitude_copy, force],["force magnitude (mN)", "angular force (mN)"]):
+    angular_force = np.abs(analysed.all_profiles_angular_force)
+    for y_ori, y_title in zip([force_magnitude_copy, angular_force],["force magnitude (mN)", "angular force (mN)"]):
         for attachment in ["first attachment", "all but first attachment"]:
             if attachment == "first attachment":
-                bool = np.copy(analysed.profiles_start_with_one_ant)
+                bool = np.copy(analysed.single_ant_profiles)
                 bool[analysed.all_profiles_precedence != 1, :] = False
                 y = np.copy(y_ori)
             else:
-                bool = np.copy(analysed.profiles_start_with_one_ant)
+                bool = np.copy(analysed.single_ant_profiles)
                 bool[analysed.all_profiles_precedence == 1, :] = False
                 y = np.copy(y_ori)
             bool[~bool[:, 200], :] = False
@@ -95,13 +95,34 @@ def plot_ant_profiles(analysed, window_size=1, title="", output_dir=None):
             plt.savefig(os.path.join(output_dir, f"ant {y_title} profiles - {attachment} (movie {title}).png"))
 # plot_ant_profiles(analysed, window_size=50, title=spring_type, output_dir=output_dir)
 
+def draw_single_profiles(analysed, output_path, profile_min_length=200, exmaples_number=200):
+    occ = ((analysed.all_profiles_information[:, 3] - analysed.all_profiles_information[:,2]) > profile_min_length)\
+          * np.all(analysed.all_profiles_N_ants_around_springs[:, 0:profile_min_length] == 1, axis=1)\
+          * (analysed.all_profiles_information[:, 5] == 0)
+          # * (analysed.all_profiles_information[:, 4] == 1) \
+    print("sum(occ)", np.sum(occ))
+    profiles = np.arange(len(occ))[occ]
+    output_path = os.path.join(output_path, "single_studies")
+    os.makedirs(output_path, exist_ok=True)
+    profiles = np.random.choice(profiles, size=exmaples_number, replace=False)
+    for i in profiles:
+        angular_force = analysed.all_profiles_angular_force[i, :]
+        info = analysed.all_profiles_information[i, :]
+        x = np.arange(np.sum(~np.isnan(angular_force)))
+        y = angular_force[~np.isnan(angular_force)]
+        plt.clf()
+        plt.plot(x, y, color="purple")
+        plt.xlim(0, profile_min_length)
+        plt.title(f"spring: {info[1]}, start: {info[2]}, end: {info[3]}, precedence: {info[4]}")
+        plt.savefig(os.path.join(output_path, f"profile_{i}.png"))
+
 # def plot_profiles_length_distrubution(analysed, window_size=1, title="", output_dir=None):
 #     for attachment in ["first attachment", "all but first attachment"]:
 #         if attachment == "first attachment":
-#             bool = np.copy(analysed.profiles_start_with_one_ant)
+#             bool = np.copy(analysed.single_ant_profiles)
 #             bool[analysed.all_profiles_precedence != 1, :] = False
 #         else:
-#             bool = np.copy(analysed.profiles_start_with_one_ant)
+#             bool = np.copy(analysed.single_ant_profiles)
 #             bool[analysed.all_profiles_precedence == 1, :] = False
 #
 #
@@ -135,11 +156,11 @@ def plot_query_information_to_attachment_length(analysed, start=0, end=None, win
     for x_ori, x_name in zip([x_velocity, x_N_ants], ["profile velocity mean", "mean number of ants"]):
         for attachment in ["1st", "2st&higher"]:
             if attachment == "1st":
-                bool = np.copy(analysed.profiles_start_with_one_ant)
+                bool = np.copy(analysed.single_ant_profiles)
                 bool[analysed.all_profiles_precedence != 1, :] = False
                 x = np.copy(x_ori)
             else:
-                bool = np.copy(analysed.profiles_start_with_one_ant)
+                bool = np.copy(analysed.single_ant_profiles)
                 bool[analysed.all_profiles_precedence == 1, :] = False
                 x = np.copy(x_ori)
 
@@ -167,13 +188,12 @@ def plot_query_information_to_attachment_length(analysed, start=0, end=None, win
             plt.subplots_adjust(top=0.9, bottom=0.15, left=0.15, right=0.9, hspace=0.5)
             print("Saving figure to path: ", os.path.join(output_dir, f"{x_name} to attachment time - {attachment} (spring: {title}).png"))
             plt.savefig(os.path.join(output_dir, f"{x_name} to attachment time - {attachment} (spring {title}).png"))
-plot_query_information_to_attachment_length(analysed, window_size=50, title=spring_type, output_dir=output_dir)
+# plot_query_information_to_attachment_length(analysed, window_size=50, title=spring_type, output_dir=output_dir)
 
 
 def plot_query_distribution_to_angular_velocity(analysed, start=0, end=None, window_size=1, title="", output_dir=None):
     if end is None:
         end = analysed.angular_velocity.shape[0]
-    # output_dir = define_output_dir(output_dir)
 
     single_ant = analysed.N_ants_around_springs[start:end] == 1
     more_than_one = analysed.N_ants_around_springs[start:end] > 1
@@ -185,10 +205,12 @@ def plot_query_distribution_to_angular_velocity(analysed, start=0, end=None, win
     x = x[upper_quantile]
     x_binned = np.linspace(np.nanmin(x), np.nanmax(x), 100)
 
-    y_angular_force = np.abs(analysed.force_magnitude[start:end] * np.sin(analysed.force_direction))
+    y_N_ants = analysed.N_ants_around_springs[start:end]
+    y_tangential_force = np.abs(analysed.tangential_force[start:end])
+    # y_angular_force = np.abs(analysed.force_magnitude[start:end] * np.sin(analysed.force_direction))
     y_force_magnitude = np.abs(analysed.force_magnitude[start:end])
-    for y_ori, name in zip([y_angular_force, y_force_magnitude],
-                            ["mean angular force", "mean force magnitude"]):
+    for y_ori, name in zip([y_tangential_force, y_force_magnitude],
+                            ["mean tangential force", "mean force magnitude"]):
         for bool, label in zip([single_ant, more_than_one], ["single ant", "more than one ant"]):
             y = np.copy(y_ori)
             y[~bool] = np.nan
@@ -220,8 +242,11 @@ def plot_query_distribution_to_angular_velocity(analysed, start=0, end=None, win
             lower_bins = lower_bins[~np.isnan(lower_bins)]
             upper_bins = upper_bins[~np.isnan(upper_bins)]
             t, p = stats.ttest_ind(lower_bins, upper_bins)
+            print(f"p value for {name} to angular velocity (movie:{title}): {p}")
+            df = pd.DataFrame({"anglar velocity": ["low angular velocity"] * len(lower_bins) + ["high angular velocity"] * len(upper_bins),
+                                 f"{name} (mN)": np.concatenate([lower_bins, upper_bins])})
             plt.clf()
-            sns.barplot(x=["low angular velocity", "high angular velocity"], y=[np.mean(lower_bins), np.mean(upper_bins)])
+            sns.barplot(x="anglar velocity", y=f"{name} (mN)", data=df, edgecolor=".5", facecolor=(0, 0, 0, 0))
             plt.xlabel("")
             plt.text(0.5, 0.5, f"p = {p}")
             plt.xticks([0, 1], ["low angular velocity", "high angular velocity"])
@@ -230,8 +255,8 @@ def plot_query_distribution_to_angular_velocity(analysed, start=0, end=None, win
             plt.subplots_adjust(top=0.9, bottom=0.15, left=0.15, right=0.9, hspace=0.5)
             print("Saving figure to path: ", os.path.join(output_dir, f"{name}, {label} to angular velocity - bar plot (movie {title}).png"))
             plt.savefig(os.path.join(output_dir, f"{name}, {label} to angular velocity - bar plot (movie {title}).png"))
-output_dir = os.path.join("Z:\\Dor_Gabay\\ThesisProject\\results",spring_type, "macro_scale_results")
-plot_query_distribution_to_angular_velocity(analysed, start=0, end=None, window_size=50, title=spring_type, output_dir=output_dir)
+
+plot_query_distribution_to_angular_velocity(analysed, start=0, end=None, window_size=50, title=spring_type, output_dir=macro_scale_output_dir)
 
 
 def plot_overall_behavior(analysed, start=0, end=None, window_size=1, title="", output_dir=None):
@@ -277,7 +302,3 @@ def plot_overall_behavior(analysed, start=0, end=None, window_size=1, title="", 
     print("Saving figure to path: ", os.path.join(output_dir, f"angular_velocity VS mean_springs_extension (movie {title}).png"))
     plt.savefig(os.path.join(output_dir, f"{title}.png"))
 
-
-if __name__ == "__main__":
-    # %matplotlib qt
-    pass

@@ -13,6 +13,7 @@ import pickle
 
 class CalibrationModeling:
     def __init__(self, directories, weights, output_path, video_paths=None):
+        self.angular_force = True
         self.directories = directories
         self.weights = weights
         self.output_path = output_path
@@ -77,7 +78,6 @@ class CalibrationModeling:
         extension = np.array(())
         weights = np.array(())
         nest_direction = np.array(())
-        self.angular_force = False
         for dir, weight, video_path in zip(self.directories[:], self.weights[:], self.video_paths[:]):
             self.post_processing(dir)
             self.video_path = video_path
@@ -156,13 +156,13 @@ class CalibrationModeling:
         print("mean squared error (before removing out layers): ", mean_squared_error(y_test, y_pred, squared=False))
         self.ploting_fitting_results_data = (number_degrees, plt_mean_squared_error, plt_r_squared,y_test,y_pred, weights_test)
         print("-"*20)
-        print(f"min pulling_angel: {np.min(self.X[:,0])}, max pulling_angel: {np.max(self.X[:,0])}, mean pulling_angel: {np.mean(self.X[:,0])}")
-        print(f"min extension: {np.min(self.X[:,1])}, max extension: {np.max(self.X[:,1])}, mean extension: {np.mean(self.X[:,1])}")
-        if not self.angular_force:
-            print(f"min force_direction: {np.min(self.y[:,0])}, max force_direction: {np.max(self.y[:,0])}, mean force_direction: {np.mean(self.y[:,0])}")
-            print(f"min force_magnitude: {np.min(self.y[:,1])}, max force_magnitude: {np.max(self.y[:,1])}, mean force_magnitude: {np.mean(self.y[:,1])}")
-        else:
-            print(f"min force_magnitude: {np.min(self.y)}, max force_magnitude: {np.max(self.y)}, mean force_magnitude: {np.mean(self.y)}")
+        # print(f"min pulling_angel: {np.min(self.X[:,0])}, max pulling_angel: {np.max(self.X[:,0])}, mean pulling_angel: {np.mean(self.X[:,0])}")
+        # print(f"min extension: {np.min(self.X[:,1])}, max extension: {np.max(self.X[:,1])}, mean extension: {np.mean(self.X[:,1])}")
+        # if not self.angular_force:
+        #     print(f"min force_direction: {np.min(self.y[:,0])}, max force_direction: {np.max(self.y[:,0])}, mean force_direction: {np.mean(self.y[:,0])}")
+        #     print(f"min force_magnitude: {np.min(self.y[:,1])}, max force_magnitude: {np.max(self.y[:,1])}, mean force_magnitude: {np.mean(self.y[:,1])}")
+        # else:
+        #     print(f"min force_magnitude: {np.min(self.y)}, max force_magnitude: {np.max(self.y)}, mean force_magnitude: {np.mean(self.y)}")
 
     def post_processing(self,directory):
         self.current_dir = directory
@@ -174,13 +174,13 @@ class CalibrationModeling:
     def load_data(self,directory):
         self.num_of_springs = 1
         # self.norm_size = pickle.load(open(os.path.join(directory,"blue_median_area.pickle"), "rb"))
-        directory = os.path.join(directory, "raw_analysis")+"\\"
+        directory = os.path.join(directory, "raw_analysis", "sliced_data")+"\\"
         self.norm_size = np.median(np.loadtxt(os.path.join(directory, "blue_area_sizes.csv"), delimiter=","))
-        fixed_ends_coordinates_x = np.loadtxt(os.path.join(directory,"fixed_ends_coordinates_x.csv"), delimiter=",")
-        fixed_ends_coordinates_y = np.loadtxt(os.path.join(directory,"fixed_ends_coordinates_y.csv"), delimiter=",")
+        fixed_ends_coordinates_x = np.loadtxt(os.path.join(directory,"fixed_ends_coordinates_x.csv"), delimiter=",")#[:, 0]
+        fixed_ends_coordinates_y = np.loadtxt(os.path.join(directory,"fixed_ends_coordinates_y.csv"), delimiter=",")#[:, 0]
         self.fixed_ends_coordinates = np.stack((np.expand_dims(fixed_ends_coordinates_x,1), np.expand_dims(fixed_ends_coordinates_y,1)), axis=2)
-        free_ends_coordinates_x = np.loadtxt(os.path.join(directory,"free_ends_coordinates_x.csv"), delimiter=",")
-        free_ends_coordinates_y = np.loadtxt(os.path.join(directory,"free_ends_coordinates_y.csv"), delimiter=",")
+        free_ends_coordinates_x = np.loadtxt(os.path.join(directory,"free_ends_coordinates_x.csv"), delimiter=",")#[:, 0]
+        free_ends_coordinates_y = np.loadtxt(os.path.join(directory,"free_ends_coordinates_y.csv"), delimiter=",")#[:, 0]
         self.free_ends_coordinates = np.stack((np.expand_dims(free_ends_coordinates_x,1), np.expand_dims(free_ends_coordinates_y,1)), axis=2)
         blue_part_coordinates_x = np.loadtxt(os.path.join(directory,"blue_part_coordinates_x.csv"), delimiter=",")
         blue_part_coordinates_y = np.loadtxt(os.path.join(directory,"blue_part_coordinates_y.csv"), delimiter=",")
