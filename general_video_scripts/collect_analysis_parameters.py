@@ -1,13 +1,12 @@
-import copy
-import re
+import copy, os, pickle, re
 import cv2
 import numpy as np
-import os
-import pickle
 import pandas as pd
 import scipy.cluster as sclu
-import scipy.misc
-import scipy
+
+# local imports:
+import video_analysis.utils as utils
+
 
 def get_background_color(frame):
     from PIL import Image
@@ -17,6 +16,7 @@ def get_background_color(frame):
     colors = sorted(colors, key=lambda x: x[0], reverse=True)
     background_color = colors[0][1]
     return background_color
+
 
 def most_common_hue(frame):
     """
@@ -30,73 +30,12 @@ def most_common_hue(frame):
     ar = ar.reshape(np.product(shape[:2]), shape[2]).astype(float)
     NUM_CLUSTERS = 5
     codes, dist = sclu.vq.kmeans(ar, NUM_CLUSTERS)
-    vecs, dist = scipy.cluster.vq.vq(ar, codes)  # assign codes
+    vecs, dist = sclu.vq.vq(ar, codes)  # assign codes
     counts, bins = np.histogram(vecs, len(codes))  # count occurrences
     index_max = np.argmax(counts)  # find most frequent
     peak = codes[index_max].astype("int")
     print('most frequent color (background) is {})'.format(peak))
     return peak
-
-
-def rectangle_coordinates(image, what_for):
-    """
-    Lets the user to select the points which define a rectangle. This function takes the most extreme.
-    :param image: Basically the frame.
-    :param what_for: A flag to use the function 'pick_points'
-    :return: list of the coordinates.
-    """
-    points = pick_points(image, what_for)
-    yx_min = np.min(points, axis=0)
-    yx_max = np.max(points, axis=0)
-    return [yx_min[0], yx_max[0], yx_min[1], yx_max[1]]
-
-def collect_points(image,n_points):
-    def click_event(event, x, y, flags, params):
-        if event == cv2.EVENT_LBUTTONDOWN:
-            points.append([y, x])
-    points = []
-    cv2.imshow("Pick the element pixels (only one point)", image)
-    cv2.setMouseCallback("Pick the element pixels (only one point)", click_event)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-    if len(points) != n_points: collect_points(image, n_points)
-    return np.array(points)
-
-def pick_points(image, what_for):
-    """
-    Opens a window and enables the user to choose points.
-    :param image: The image to select points from.
-    :param what_for: A flag to select what is the porpuse: 'element_color', 'crop','remove_rectangle'
-    :return: array of the points coordinates.
-    """
-    def click_event(event, x, y, flags, params):
-        if event == cv2.EVENT_LBUTTONDOWN:
-            if what_for == "element_color":
-                hue = image[y, x, 0]
-                saturation = image[y, x, 1]
-                value = image[y, x, 2]
-                hsv = [hue, saturation, value]
-                pickedColor = np.zeros((512, 512, 3), np.uint8)
-                pickedColor[:] = hsv
-                cv2.imshow("PickedColor", pickedColor)
-                cv2.waitKey(30)
-            points.append([y, x])
-
-    points = []
-    if what_for == "element_color":
-        cv2.imshow("Pick the element pixels (only one point)", image)
-        cv2.setMouseCallback("Pick the element pixels (only one point)", click_event)
-    elif what_for == "crop":
-        cv2.imshow("Pick where to cut (only two points)", image)
-        cv2.setMouseCallback("Pick where to cut (only two points)", click_event)
-    elif what_for == "remove_rectangle":
-        cv2.imshow("Pick where to remove pixels (only two points)", image)
-        cv2.setMouseCallback("Pick where to remove pixels (only two points)", click_event)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-    if len(points) != 2 and (what_for == "crop" or what_for == "remove_rectangle"): pick_points(image, what_for)
-    # if len(points) != 1 and what_for == "element_color": pick_points(image, what_for)
-    return np.array(points)
 
 
 def correct_by_boundry(hue, boundry):
@@ -135,10 +74,6 @@ def no_overlap_background_sv_space(background_color, element_color_detected, mar
     :param boundry: The boundries of the space, (in the case of HSV it is (179,255,255))
     :return: return the HSV space (lower color, higher color).
     """
-    # if element_color_by_name=="white":
-    #     margin[0]=180
-    # if element_color_by_name=="red":
-    #     element_color_detected[0]=0
     background_margin = np.array([0, 30, 20])
     lower_bg = correct_by_boundry(background_color - background_margin, boundry)
     upper_bg = correct_by_boundry(background_color + background_margin, boundry)
@@ -197,67 +132,75 @@ def get_parameters(output_folder, video_path):
     :return: The preferences.
     """
     video_name = os.path.basename(video_path).split(".")[0].split("_")[0]
-    preferences = pd.read_pickle(os.path.join(output_folder, f"{video_name}_video_parameters.pickle"))
-    # preferences = pd.read_pickle(os.path.join(output_folder, "video_preferences.pickle"))
-    preferences_normpath = {}
+    parameters = pd.read_pickle(os.path.join(output_folder, f"{video_name}_video_parameters.pickle"))
+    parameters_normpath = {}
     keys_ends = {}
-    for key in preferences:
+    for key in parameters:
         keys_ends[re.search(".*[/\\\\]([^/\\\\]+).[mM][pP]4", key).group(1)] = os.path.normpath(key)
-        preferences_normpath[os.path.normpath(key)] = preferences[key]
-    return preferences_normpath[keys_ends[video_name]]
+        parameters_normpath[os.path.normpath(key)] = parameters[key]
+
+    # #single time parameters addition:
+    # key = list(parameters.keys())[0]
+    # parameters[key]["ocm"] = 200
+    # parameters[key]["pcm"] = 100
+    # parameters[key]["object_center_coordinates"] = np.array((parameters[key]["crop_coordinates"][0]+200,parameters[key]["crop_coordinates"][2]+200)).reshape(1,2)
+    # parameters[key]["perspective_squares_coordinates"] = np.array([[parameters[key]["purple_squares_coordinates"][0, 0]+100,parameters[key]["purple_squares_coordinates"][0, 2]+100],
+    #                                                     [parameters[key]["purple_squares_coordinates"][1, 0]+100,parameters[key]["purple_squares_coordinates"][1, 2]+100],
+    #                                                     [parameters[key]["purple_squares_coordinates"][2, 0]+100,parameters[key]["purple_squares_coordinates"][2, 2]+100],
+    #                                                     [parameters[key]["purple_squares_coordinates"][3, 0]+100,parameters[key]["purple_squares_coordinates"][3, 2]+100]])
+    # parameters[key]["max_ants_number"] = 100
+    # parameters[key]["resolution"] = np.array((2160, 3840))
+    # with open(os.path.join(output_folder, f"{video_name}_video_parameters.pickle"), 'wb') as handle:
+    #     pickle.dump(parameters, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    return parameters_normpath[keys_ends[video_name]]
 
 
-def get_first_frame(video, starting_frame=0):
-    """
-    Gets the first frame for choosing points.
-    The function reduces the resolution to the resolution that will be used int the detection part - this is important
-    since if the resolution scaling will be changed in either functions, it will lead for discrepancy.
-    :param video:
-    :param starting_frame: The default is the first frame.
-    :return:
-    """
-    cap = cv2.VideoCapture(video)
-    cap.set(cv2.CAP_PROP_POS_FRAMES, starting_frame)
-    ret, frame = cap.read()
-    # frame = cv2.resize(frame, (0, 0), fx=.3, fy=.3)
-    return frame
-
-def neutrlize_colour(frame,alpha=2, beta=0):
-    """
-    Takes the frame and neutralizes the colors, by adjusting the white balance
-    :param frame: The frame to neutralize.
-    :return: The neutralized frame.
-    """
-    frame = cv2.convertScaleAbs(frame, alpha=alpha, beta=beta)
-    return frame
-
-def show_parameters_result(video, parameters):
+def show_parameters_result(video, parameters, ocm=200, pcm=100):
     """
     Shows the results of choose the element color, cropping coordinates and so on.
     This function asks the user for confirmation, and return the answer (boolean)
+    ocm: object crop margin size
+    pcm: perspective squares crop margin size
     """
-    image = get_first_frame(video, parameters["starting_frame"])
-    image = image[parameters["crop_coordinates"][0]:parameters["crop_coordinates"][1],
-            parameters["crop_coordinates"][2]:parameters["crop_coordinates"][3]]
-    image = neutrlize_colour(image)
+    image = utils.get_a_frame(video, parameters["starting_frame"])
+    image = utils.neutrlize_colour(image, alpha=2.5, beta=0)
+    image = utils.white_balance_bgr(image)
+    complete_image = np.zeros((ocm * 2, ocm * 2 * 2, 3), dtype="uint8")
+    object_crop_coordinates = utils.create_box_coordinates(parameters["object_center_coordinates"], ocm)[0]
+    perspective_squares_crop_coordinates = utils.create_box_coordinates(parameters["perspective_squares_coordinates"], pcm)
+    complete_image[0:ocm * 2, 0:ocm * 2] = image[object_crop_coordinates[0]:object_crop_coordinates[1],
+                                                 object_crop_coordinates[2]:object_crop_coordinates[3]]
+    perspective_first = image[perspective_squares_crop_coordinates[0][0]:perspective_squares_crop_coordinates[0][1],
+            perspective_squares_crop_coordinates[0][2]:perspective_squares_crop_coordinates[0][3]]
+    perspective_second = image[perspective_squares_crop_coordinates[1][0]:perspective_squares_crop_coordinates[1][1],
+            perspective_squares_crop_coordinates[1][2]:perspective_squares_crop_coordinates[1][3]]
+    perspective_third = image[perspective_squares_crop_coordinates[2][0]:perspective_squares_crop_coordinates[2][1],
+            perspective_squares_crop_coordinates[2][2]:perspective_squares_crop_coordinates[2][3]]
+    perspective_fourth = image[perspective_squares_crop_coordinates[3][0]:perspective_squares_crop_coordinates[3][1],
+            perspective_squares_crop_coordinates[3][2]:perspective_squares_crop_coordinates[3][3]]
+    complete_image[0:perspective_first.shape[0], ocm * 2:ocm * 2 + perspective_first.shape[1]] = perspective_first
+    complete_image[0:perspective_second.shape[0], ocm * 2 + pcm * 2:600 + perspective_second.shape[1]] = perspective_second
+    complete_image[pcm * 2:pcm * 2 + perspective_third.shape[0], ocm * 2 + pcm * 2:ocm * 2 + pcm * 2 + perspective_third.shape[1]] = perspective_third
+    complete_image[pcm * 2:pcm * 2 + perspective_fourth.shape[0], ocm * 2:ocm * 2 + perspective_fourth.shape[1]] = perspective_fourth
+
     print("Are you happy with the result?:")
-    import video_analysis.utils as utils
-    binary_color_masks = utils.mask_object_colors(parameters, image)
+    binary_color_masks = utils.mask_object_colors(parameters, complete_image)
     for mask_color in binary_color_masks:
         while True:
-            image_copy = copy.copy(image)
-            image_copy[binary_color_masks[mask_color].astype(bool)] = [0,255,0]
+            image_copy = copy.copy(complete_image)
+            image_copy[binary_color_masks[mask_color].astype(bool)] = [0, 255, 0]
             cv2.imshow(mask_color, image_copy)
             cv2.waitKey(0)
             add_colors = str(input("Want to add more colors? (y/n/r to remove the last color)."))
-            while add_colors not in ["y", "n","r"]:
+            while add_colors not in ["y", "n", "r"]:
                 add_colors = str(input("Please enter y or n:"))
             if add_colors == "y":
                 parameters["colors_spaces"] = add_colors_parameters(image_copy,parameters["colors_spaces"],mask_color)
-                binary_color_masks = utils.mask_object_colors(parameters, image)
+                binary_color_masks = utils.mask_object_colors(parameters, complete_image)
             elif add_colors == "r":
                 parameters["colors_spaces"][mask_color].pop()
-                binary_color_masks = utils.mask_object_colors(parameters, image)
+                binary_color_masks = utils.mask_object_colors(parameters, complete_image)
             else: break
     collect_again = str(input("Want to collect again? (y/n)"))
     while collect_again not in ["y", "n"]:
@@ -268,18 +211,11 @@ def show_parameters_result(video, parameters):
         return True
 
 
-def crop_frame_by_coordinates(frame, crop_coordinates):
-    """
-    Crops the frame by the chosen coordinates
-    """
-    return frame[crop_coordinates[0]:crop_coordinates[1], crop_coordinates[2]:crop_coordinates[3]]
-
-
 def add_colors_parameters(frame_with_mask,colors_dict, color_name):
     margin = np.array([12, 30, 30])
     boundary_hsv = np.array([179, 255, 255])
     print("Please pick the " + color_name + " element pixels:")
-    points = pick_points(frame_with_mask, what_for="element_color")
+    points = utils.collect_points(frame_with_mask, n_points=1, show_color=True)
     print("Those are the colors you picked (HSV): \n",
           [list(cv2.cvtColor(frame_with_mask, cv2.COLOR_BGR2HSV)[i[0], i[1], :]) for i in points])
     color_spaces = create_color_space_from_points(frame_with_mask, points, margin, boundary_hsv)
@@ -288,47 +224,64 @@ def add_colors_parameters(frame_with_mask,colors_dict, color_name):
     return colors_dict
 
 
-def set_parameters(video, starting_frame=False, stiff_object=False, crop_frame=False,image=False, n_springs=20):
+def set_parameters(video, starting_frame=False, n_springs=20, ocm=200, pcm=100, reduction=0.25, resolution=(2160, 3840), max_ants_number=100):
     """Collects the parameters and returns them in a dictionary.
+        ocm: object crop margin size
+        pcm: perspective squares margin size
+        reduction: reduction factor for the image
     """
-    if not image:
-        # set starting frame
-        if starting_frame:
-            print("What frame to start with: ")
-            start_frame = int(input())
-        else:
-            start_frame = 0
-        frame = get_first_frame(video, starting_frame=start_frame)
+    # load the frame:
+    if starting_frame:
+        print("What frame to start with: ")
+        start_frame = int(input())
     else:
-        frame = cv2.imread(video)
-        frame = cv2.resize(frame, (0, 0), fx=.3, fy=.3)
-    # set croping coordinates
-    if crop_frame:
-        print("Please select where to cut (mark two corners)")
-        crop_coordinates = rectangle_coordinates(frame, what_for="crop")
-        frame_cropped = crop_frame_by_coordinates(frame, crop_coordinates)
-    else:
-        crop_coordinates = [0, frame.shape[0], 0, frame.shape[1]]
-        frame_cropped = frame
-    frame_cropped = neutrlize_colour(frame_cropped)
+        start_frame = 0
+    frame = utils.get_a_frame(video, starting_frame=start_frame)
+    frame = utils.neutrlize_colour(frame,alpha=2.5, beta=0)
+    frame = utils.white_balance_bgr(frame)
+    # crop the frame:
+    reduced_resolution = cv2.resize(frame, (0, 0), fx=reduction, fy=reduction)
+    print("Please point on the center of the object, to get the initial crop coordinates.")
+    object_center_coordinates = utils.collect_points(reduced_resolution, n_points=1).reshape(1, 2)
+    print("Please point on ALL four perspective squares, to get the initial crop coordinates.")
+    perspective_squares_coordinates = utils.collect_points(reduced_resolution, n_points=4)
+    object_crop_coordinates = utils.create_box_coordinates(object_center_coordinates, ocm, reduction_factor=int(1 / reduction))[0]
+    perspective_squares_crop_coordinates = utils.create_box_coordinates(perspective_squares_coordinates, pcm, reduction_factor=int(1/reduction))
+    object_frame_cropped = frame[object_crop_coordinates[0]:object_crop_coordinates[1],
+                    object_crop_coordinates[2]:object_crop_coordinates[3]]
+    perspective_square_frame_cropped = frame[perspective_squares_crop_coordinates[0][0]:perspective_squares_crop_coordinates[0][1],
+                    perspective_squares_crop_coordinates[0][2]:perspective_squares_crop_coordinates[0][3]]
+    # collect the colors spaces:
     margin = np.array([12, 30, 30])
     boundary_hsv = np.array([179, 255, 255])
     colors = {}
-    for color_name, short_name in zip(["red","green","blue"],["r","g","b"]):
+    for color_name, short_name in zip(["blue", "red", "green", "purple"], ["b", "r", "g", "p"]):
+        if color_name == "purple":
+            frame_cropped = perspective_square_frame_cropped
+        else:
+            frame_cropped = object_frame_cropped
         print("Please pick the "+color_name+" element pixels:")
-        points = pick_points(frame_cropped, what_for="element_color")
+        points = utils.collect_points(frame_cropped, n_points=1, show_color=True)
         print("Those are the colors you picked (HSV): \n",
               [list(cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)[i[0], i[1], :]) for i in points])
         color_spaces = create_color_space_from_points(frame_cropped, points, margin, boundary_hsv)
         print(f"color_spaces for color {color_name}: {color_spaces}")
         colors[short_name] = color_spaces
-    parameters = {"crop_coordinates": crop_coordinates, "colors_spaces": colors, "starting_frame": start_frame, "n_springs": n_springs}
+    parameters = {"starting_frame": start_frame,
+                  "object_center_coordinates": object_center_coordinates,
+                  "perspective_squares_coordinates": perspective_squares_coordinates,
+                  "ocm": ocm,
+                  "pcm": pcm,
+                  "colors_spaces": colors,
+                  "n_springs": n_springs,
+                  "max_ants_number": max_ants_number,
+                  "resolution": np.array(resolution)}
     while not show_parameters_result(video, parameters):
-        parameters = set_parameters(video, starting_frame=starting_frame, stiff_object=stiff_object, crop_frame=crop_frame, n_springs=n_springs)
+        parameters = set_parameters(video, starting_frame=starting_frame, n_springs=n_springs)
     return parameters
 
 
-def main(videos_to_analyse,output_folder,starting_frame=False,collect_crop=False, n_springs=None):
+def main(videos_to_analyse,output_folder,starting_frame=False, n_springs=None):
     output_path_parameters = os.path.join(output_folder, "parameters")
     os.makedirs(output_path_parameters, exist_ok=True)
     parameters = {}
@@ -348,16 +301,14 @@ def main(videos_to_analyse,output_folder,starting_frame=False,collect_crop=False
                 first = False
         elif reuse == 'n':
             if first:
-                parameters[video] = set_parameters(video, starting_frame=starting_frame, crop_frame=collect_crop, n_springs=n_springs)
+                parameters[video] = set_parameters(video, starting_frame=starting_frame, n_springs=n_springs)
                 first = False
             elif not first:
                 parameters[video] = copy.copy(parameters[videos_to_analyse[i-1]])
                 parameters[video]["starting_frame"] = int(input("What frame to start with: "))
                 while not show_parameters_result(video, parameters[video]):
-                    parameters[video] = set_parameters(video, starting_frame=starting_frame, crop_frame=collect_crop, n_springs=n_springs)
+                    parameters[video] = set_parameters(video, starting_frame=starting_frame, n_springs=n_springs)
             with open(os.path.join(output_path_parameters, f"{video_name}_video_parameters.pickle"), 'wb') as f:
                 pickle.dump({video: parameters[video]}, f)
     return output_path_parameters
-
-
 

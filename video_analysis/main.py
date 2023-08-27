@@ -1,10 +1,7 @@
-import cv2
-import os
+import os, pickle, datetime, cv2
 import numpy as np
 import scipy.io as sio
-import pickle
-from general_video_scripts.collect_analysis_parameters import neutrlize_colour
-import datetime
+
 # local imports:
 from video_analysis.calculator import Calculation
 from video_analysis import utils
@@ -25,45 +22,46 @@ def save_as_mathlab_matrix(output_dir):
     os.system(execution_string)
 
 
-# def save_blue_areas_median(output_dir):
-#     blue_area_sizes = np.loadtxt(os.path.join(output_dir, "blue_area_sizes.csv"), delimiter=",")
-#     median_blue_area_size = np.median(blue_area_sizes)
-#     with open(os.path.join(output_dir, "blue_median_area.pickle"), 'wb') as f:
-#         pickle.dump(median_blue_area_size, f)
-
-
 def get_csv_line_count(csv_file):
     with open(csv_file, 'r') as file:
         line_count = sum(1 for _ in file)
     return line_count
 
 
-def save_data(output_dir, snap_data, calculations, n_springs=20,continue_from_last=False):
+def save_data(output_dir, snap_data, calculations, n_springs=20, max_ants=100, continue_from_last=False):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     if calculations is None:
         empty_springs = np.repeat(np.nan, n_springs).reshape(1, n_springs)
-        empty_blue_part = np.repeat(np.nan, 2).reshape(1, 2)
-        empty_ant_centers = np.repeat(np.nan, 100).reshape(1, 100)
-        empty_blue_area_size = np.repeat(np.nan, 1).reshape(1, 1)
-        empty_ants_attached_labels = np.array([np.nan for _ in range(100)]).reshape(1, 100)
+        empty_2_values = np.repeat(np.nan, 2).reshape(1, 2)
+        empty_4_values = np.full((1, 4), np.nan)
+        empty_ant_centers = np.repeat(np.nan, max_ants).reshape(1, max_ants)
+        empty_needle_area_size = np.repeat(np.nan, 1).reshape(1, 1)
+        empty_ants_attached_labels = np.array([np.nan for _ in range(max_ants)]).reshape(1, max_ants)
         arrays = [empty_springs, empty_springs, empty_springs, empty_springs, empty_springs, empty_springs,
-                  empty_blue_part, empty_blue_part, empty_ant_centers, empty_ant_centers, empty_blue_area_size,
-                  empty_ants_attached_labels, empty_ants_attached_labels]
+                  empty_2_values, empty_2_values, empty_ant_centers, empty_ant_centers, empty_needle_area_size,
+                  empty_ants_attached_labels, empty_ants_attached_labels, empty_4_values, empty_4_values,
+                  empty_4_values, empty_4_values]
     else:
         arrays = [calculations.N_ants_around_springs, calculations.size_ants_around_springs,
                   calculations.fixed_ends_coordinates_x, calculations.fixed_ends_coordinates_y,
                   calculations.free_ends_coordinates_x, calculations.free_ends_coordinates_y,
-                  calculations.blue_part_coordinates_x, calculations.blue_part_coordinates_y,
+                  calculations.needle_part_coordinates_x, calculations.needle_part_coordinates_y,
                   calculations.ants_centers_x, calculations.ants_centers_y,
-                  np.array(calculations.blue_area_size).reshape(-1, 1),
-                  calculations.ants_attached_labels.reshape(1, 100),
-                  calculations.ants_attached_forgotten_labels.reshape(1, 100)]
+                  np.array(calculations.object_needle_area_size).reshape(-1, 1),
+                  calculations.ants_attached_labels.reshape(1, max_ants),
+                  calculations.ants_attached_forgotten_labels.reshape(1, max_ants),
+                  calculations.perspective_squares_properties[:, 0, 0].reshape(1, 4),
+                  calculations.perspective_squares_properties[:, 0, 1].reshape(1, 4),
+                  calculations.perspective_squares_properties[:, 1, 0].reshape(1, 4),
+                  calculations.perspective_squares_properties[:, 1, 1].reshape(1, 4)]
     names = ["N_ants_around_springs", "size_ants_around_springs",
              "fixed_ends_coordinates_x", "fixed_ends_coordinates_y", "free_ends_coordinates_x",
-             "free_ends_coordinates_y", "blue_part_coordinates_x", "blue_part_coordinates_y",
-             "ants_centers_x", "ants_centers_y", "blue_area_sizes",
-             "ants_attached_labels", "ants_attached_forgotten_labels"]
+             "free_ends_coordinates_y", "needle_part_coordinates_x", "needle_part_coordinates_y",
+             "ants_centers_x", "ants_centers_y", "needle_area_sizes",
+             "ants_attached_labels", "ants_attached_forgotten_labels",
+             "perspective_squares_coordinates_y", "perspective_squares_coordinates_x",
+             "perspective_squares_sizes_width", "perspective_squares_sizes_height"]
     pickle.dump(snap_data, open(os.path.join(output_dir, f"snap_data_{snap_data[6]}.pickle"), "wb"))
     if snap_data[5]==0:
         for d, n in zip(arrays[:], names[:]):
@@ -86,27 +84,31 @@ def save_data(output_dir, snap_data, calculations, n_springs=20,continue_from_la
 
 def present_analysis_result(frame, calculations):
     image_to_illustrate = frame
-    for point_green in calculations.green_centers:
-        image_to_illustrate = cv2.circle(image_to_illustrate, point_green.astype(int), 1, (0, 255, 0), 2)
-    for point_red in calculations.red_centers:
+    for point_red in calculations.spring_ends_centers:
         image_to_illustrate = cv2.circle(image_to_illustrate, point_red.astype(int), 1, (0, 0, 255), 2)
+    for point_blue in calculations.spring_middle_part_centers:
+        image_to_illustrate = cv2.circle(image_to_illustrate, point_blue.astype(int), 1, (255, 0, 0), 2)
     for count_, angle in enumerate(calculations.springs_angles_ordered):
         if angle != 0:
             if angle in calculations.fixed_ends_edges_bundles_labels:
                 point = calculations.fixed_ends_edges_centers[calculations.fixed_ends_edges_bundles_labels.index(angle)]
                 image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 0, 0), 2)
-                image_to_illustrate = cv2.putText(image_to_illustrate, str(count_), point, cv2.FONT_HERSHEY_SIMPLEX, 1,
-                                                  (255, 0, 0), 2)
+                image_to_illustrate = cv2.putText(image_to_illustrate, str(count_), point, cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                                                  (255, 0, 0), 1)
                 image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 0, 0), 2)
             if angle in calculations.free_ends_edges_bundles_labels:
                 point = calculations.free_ends_edges_centers[calculations.free_ends_edges_bundles_labels.index(angle)]
                 image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 0, 0), 2)
-
+    for label, ant_center_x, ant_center_y in zip(calculations.ants_attached_labels,calculations.ants_centers_x[0], calculations.ants_centers_y[0]):
+        if label != 0:
+            image_to_illustrate = cv2.putText(image_to_illustrate, str(int(label)-1), (int(ant_center_x), int(ant_center_y)),
+                                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 1)
     image_to_illustrate = cv2.circle(image_to_illustrate, calculations.object_center, 1, (0, 0, 0), 2)
-    image_to_illustrate = cv2.circle(image_to_illustrate, calculations.tip_point, 1, (255, 0, 0), 2)
-    cv2.imshow("frame", image_to_illustrate)
+    image_to_illustrate = cv2.circle(image_to_illustrate, calculations.tip_point, 1, (0, 255, 0), 2)
+    image_to_illustrate = utils.crop_frame_by_coordinates(image_to_illustrate, calculations.object_crop_coordinates)
+    cv2.imshow("frame", utils.white_balance_bgr(image_to_illustrate))
     cv2.waitKey(1)
-    return image_to_illustrate, calculations.joints
+
 
 
 def main(video_path, output_dir, parameters, starting_frame=None, continue_from_last=False):
@@ -119,27 +121,28 @@ def main(video_path, output_dir, parameters, starting_frame=None, continue_from_
         parameters["starting_frame"] = snap_data[5]
         snap_data[6] = datetime.datetime.now().strftime("%d.%m.%Y-%H%M")
     else:
-        snap_data = [None, None ,None, 0, 0, 0,datetime.datetime.now().strftime("%d.%m.%Y-%H%M")]
-        # in snap_data: object_center, tip_point, springs_angles_reference_order, sum_blue_radius, frames_analysed, count, current_time
+        snap_data = [parameters["object_center_coordinates"], None ,None, 0, 0, 0,datetime.datetime.now().strftime("%d.%m.%Y-%H%M"), parameters["perspective_squares_coordinates"]]
+        # in snap_data: object_center, tip_point, springs_angles_reference_order, sum_needle_radius, frames_analysed,
+        #               count, current_time, object_center_coordinates, perspective_squares_coordinates
     if starting_frame is not None:
         cap.set(cv2.CAP_PROP_POS_FRAMES, starting_frame)
     else:
         cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["starting_frame"])
-    parameters["n_springs"] = 20
     while True:
         ret, frame = cap.read()
         if frame is None:
             print("End of video")
             break
-        frame = neutrlize_colour(frame)
-        if parameters["crop_coordinates"] != None:
-            frame = utils.crop_frame_by_coordinates(frame, parameters["crop_coordinates"])
+
         try:
             calculations = Calculation(parameters, frame, snap_data)
-            snap_data = [calculations.object_center, calculations.tip_point, calculations.springs_angles_reference_order,
-                                   snap_data[3]+int(calculations.blue_radius), snap_data[4]+1, snap_data[5], snap_data[6]]
-            save_data(output_dir, calculations=calculations, snap_data=snap_data, continue_from_last=continue_from_last)
-            # present_analysis_result(frame, calculations)
+            snap_data = [np.array([calculations.object_center[1], calculations.object_center[0]]),
+                         calculations.tip_point, calculations.springs_angles_reference_order,
+                         snap_data[3] + int(calculations.object_needle_radius), snap_data[4] + 1, snap_data[5],
+                         snap_data[6], utils.swap_columns(calculations.perspective_squares_properties[:, 0])]
+            save_data(output_dir, calculations=calculations, snap_data=snap_data, continue_from_last=continue_from_last,
+                      n_springs=parameters["n_springs"], max_ants=parameters["max_ants_number"])
+            present_analysis_result(frame, calculations)
             del calculations, ret, frame
             print("Analyzed frame number:", snap_data[5], end="\r")
         except:
@@ -150,7 +153,6 @@ def main(video_path, output_dir, parameters, starting_frame=None, continue_from_
     cap.release()
     if not os.path.exists(os.path.join(output_dir, f"analysis_ended_{snap_data[6]}.pickle")):
         save_as_mathlab_matrix(output_dir)
-        # save_blue_areas_median(output_dir)
     pickle.dump("video_ended", open(os.path.join(output_dir, f"analysis_ended_{snap_data[6]}.pickle"), "wb"))
 
 

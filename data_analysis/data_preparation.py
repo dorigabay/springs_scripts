@@ -11,8 +11,10 @@ import itertools
 import multiprocessing as mp
 import pickle
 # local imports:
-from data_analysis import utils
-from data_analysis.ant_tracking import AntTracking
+# from data_analysis import utils
+import utils
+# from data_analysis.ant_tracking import AntTracking
+from ant_tracking import AntTracking
 
 
 class PostProcessing:
@@ -382,6 +384,7 @@ def profile_ants_behavior(directory):
         ants_attached_labels = np.load(os.path.join(path, "ants_attached_labels.npz"))["arr_0"]
         profiles = np.full(6, np.nan)  # ant, spring, start, end, precedence, sudden_appearance
         for ant in range(ants_assigned_to_springs.shape[1]):
+            print(f"ant: {ant}")
             attachment = ants_assigned_to_springs[:, ant]
             events_springs = np.split(attachment, np.arange(len(attachment[1:]))[np.diff(attachment) != 0] + 1)
             events_frames = np.split(np.arange(len(attachment)),
@@ -400,7 +403,7 @@ def profile_ants_behavior(directory):
                  "angular_velocity", "tangential_force"]):
             if query_data == "angular_velocity":
                 data = np.load(os.path.join(path, "fixed_end_angle_to_nest.npz"))["arr_0"]
-                data = np.nanmedian(utils.calc_angular_velocity(data, diff_spacing=20) / 20, axis=1)
+                data = np.nanmedian(utils.calc_angular_velocity(data, diff_spacing=1) / 1, axis=1)
             elif query_data == "N_ants_around_springs":
                 data = np.load(os.path.join(path, f"{query_data}.npz"))["arr_0"]
                 all_profiles_data2 = np.full((len(profiles), 10000), np.nan)
@@ -413,7 +416,7 @@ def profile_ants_behavior(directory):
                 start = int(profiles[profile, 2])
                 end = int(profiles[profile, 3])
                 if not end - start + 1 > 10000:
-                    if query_data == "tangential_force":
+                    if query_data == "angular_velocity":
                         all_profiles_data[profile, 0:end - start + 1] = data[start:end + 1]
                     elif query_data == "N_ants_around_springs":
                         all_profiles_data[profile, 0:end - start + 1] = data[start:end + 1, int(spring - 1)]
@@ -430,27 +433,31 @@ def profile_ants_behavior(directory):
 def multi_processing(spring_type):
     output_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\post_processed_data\\{spring_type}\\"
     data_dict = pickle.load(open(os.path.join(output_path, "data_dict.pkl"), "rb"))
-    # object = PostProcessing(data_dict)
-    # object.save_data()
-    # object.test_correlation()
+    object = PostProcessing(data_dict)
+    object.save_data()
+    object.test_correlation()
 
     set_paths = []
     for data_dir in data_dict["data_sets"].keys():
         for data_set in data_dict["data_sets"][data_dir]:
-            AntTracking(([os.path.join(data_dir, set_name, "raw_analysis") for set_name in data_set["set_names"]],
-                         data_dict["output_path"]))
+            # AntTracking(([os.path.join(data_dir, set_name, "raw_analysis") for set_name in data_set["set_names"]],
+            #              data_dict["output_path"]))
+            set_paths.append(([os.path.join(data_dir, set_name, "raw_analysis") for set_name in data_set["set_names"]],
+                              data_dict["output_path"]))
+    pool = mp.Pool()
+    pool.map(AntTracking, set_paths)
+    pool.close()
+    pool.join()
+
     profile_ants_behavior(data_dict["output_path"])
 
-    #         # set_paths.append(([os.path.join(data_dir, set_name, "raw_analysis") for set_name in data_set["set_names"]],
-    #         #                   data_dict["output_path"]))
-    # pool = mp.Pool()
-    # pool.map(AntTracking, set_paths)
-    # pool.close()
-    # pool.join()
-
 if __name__ == "__main__":
-    spring_type = "plus0.5"
+    # spring_type = "plus0.3"
+    spring_type = "plus0.1"
     multi_processing(spring_type)
+
+    # python data_analysis/data_preparation.py
+
     # spring_types = ["plus0.5", "plus0.1", "plus0"]
     # pool = mp.Pool()
     # pool.map(multi_processing, spring_types)
@@ -496,39 +503,12 @@ if __name__ == "__main__":
     #     "two_vars": False,
     #     "frame_resolution": (1920, 1080),
     #     "data_sets":
-    #         {data_dir1: [{"set_names": [f"S52900{i}" for i in ["01", "02"]], "set_arrangements": [0, 0],
+    #         {data_dir1: [{"set_names": [f"S52900{i}" for i in ["01", "02"]], "set_arrangements": [19, 19],
     #                       "set_slice_info": [None, None]}
     #                      ],
     #          }
     # }
     # pickle.dump(data_dict, open(os.path.join(data_dict["output_path"], "data_dict.pkl"), "wb"))
-
-    # data_dict = pickle.load(open(os.path.join(output_path, "data_dict.pkl"), "rb"))
-    # object = PostProcessing(data_dict)
-    # object.save_data()
-    # correlation_score = object.test_correlation()
-
-    # set_paths = []
-    # for data_dir in data_dict["data_sets"].keys():
-    #     for data_set in data_dict["data_sets"][data_dir]:
-    #         AntTracking(([os.path.join(data_dir, set_name, "raw_analysis") for set_name in data_set["set_names"]], data_dict["output_path"]))
-    #         set_paths.append(([os.path.join(data_dir, set_name, "raw_analysis") for set_name in data_set["set_names"]],
-    #                           data_dict["output_path"]))
-    # pool = mp.Pool()
-    # pool.map(AntTracking, set_paths)
-    # pool.close()
-    # pool.join()
-    # profile_ants_behavior(data_dict["output_path"])
-
-    #
-    #
-    # from data_analysis import plots
-    # figures_path = os.path.join(data_dir, "figures_two_vars")
-    # os.makedirs(figures_path, exist_ok=True)
-    # plots.plot_overall_behavior(object, start=0, end=None, window_size=200,
-    #                             title="all_videos_corr " + str(np.round(correlation_score, 2)),
-    #                             output_dir=figures_path)
-
 
 
     # spring_type = "plus0.5"
@@ -552,27 +532,26 @@ if __name__ == "__main__":
     # pickle.dump(data_dict, open(os.path.join(data_dict["output_path"], "data_dict.pkl"), "wb"))
 
 
-    spring_type = "plus0"
-    calibration_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\calibration\\calibration_{spring_type}\\"
-    output_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\post_processed_data\\{spring_type}\\"
-    # data_dir = "Z:\\Dor_Gabay\\ThesisProject\\data\\analysed_with_tracking\\18.9.22\\plus0.5mm_force\\"
-    data_dir1 = "Z:\\Dor_Gabay\\ThesisProject\\data\\analysed_with_tracking\\10.9.22\\plus0_force\\"
-    calibration_model = pickle.load(open(calibration_dir + "calibration_model.pkl", "rb"))
-    data_dict = {
-        "spring_type": spring_type,
-        "calibration_model": calibration_model,
-        "output_path": output_path,
-        "two_vars": False,
-        "frame_resolution": (1920, 1080),
-        "data_sets":
-            {data_dir1: [{"set_names": [f"S52000{i}" for i in ["07", "08", "09", "10"]], "set_arrangements": [0, 0, 0, 0],
-                          "set_slice_info": [None, None, None, None]},
-                         {"set_names": [f"S52200{i}" for i in ["03", "04", "05", "06", "07"]], "set_arrangements": [0, 0, 0, 0],
-                          "set_slice_info": [None, None, None, None]}
-                         ],
-             }
-    }
-    pickle.dump(data_dict, open(os.path.join(data_dict["output_path"], "data_dict.pkl"), "wb"))
+    # spring_type = "plus0"
+    # calibration_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\calibration\\calibration_{spring_type}\\"
+    # output_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\post_processed_data\\{spring_type}\\"
+    # data_dir1 = "Z:\\Dor_Gabay\\ThesisProject\\data\\analysed_with_tracking\\10.9.22\\plus0_force\\"
+    # data_dir2 = "Z:\\Dor_Gabay\\ThesisProject\\data\\analysed_with_tracking\\12.9.22\\plus0_force\\"
+    # calibration_model = pickle.load(open(calibration_dir + "calibration_model.pkl", "rb"))
+    # data_dict = {
+    #     "spring_type": spring_type,
+    #     "calibration_model": calibration_model,
+    #     "output_path": output_path,
+    #     "two_vars": False,
+    #     "frame_resolution": (1920, 1080),
+    #     "data_sets":
+    #         {data_dir1: [{"set_names": [f"S52000{i}" for i in ["07", "08", "09", "10"]], "set_arrangements": [0, 0, 0, 0],
+    #                       "set_slice_info": [None, None, None, None]}],
+    #          # data_dir2: [{"set_names": [f"S52200{i}" for i in ["03", "04", "05", "06", "07"]], "set_arrangements": [0, 0, 0, 0],
+    #          #              "set_slice_info": [None, None, None, None]}]
+    #          }
+    # }
+    # pickle.dump(data_dict, open(os.path.join(data_dict["output_path"], "data_dict.pkl"), "wb"))
 
 
     # spring_type = "plus0.1"
@@ -596,12 +575,12 @@ if __name__ == "__main__":
     #                       "set_slice_info": [None, None]},
     #                      {"set_names": [f"S52100{i}" for i in ["16"]], "set_arrangements": [0],
     #                       "set_slice_info": [None]},
-    #                      {"set_names": [f"S52100{i}" for i in ["17", "18", "19"]], "set_arrangements": [0, 0, 0],
-    #                       "set_slice_info": [None, None, None]},
-    #                      {"set_names": [f"S52200{i}" for i in ["01", "02", "03", "04", "05"]], "set_arrangements": [0, 0, 0, 0, 0],
-    #                       "set_slice_info": [None, None, None, None, None]},
-    #                      {"set_names": [f"S52200{i}" for i in ["06", "07", "08"]], "set_arrangements": [0, 0, 0],
-    #                       "set_slice_info": [None, None, None]}
+    #                      # {"set_names": [f"S52100{i}" for i in ["17", "18", "19"]], "set_arrangements": [0, 0, 0],
+    #                      #  "set_slice_info": [None, None, None]},
+    #                      # {"set_names": [f"S52200{i}" for i in ["01", "02", "03", "04", "05"]], "set_arrangements": [0, 0, 0, 0, 0],
+    #                      #  "set_slice_info": [None, None, None, None, None]},
+    #                      # {"set_names": [f"S52200{i}" for i in ["06", "07", "08"]], "set_arrangements": [0, 0, 0],
+    #                      #  "set_slice_info": [None, None, None]}
     #                      ]
     #          }
     # }

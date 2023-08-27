@@ -13,14 +13,15 @@ def parse_args():
     parser.add_argument('--vid_path', type=str, help='Path to video for analysis')
     parser.add_argument("--iter_dir", help='Recursavly search for videos in vidpath. Vidpath will be given as a path to a directory rather than a file.', action='store_true')
     parser.add_argument("--nCPU", type=int, help='Number of CPU processors to use for multiprocessin (when iter_dir is added)',default=1)
-    # parser.add_argument('--Xmargin', type=int, help='Margins from contour to cut frames (X_value)"')
-    # parser.add_argument('--Ymargin', type=int, help='Margins from contour to cut frames (X_value)"')
+    parser.add_argument('--object_crop_margin', '-ocm', type=int, default=200, help='Number of pixels to slice out from each direction (top,bottom,left,right)')
+    parser.add_argument('--perspective_squares_crop_margin', '-pcm', type=int, default=100, help='Number of pixels to slice out from each direction (top,bottom,left,right)')
     parser.add_argument('--output_dir','-o', type=str, help='Path to output directory. If not given the program will create a directory within the input folder')
     parser.add_argument('--collect_start_frame', help='If True, then the program will request frame to start analysing for each vidoe',action='store_true')
     parser.add_argument('--continue_from_last', '-con', help='If True, then the program will continue from the last frame analysed',action='store_true')
     parser.add_argument('--starting_frame', help='Frame to start with',type=int,default=None)
     parser.add_argument('--skip', type=int, help='Number of skipping frames',default=1)
-    parser.add_argument('--collect_crop',help='Number of pixels to slice out from each direction (top,bottom,left,right)',action='store_true')
+    parser.add_argument('--resolution', '-r', help='Resolution of the video', default=[2160, 3840])
+    # parser.add_argument('--collect_crop',help='Number of pixels to slice out from each direction (top,bottom,left,right)',action='store_true')
     parser.add_argument('--collect_parameters', '-cp', help='', action='store_true')
     parser.add_argument('--complete_unanalyzed', '-cu', help='',action='store_true')
     args = vars(parser.parse_args())
@@ -75,8 +76,11 @@ def find_videos_to_analyze(args):
         dirs_to_iter = [args["dir_path"]]
         while dirs_to_iter:
             dir = dirs_to_iter.pop()
-            dirs_to_iter += [os.path.join(dir, subdir) for subdir in os.listdir(dir) if os.path.isdir(os.path.join(dir, subdir)) and (("_force" in subdir) or ("_sliced" in subdir))]
-            videos_to_analyze += [os.path.normpath(x) for x in glob.glob(os.path.join(dir, "*.MP4"))]
+            # dirs_to_iter += [os.path.join(dir, subdir) for subdir in os.listdir(dir) if os.path.isdir(os.path.join(dir, subdir)) and (("_force" in subdir) or ("_sliced" in subdir))]
+            dirs_to_iter += [os.path.join(dir, subdir) for subdir in os.listdir(dir) if os.path.isdir(os.path.join(dir, subdir))]
+            videos_to_analyze += [os.path.normpath(x) for x in glob.glob(os.path.join(dir, "*.MP4"))]\
+                                 +[os.path.normpath(x) for x in glob.glob(os.path.join(dir, "*.MTS"))]\
+                                 +[os.path.normpath(x) for x in glob.glob(os.path.join(dir, "*.MOV"))]
     print("Number of video found to be analyzed: ", len(videos_to_analyze))
     return videos_to_analyze
 
@@ -97,28 +101,23 @@ if __name__ == '__main__':
     if not args["iter_dir"]:
         if args['collect_parameters']:
             print("Collecting parameters for all videos in directory: ",args["dir_path"])
-            collect_color_parameters.main([args["vid_path"]], args["dir_path"], starting_frame=args["collect_start_frame"], collect_crop=args["collect_crop"]) # make parameters file:
+            collect_color_parameters.main([args["vid_path"]], args["dir_path"], starting_frame=args["collect_start_frame"])
         run_analysis(([args["vid_path"],args]))
     elif args["iter_dir"]:
         videos_to_analyze = find_videos_to_analyze(args)
         write_or_remove_files_paths_in_txt_file(videos_to_analyze=videos_to_analyze)
         if args['collect_parameters']:
             print("Collecting parameters for all videos in directory: ",args["dir_path"])
-            collect_color_parameters.main(videos_to_analyze, args["dir_path"], starting_frame=args["collect_start_frame"], collect_crop=args["collect_crop"])
+            collect_color_parameters.main(videos_to_analyze, args["dir_path"], starting_frame=args["collect_start_frame"])
         print("Number of processors exist:",mp.cpu_count())
         print("Mumber of processors used for this task:",str(args["nCPU"]))
-        pool = mp.Pool(args["nCPU"])
+        # pool = mp.Pool(args["nCPU"])
         videos_to_analyze = [(x,args) for x in videos_to_analyze]
-        pool.map(run_analysis, videos_to_analyze)
-        pool.close()
+        for video_path_args in videos_to_analyze:
+            run_analysis(video_path_args)
+        # pool.map(run_analysis, videos_to_analyze)
+        # pool.close()
     print("-"*80)
     print("Finished processing all videos in directory: ", args["dir_path"])
 
-# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/10.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking/ --complete_unanalyzed --iter_dir --nCPU 8
-
-# py command_line_operator.py --dir_path X:/Dor_Gabay/ThesisProject/data/videos/12.9.22/ --output_dir X:/Dor_Gabay/ThesisProject/data/analysed_with_tracking2/ --complete_unanalyzed --iter_dir --nCPU 5
-# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/12.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking2/ --complete_unanalyzed --iter_dir --nCPU 5
-# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/11.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking2/ --complete_unanalyzed --iter_dir --nCPU 10
-# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/12.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking3/ --complete_unanalyzed --iter_dir --nCPU 1
-# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/14.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking/ --complete_unanalyzed --iter_dir --nCPU 2 -con
-# python command_line_operator.py --dir_path Z:/Dor_Gabay/ThesisProject/data/videos/18.9.22/ --output_dir Z:/Dor_Gabay/ThesisProject/data/analysed_with_tracking/ --complete_unanalyzed --iter_dir --nCPU 1 -con
+# python command_line_operator.py --dir_path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\13.8\ --output_dir Z:\Dor_Gabay\ThesisProject\data\2-videos_analysis\ --collect_parameters --iter_dir --nCPU 1

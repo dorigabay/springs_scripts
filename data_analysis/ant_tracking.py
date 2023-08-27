@@ -231,6 +231,8 @@ class AntTracking:
                 last_time_value[current_info != 0] = frame
             np.savez_compressed(os.path.join(post_processing_path, "ants_assigned_to_springs_fixed.npz"), ants_assigned_to_springs)
             return ants_assigned_to_springs
+
+
 # if __name__=="__main__":
 #     # directory = "Z:\\Dor_Gabay\\ThesisProject\\data\\analysed_with_tracking\\15.9.22\\plus0.3mm_force\\"
 #     data_dir = "Z:\\Dor_Gabay\\ThesisProject\\data\\analysed_with_tracking\\10.9.22\\plus0.1_force\\"
