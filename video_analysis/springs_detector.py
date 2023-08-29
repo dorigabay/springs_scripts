@@ -8,11 +8,14 @@ from skimage.morphology import binary_dilation, binary_erosion, remove_small_obj
 from video_analysis import utils
 from video_analysis.perspective_squares_detector import PerspectiveSquares
 
+NEUTRALIZE_COLOUR_ALPHA = 2.5
+NEUTRALIZE_COLOUR_BETA = 0
 WHOLE_OBJECT_CLOSING_SIZE = 4
 COLOR_CLOSING = 5
 NEEDLE_CLOSING = 9
-NEEDLE_SIZE_DEVIATION = 0.85
-NEEDLE_SIZE_DEVIATION_CENTER = 0.98
+NEEDLE_RADIUS_TOLERANCE = 0.05
+# NEEDLE_SIZE_DEVIATION = 0.85
+# NEEDLE_SIZE_DEVIATION_CENTER = 0.98
 LABELING_BINARY_STRUCTURE = generate_binary_structure(2, 2)
 MIN_SPRING_ENDS_SIZE = 50
 MIN_SPRING_MIDDLE_PART_SIZE = 300
@@ -24,17 +27,23 @@ SPRINGS_PARTS_OVERLAP_SIZE = 10
 class Springs(PerspectiveSquares):
     def __init__(self, parameters, image, previous_detections):
         super().__init__(parameters, image, previous_detections)
-        self.object_crop_coordinates = utils.create_box_coordinates(previous_detections[0], parameters["ocm"])[0]
-        image_cropped = utils.white_balance_bgr(utils.neutrlize_colour(utils.crop_frame_by_coordinates(image, self.object_crop_coordinates), alpha=2.5, beta=0))
         self.n_springs = parameters["n_springs"]
-        self.previous_detections = previous_detections
-        springs_properties = self.get_springs_properties(parameters, image_cropped)
+        image_cropped, self.object_crop_coordinates = self.prepare_frame(image)
+        springs_properties = self.get_springs_properties( image_cropped)
         self.springs_coordinates_transformation(image, springs_properties)
 
-    def get_springs_properties(self, parameters, image_cropped):
-        binary_color_masks_connected, binary_color_masks_unconnected = self.mask_object_colors(parameters, image_cropped)
+    def prepare_frame(self, image):
+        if self.previous_detections["skipped_frames"] >= 25:
+            object_crop_coordinates = np.array([0, self.parameters["resolution"][0], 0, self.parameters["resolution"][1]])
+        else:
+            object_crop_coordinates = utils.create_box_coordinates(self.previous_detections["object_center_coordinates"], self.parameters["ocm"])[0]
+        image_cropped = utils.white_balance_bgr(utils.neutrlize_colour(utils.crop_frame_by_coordinates(image, object_crop_coordinates), alpha=NEUTRALIZE_COLOUR_ALPHA, beta=NEUTRALIZE_COLOUR_BETA))
+        return image_cropped, object_crop_coordinates
+
+    def get_springs_properties(self, image_cropped):
+        binary_color_masks_connected, binary_color_masks_unconnected = self.mask_object_colors(self.parameters, image_cropped)
         whole_object_mask_unconnected = self.clean_mask(np.any(np.stack(list(binary_color_masks_unconnected.values()), axis=-1), axis=-1), MIN_SIZE_FOR_WHOLE_OBJECT, remove_needle=False, fill_holes=False)
-        whole_object_mask_connected = np.any(np.stack(list(binary_color_masks_connected.values()), axis=-1), axis=-1)
+        # whole_object_mask_connected = np.any(np.stack(list(binary_color_masks_connected.values()), axis=-1), axis=-1)
         self.object_center, self.tip_point, self.object_needle_radius, self.object_needle_area_size =self.detect_object_needle(binary_color_masks_connected["g"])
         spring_ends_mask = self.clean_mask(binary_color_masks_connected["r"], MIN_SPRING_ENDS_SIZE)
         spring_middle_part_mask = self.clean_mask(binary_color_masks_connected["b"], MIN_SPRING_MIDDLE_PART_SIZE)
@@ -101,20 +110,18 @@ class Springs(PerspectiveSquares):
         if not np.isnan(np.sum(inner_mask_center)):
             object_center = [int(x) for x in inner_mask_center]
             object_center = np.array([object_center[1],object_center[0]])
-        else: object_center = self.previous_detections[0]
+        else: object_center = self.previous_detections["object_center_coordinates"]
         # if the length between the center and the edge is not as the previous detection,
         # use the previous detection for the center:
         needle_mask_full_contour = find_contours(needle_mask_full)[0].astype(int)
         farthest_point, needle_radius = utils.find_farthest_point(object_center, needle_mask_full_contour)
-
-        NEEDLE_RADIUS_TOLERANCE = 0.05
-        if self.previous_detections[1] is not None:
-            mean_radius = self.previous_detections[3]/self.previous_detections[4]
+        if self.previous_detections["tip_point"] is not None:
+            mean_radius = self.previous_detections["sum_needle_radius"]/self.previous_detections["analysed_frame_count"]
             if np.abs(needle_radius-mean_radius)/mean_radius>NEEDLE_RADIUS_TOLERANCE:
-                object_center = self.previous_detections[0]
+                object_center = self.previous_detections["object_center_coordinates"]
                 farthest_point, needle_radius = utils.find_farthest_point(object_center, needle_mask_full_contour)
                 if np.abs(needle_radius-mean_radius)/mean_radius>NEEDLE_RADIUS_TOLERANCE:
-                    farthest_point = self.previous_detections[1]
+                    farthest_point = self.previous_detections["analysed_frame_count"]
                     needle_radius = np.sqrt(np.sum(np.square(farthest_point-object_center)))
                     if np.abs(needle_radius-mean_radius)/mean_radius>NEEDLE_RADIUS_TOLERANCE:
                         raise ValueError("There is a problem in the needle part detection")

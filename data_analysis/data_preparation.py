@@ -20,6 +20,7 @@ from ant_tracking import AntTracking
 class PostProcessing:
     def __init__(self, data_dict):
         self.data_dict = data_dict
+        self.data_dict["two_vars"] = False
         self.frame_resolution = data_dict["frame_resolution"]
         self.data_paths = []
         self.arrangements = []
@@ -44,7 +45,7 @@ class PostProcessing:
     def load_data(self):
         print("loading data...")
         self.norm_size = np.array([np.nanmedian(
-            np.loadtxt(os.path.join(data_path, "raw_analysis", "blue_area_sizes.csv"), delimiter=",")) for data_path in self.data_paths_flatten])
+            np.loadtxt(os.path.join(data_path, "raw_analysis", "needle_area_sizes.csv"), delimiter=",")) for data_path in self.data_paths_flatten])
         self.ants_attached_labels = np.concatenate([np.loadtxt(
             os.path.join(data_path, "raw_analysis", "ants_attached_labels.csv"), delimiter=",") for data_path in self.data_paths_flatten], axis=0)
         self.N_ants_around_springs = np.concatenate([np.loadtxt(
@@ -59,14 +60,14 @@ class PostProcessing:
             np.loadtxt(os.path.join(data_path, "raw_analysis", "free_ends_coordinates_x.csv"), delimiter=","),
             np.loadtxt(os.path.join(data_path, "raw_analysis", "free_ends_coordinates_y.csv"), delimiter=",")), axis=2)
             for data_path in self.data_paths_flatten], axis=0)
-        blue_part_coordinates = np.concatenate(
-            [np.loadtxt(os.path.join(data_path, "raw_analysis", "blue_part_coordinates_x.csv"),
+        needle_part_coordinates = np.concatenate(
+            [np.loadtxt(os.path.join(data_path, "raw_analysis", "needle_part_coordinates_x.csv"),
                         delimiter=",") for data_path in self.data_paths_flatten], axis=0)
-        blue_part_coordinates = np.stack((blue_part_coordinates, np.concatenate(
-            [np.loadtxt(os.path.join(data_path, "raw_analysis", "blue_part_coordinates_y.csv"),
+        needle_part_coordinates = np.stack((needle_part_coordinates, np.concatenate(
+            [np.loadtxt(os.path.join(data_path, "raw_analysis", "needle_part_coordinates_y.csv"),
                         delimiter=",") for data_path in self.data_paths_flatten], axis=0)), axis=2)
-        self.object_center = blue_part_coordinates[:, 0, :]
-        self.blue_tip_coordinates = blue_part_coordinates[:, -1, :]
+        self.object_center = needle_part_coordinates[:, 0, :]
+        self.needle_tip_coordinates = needle_part_coordinates[:, -1, :]
         self.num_of_frames_per_video = np.array(
             [np.loadtxt(os.path.join(data_path, "raw_analysis", "N_ants_around_springs.csv"),
                         delimiter=",").shape[0] for data_path in self.data_paths_flatten])
@@ -114,7 +115,7 @@ class PostProcessing:
                 self.size_ants_around_springs[start_frame:end_frame, :] = np.nan
                 self.fixed_ends_coordinates[start_frame:end_frame, :] = np.nan
                 self.free_ends_coordinates[start_frame:end_frame, :] = np.nan
-                self.blue_tip_coordinates[start_frame:end_frame, :] = np.nan
+                self.needle_tip_coordinates[start_frame:end_frame, :] = np.nan
                 self.object_center[start_frame:end_frame, :] = np.nan
 
     def n_ants_processing(self):
@@ -158,11 +159,11 @@ class PostProcessing:
 
     def calc_distances(self):
         object_center = np.repeat(self.object_center[:, np.newaxis, :], self.num_of_springs, axis=1)
-        blue_tip_coordinates = np.repeat(self.blue_tip_coordinates[:, np.newaxis, :], self.num_of_springs, axis=1)
-        self.blue_length = np.nanmedian(np.linalg.norm(self.blue_tip_coordinates - self.object_center, axis=1))
+        needle_tip_coordinates = np.repeat(self.needle_tip_coordinates[:, np.newaxis, :], self.num_of_springs, axis=1)
+        self.needle_length = np.nanmedian(np.linalg.norm(self.needle_tip_coordinates - self.object_center, axis=1))
         self.object_center_to_free_end_distance = np.linalg.norm(self.free_ends_coordinates - object_center, axis=2)
         self.object_center_to_fixed_end_distance = np.linalg.norm(self.fixed_ends_coordinates - object_center, axis=2)
-        self.object_blue_tip_to_fixed_end_distance = np.linalg.norm(self.fixed_ends_coordinates - blue_tip_coordinates,
+        self.object_needle_tip_to_fixed_end_distance = np.linalg.norm(self.fixed_ends_coordinates - needle_tip_coordinates,
                                                                     axis=2)
 
     def repeat_values(self):
@@ -171,7 +172,7 @@ class PostProcessing:
                                                  axis=1)
         self.object_center_repeated = copy.copy(
             np.repeat(self.object_center[:, np.newaxis, :], self.free_ends_coordinates.shape[1], axis=1))
-        self.blue_tip_coordinates_repeated = np.repeat(self.blue_tip_coordinates[:, np.newaxis, :],
+        self.needle_tip_coordinates_repeated = np.repeat(self.needle_tip_coordinates[:, np.newaxis, :],
                                                        self.free_ends_coordinates.shape[1], axis=1)
 
     def calc_angle(self):
@@ -179,16 +180,16 @@ class PostProcessing:
                                                               self.nest_direction_repeated) + np.pi
         self.fixed_end_angle_to_nest = utils.calc_angle_matrix(self.fixed_ends_coordinates, self.object_center_repeated,
                                                                self.nest_direction_repeated) + np.pi
-        self.blue_part_angle_to_nest = utils.calc_angle_matrix(self.nest_direction_repeated,
+        self.needle_part_angle_to_nest = utils.calc_angle_matrix(self.nest_direction_repeated,
                                                                self.object_center_repeated,
-                                                               self.blue_tip_coordinates_repeated) + np.pi
-        self.free_end_angle_to_blue_part = utils.calc_angle_matrix(self.blue_tip_coordinates_repeated,
+                                                               self.needle_tip_coordinates_repeated) + np.pi
+        self.free_end_angle_to_needle_part = utils.calc_angle_matrix(self.needle_tip_coordinates_repeated,
                                                                    self.object_center_repeated,
                                                                    self.free_ends_coordinates) + np.pi
-        self.fixed_end_angle_to_blue_part = utils.calc_angle_matrix(self.blue_tip_coordinates_repeated,
+        self.fixed_end_angle_to_needle_part = utils.calc_angle_matrix(self.needle_tip_coordinates_repeated,
                                                                     self.object_center_repeated,
                                                                     self.fixed_ends_coordinates) + np.pi
-        self.fixed_to_blue_angle_change = utils.calc_pulling_angle_matrix(self.blue_tip_coordinates_repeated,
+        self.fixed_to_needle_angle_change = utils.calc_pulling_angle_matrix(self.needle_tip_coordinates_repeated,
                                                                           self.object_center_repeated,
                                                                           self.fixed_ends_coordinates)
         # self.interpolate_data()
@@ -204,17 +205,17 @@ class PostProcessing:
     #         self.fixed_end_angle_to_nest[start_frame:end_frame] = \
     #             utils.interpolate_data(self.fixed_end_angle_to_nest[start_frame:end_frame],
     #                                     cells_to_interpolate)
-    #         self.blue_part_angle_to_nest[start_frame:end_frame] = \
-    #             utils.interpolate_data(self.blue_part_angle_to_nest[start_frame:end_frame],
+    #         self.needle_part_angle_to_nest[start_frame:end_frame] = \
+    #             utils.interpolate_data(self.needle_part_angle_to_nest[start_frame:end_frame],
     #                                     cells_to_interpolate)
-    #         self.free_end_angle_to_blue_part[start_frame:end_frame] = \
-    #             utils.interpolate_data(self.free_end_angle_to_blue_part[start_frame:end_frame],
+    #         self.free_end_angle_to_needle_part[start_frame:end_frame] = \
+    #             utils.interpolate_data(self.free_end_angle_to_needle_part[start_frame:end_frame],
     #                                     cells_to_interpolate)
-    #         self.fixed_end_angle_to_blue_part[start_frame:end_frame] = \
-    #             utils.interpolate_data(self.fixed_end_angle_to_blue_part[start_frame:end_frame],
+    #         self.fixed_end_angle_to_needle_part[start_frame:end_frame] = \
+    #             utils.interpolate_data(self.fixed_end_angle_to_needle_part[start_frame:end_frame],
     #                                     cells_to_interpolate)
-    #         self.fixed_to_blue_angle_change[start_frame:end_frame] = \
-    #             utils.interpolate_data(self.fixed_to_blue_angle_change[start_frame:end_frame],
+    #         self.fixed_to_needle_angle_change[start_frame:end_frame] = \
+    #             utils.interpolate_data(self.fixed_to_needle_angle_change[start_frame:end_frame],
     #                                     cells_to_interpolate)
 
 
@@ -222,14 +223,14 @@ class PostProcessing:
         y_length = np.linalg.norm(self.free_ends_coordinates - self.fixed_ends_coordinates, axis=2)
         angles_to_nest = np.expand_dims(self.fixed_end_angle_to_nest, axis=2)
         fixed_end_distance = np.expand_dims(self.object_center_to_fixed_end_distance, axis=2)
-        # fixed_to_tip_distance = np.expand_dims(self.object_blue_tip_to_fixed_end_distance, axis=2)
-        # fixed_to_blue_angle_change = np.expand_dims(np.repeat(np.expand_dims(np.nanmedian(self.fixed_to_blue_angle_change, axis=1), axis=1), self.num_of_springs, axis=1), axis=2)
+        # fixed_to_tip_distance = np.expand_dims(self.object_needle_tip_to_fixed_end_distance, axis=2)
+        # fixed_to_needle_angle_change = np.expand_dims(np.repeat(np.expand_dims(np.nanmedian(self.fixed_to_needle_angle_change, axis=1), axis=1), self.num_of_springs, axis=1), axis=2)
         # object_center = self.object_center_repeated
-        blue_length = np.expand_dims(np.repeat(np.expand_dims(np.linalg.norm(
-            self.blue_tip_coordinates - self.object_center, axis=1), axis=1), self.num_of_springs, axis=1), axis=2)
+        needle_length = np.expand_dims(np.repeat(np.expand_dims(np.linalg.norm(
+            self.needle_tip_coordinates - self.object_center, axis=1), axis=1), self.num_of_springs, axis=1), axis=2)
         # X = np.concatenate((np.sin(angles_to_nest), np.cos(angles_to_nest), object_center, fixed_end_distance,
-        #       fixed_to_tip_distance, fixed_to_blue_angle_change, blue_length), axis=2)
-        X = np.concatenate((np.sin(angles_to_nest), np.cos(angles_to_nest), blue_length, fixed_end_distance), axis=2)
+        #       fixed_to_tip_distance, fixed_to_needle_angle_change, needle_length), axis=2)
+        X = np.concatenate((np.sin(angles_to_nest), np.cos(angles_to_nest), needle_length, fixed_end_distance), axis=2)
         y_angle = utils.calc_pulling_angle_matrix(self.fixed_ends_coordinates, self.object_center_repeated,
                                                   self.free_ends_coordinates)
         idx = self.rest_bool
@@ -249,13 +250,13 @@ class PostProcessing:
         angles_to_nest = np.expand_dims(self.fixed_end_angle_to_nest, axis=2)
         fixed_end_distance = np.expand_dims(self.object_center_to_fixed_end_distance, axis=2)
         # object_center = self.object_center_repeated
-        # fixed_to_tip_distance = np.expand_dims(self.object_blue_tip_to_fixed_end_distance, axis=2)
-        # fixed_to_blue_angle_change = np.expand_dims(np.repeat(np.expand_dims(np.nanmedian(self.fixed_to_blue_angle_change, axis=1), axis=1), self.num_of_springs, axis=1), axis=2)
-        blue_length = np.expand_dims(np.repeat(np.expand_dims(np.linalg.norm(
-            self.blue_tip_coordinates - self.object_center, axis=1), axis=1), self.num_of_springs, axis=1), axis=2)
+        # fixed_to_tip_distance = np.expand_dims(self.object_needle_tip_to_fixed_end_distance, axis=2)
+        # fixed_to_needle_angle_change = np.expand_dims(np.repeat(np.expand_dims(np.nanmedian(self.fixed_to_needle_angle_change, axis=1), axis=1), self.num_of_springs, axis=1), axis=2)
+        needle_length = np.expand_dims(np.repeat(np.expand_dims(np.linalg.norm(
+            self.needle_tip_coordinates - self.object_center, axis=1), axis=1), self.num_of_springs, axis=1), axis=2)
         # X = np.concatenate((np.sin(angles_to_nest), np.cos(angles_to_nest), object_center, fixed_end_distance,
-        #                     fixed_to_tip_distance, fixed_to_blue_angle_change, blue_length,), axis=2)
-        X = np.concatenate((np.sin(angles_to_nest), np.cos(angles_to_nest), blue_length, fixed_end_distance), axis=2)
+        #                     fixed_to_tip_distance, fixed_to_needle_angle_change, needle_length,), axis=2)
+        X = np.concatenate((np.sin(angles_to_nest), np.cos(angles_to_nest), needle_length, fixed_end_distance), axis=2)
         not_nan_idx = ~(np.isnan(matrix) + np.isnan(X).any(axis=2))
         prediction_matrix = np.zeros(matrix.shape)
         for col in range(matrix.shape[1]):
@@ -378,13 +379,13 @@ def profile_ants_behavior(directory):
                       os.path.isdir(os.path.join(directory, sub_dir))]
     for count, path in enumerate(sub_dirs_paths):
         # path_post_processing = os.path.join(directory, "post_processing", f"{data_set[0]}-{data_set[-1]}")
-        print("Profiling ants for: ", path)
+        print("\nProfiling ants for: ", path)
         # ants_assigned_to_springs = np.load(os.path.join(path, "ants_assigned_to_springs.npz"))["arr_0"][:, :-1].astype(np.uint8)
         ants_assigned_to_springs = np.load(os.path.join(path, "ants_assigned_to_springs_fixed.npz"))["arr_0"][:, :-1].astype(np.uint8)
         ants_attached_labels = np.load(os.path.join(path, "ants_attached_labels.npz"))["arr_0"]
         profiles = np.full(6, np.nan)  # ant, spring, start, end, precedence, sudden_appearance
         for ant in range(ants_assigned_to_springs.shape[1]):
-            print(f"ant: {ant}")
+            print("\r Ant number: ", ant, end="")
             attachment = ants_assigned_to_springs[:, ant]
             events_springs = np.split(attachment, np.arange(len(attachment[1:]))[np.diff(attachment) != 0] + 1)
             events_frames = np.split(np.arange(len(attachment)),
@@ -431,159 +432,52 @@ def profile_ants_behavior(directory):
 
 
 def multi_processing(spring_type):
-    output_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\post_processed_data\\{spring_type}\\"
+    output_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\{spring_type}\\"
+    # output_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\post_processed_data\\{spring_type}\\"
     data_dict = pickle.load(open(os.path.join(output_path, "data_dict.pkl"), "rb"))
     object = PostProcessing(data_dict)
     object.save_data()
     object.test_correlation()
 
-    set_paths = []
+    # set_paths = []
     for data_dir in data_dict["data_sets"].keys():
         for data_set in data_dict["data_sets"][data_dir]:
-            # AntTracking(([os.path.join(data_dir, set_name, "raw_analysis") for set_name in data_set["set_names"]],
-            #              data_dict["output_path"]))
-            set_paths.append(([os.path.join(data_dir, set_name, "raw_analysis") for set_name in data_set["set_names"]],
-                              data_dict["output_path"]))
-    pool = mp.Pool()
-    pool.map(AntTracking, set_paths)
-    pool.close()
-    pool.join()
+            AntTracking([os.path.join(data_dir, set_name, "raw_analysis") for set_name in data_set["set_names"]],
+                         data_dict["output_path"], data_dict["frame_resolution"], restart=True)
+            # set_paths.append(([os.path.join(data_dir, set_name, "raw_analysis") for set_name in data_set["set_names"]],
+            #                   data_dict["output_path"]))
+    # pool = mp.Pool()
+    # pool.map(AntTracking, set_paths)
+    # pool.close()
+    # pool.join()
 
     profile_ants_behavior(data_dict["output_path"])
 
 if __name__ == "__main__":
-    # spring_type = "plus0.3"
     spring_type = "plus0.1"
     multi_processing(spring_type)
 
-    # python data_analysis/data_preparation.py
 
-    # spring_types = ["plus0.5", "plus0.1", "plus0"]
-    # pool = mp.Pool()
-    # pool.map(multi_processing, spring_types)
-    # pool.close()
-    # pool.join()
-
-    # spring_type = "plus0.3"
-    # output_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\post_processed_data\\{spring_type}\\"
+    # spring_type = "plus0.1"
+    # output_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\{spring_type}\\"
     # os.makedirs(output_path, exist_ok=True)
-    # data_dir1 = "Z:\\Dor_Gabay\\ThesisProject\\data\\analysed_with_tracking\\15.9.22\\plus0.3mm_force\\"
-    # calibration_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\calibration\\calibration_{spring_type}\\"
+    # data_dir1 = "Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\13.8\\plus_0.1\\"
+    # calibration_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2022\\calibration\\calibration_plus0.1\\"
     # calibration_model = pickle.load(open(calibration_dir + "calibration_model.pkl", "rb"))
     # data_dict = {
     #     "spring_type": spring_type,
     #     "calibration_model": calibration_model,
     #     "output_path": output_path,
     #     "two_vars": True,
-    #     "frame_resolution": (1920, 1080),
+    #     "frame_resolution": (3840, 2160),
     #     "data_sets":
     #         {data_dir1: [
-    #             # {"set_names": [f"S52800{i}" for i in ["01", "02"]], "set_arrangements": [0, 0],
-    #             #           "set_slice_info": [None, None]},
-    #                      {"set_names": [f"S52800{i}" for i in ["03", "04", "05", "06", "07"]], "set_arrangements": [0, 0, 0, 0, 0],
-    #                       "set_slice_info": [None, None, [30000, 68025], [0, 30000], None]},
-    #                      {"set_names": [f"S52800{i}" for i in ["08", "09"]],
-    #                       "set_arrangements": [19, 0],
-    #                       "set_slice_info": [None, None]}
-    #                      ],
-    #          }
-    # }
-    # pickle.dump(data_dict, open(os.path.join(data_dict["output_path"], "data_dict.pkl"), "wb"))
-
-    # spring_type = "plus0.5"
-    # output_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\post_processed_data\\{spring_type}\\"
-    # os.makedirs(output_path, exist_ok=True)
-    # data_dir1 = "Z:\\Dor_Gabay\\ThesisProject\\data\\analysed_with_tracking\\18.9.22\\plus0.5mm_force\\"
-    # calibration_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\calibration\\calibration_{spring_type}\\"
-    # calibration_model = pickle.load(open(calibration_dir + "calibration_model.pkl", "rb"))
-    # data_dict = {
-    #     "spring_type": spring_type,
-    #     "calibration_model": calibration_model,
-    #     "output_path": output_path,
-    #     "two_vars": False,
-    #     "frame_resolution": (1920, 1080),
-    #     "data_sets":
-    #         {data_dir1: [{"set_names": [f"S52900{i}" for i in ["01", "02"]], "set_arrangements": [19, 19],
-    #                       "set_slice_info": [None, None]}
-    #                      ],
-    #          }
-    # }
-    # pickle.dump(data_dict, open(os.path.join(data_dict["output_path"], "data_dict.pkl"), "wb"))
-
-
-    # spring_type = "plus0.5"
-    # output_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\post_processed_data\\{spring_type}\\"
-    # os.makedirs(output_path, exist_ok=True)
-    # data_dir1 = "Z:\\Dor_Gabay\\ThesisProject\\data\\analysed_with_tracking\\18.9.22\\plus0.5mm_force\\"
-    # calibration_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\calibration\\calibration_{spring_type}\\"
-    # calibration_model = pickle.load(open(calibration_dir + "calibration_model.pkl", "rb"))
-    # data_dict = {
-    #     "spring_type": spring_type,
-    #     "calibration_model": calibration_model,
-    #     "output_path": output_path,
-    #     "two_vars": False,
-    #     "frame_resolution": (1920, 1080),
-    #     "data_sets":
-    #         {data_dir1: [{"set_names": [f"S52900{i}" for i in ["01", "02"]], "set_arrangements": [0, 0],
-    #                       "set_slice_info": [None, None]}
-    #                      ],
-    #          }
-    # }
-    # pickle.dump(data_dict, open(os.path.join(data_dict["output_path"], "data_dict.pkl"), "wb"))
-
-
-    # spring_type = "plus0"
-    # calibration_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\calibration\\calibration_{spring_type}\\"
-    # output_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\post_processed_data\\{spring_type}\\"
-    # data_dir1 = "Z:\\Dor_Gabay\\ThesisProject\\data\\analysed_with_tracking\\10.9.22\\plus0_force\\"
-    # data_dir2 = "Z:\\Dor_Gabay\\ThesisProject\\data\\analysed_with_tracking\\12.9.22\\plus0_force\\"
-    # calibration_model = pickle.load(open(calibration_dir + "calibration_model.pkl", "rb"))
-    # data_dict = {
-    #     "spring_type": spring_type,
-    #     "calibration_model": calibration_model,
-    #     "output_path": output_path,
-    #     "two_vars": False,
-    #     "frame_resolution": (1920, 1080),
-    #     "data_sets":
-    #         {data_dir1: [{"set_names": [f"S52000{i}" for i in ["07", "08", "09", "10"]], "set_arrangements": [0, 0, 0, 0],
-    #                       "set_slice_info": [None, None, None, None]}],
-    #          # data_dir2: [{"set_names": [f"S52200{i}" for i in ["03", "04", "05", "06", "07"]], "set_arrangements": [0, 0, 0, 0],
-    #          #              "set_slice_info": [None, None, None, None]}]
-    #          }
-    # }
-    # pickle.dump(data_dict, open(os.path.join(data_dict["output_path"], "data_dict.pkl"), "wb"))
-
-
-    # spring_type = "plus0.1"
-    # calibration_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\calibration\\calibration_{spring_type}\\"
-    # output_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\post_processed_data\\{spring_type}\\"
-    # data_dir1 = "Z:\\Dor_Gabay\\ThesisProject\\data\\analysed_with_tracking\\10.9.22\\plus0.1_force\\"
-    # data_dir2 = "Z:\\Dor_Gabay\\ThesisProject\\data\\analysed_with_tracking\\11.9.22\\plus0.1mm_force\\"
-    # calibration_model = pickle.load(open(calibration_dir + "calibration_model.pkl", "rb"))
-    # data_dict = {
-    #     "spring_type": spring_type,
-    #     "calibration_model": calibration_model,
-    #     "output_path": output_path,
-    #     "two_vars": False,
-    #     "frame_resolution": (1920, 1080),
-    #     "data_sets":
-    #         {data_dir1: [{"set_names": [f"S52000{i}" for i in ["03", "04", "05"]], "set_arrangements": [0, 0, 0],
-    #                       "set_slice_info": [None, None, None]},
-    #                      {"set_names": [f"S52000{i}" for i in ["06"]], "set_arrangements": [0], "set_slice_info": [None]}
-    #                      ],
-    #          data_dir2: [{"set_names": [f"S52100{i}" for i in ["14", "15"]], "set_arrangements": [0, 0],
-    #                       "set_slice_info": [None, None]},
-    #                      {"set_names": [f"S52100{i}" for i in ["16"]], "set_arrangements": [0],
+    #                      {"set_names": [f"S57600{i}" for i in ["01"]], "set_arrangements": [0],
     #                       "set_slice_info": [None]},
-    #                      # {"set_names": [f"S52100{i}" for i in ["17", "18", "19"]], "set_arrangements": [0, 0, 0],
-    #                      #  "set_slice_info": [None, None, None]},
-    #                      # {"set_names": [f"S52200{i}" for i in ["01", "02", "03", "04", "05"]], "set_arrangements": [0, 0, 0, 0, 0],
-    #                      #  "set_slice_info": [None, None, None, None, None]},
-    #                      # {"set_names": [f"S52200{i}" for i in ["06", "07", "08"]], "set_arrangements": [0, 0, 0],
-    #                      #  "set_slice_info": [None, None, None]}
-    #                      ]
+    #                      ],
     #          }
     # }
     # pickle.dump(data_dict, open(os.path.join(data_dict["output_path"], "data_dict.pkl"), "wb"))
+
 
 

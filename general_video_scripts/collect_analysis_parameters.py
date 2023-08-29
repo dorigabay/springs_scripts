@@ -224,18 +224,15 @@ def add_colors_parameters(frame_with_mask,colors_dict, color_name):
     return colors_dict
 
 
-def set_parameters(video, starting_frame=False, n_springs=20, ocm=200, pcm=100, reduction=0.25, resolution=(2160, 3840), max_ants_number=100):
+def set_parameters(video, collect_starting_frame=False, n_springs=20, ocm=200, pcm=100, reduction=0.25, resolution=(2160, 3840), max_ants_number=100):
     """Collects the parameters and returns them in a dictionary.
         ocm: object crop margin size
         pcm: perspective squares margin size
         reduction: reduction factor for the image
     """
     # load the frame:
-    if starting_frame:
-        print("What frame to start with: ")
-        start_frame = int(input())
-    else:
-        start_frame = 0
+    if collect_starting_frame: start_frame = int(input("What frame to start with: "))
+    else: start_frame = 0
     frame = utils.get_a_frame(video, starting_frame=start_frame)
     frame = utils.neutrlize_colour(frame,alpha=2.5, beta=0)
     frame = utils.white_balance_bgr(frame)
@@ -277,11 +274,11 @@ def set_parameters(video, starting_frame=False, n_springs=20, ocm=200, pcm=100, 
                   "max_ants_number": max_ants_number,
                   "resolution": np.array(resolution)}
     while not show_parameters_result(video, parameters):
-        parameters = set_parameters(video, starting_frame=starting_frame, n_springs=n_springs)
+        parameters = set_parameters(video, collect_starting_frame=collect_starting_frame, n_springs=n_springs)
     return parameters
 
 
-def main(videos_to_analyse,output_folder,starting_frame=False, n_springs=None):
+def main(videos_to_analyse, output_folder, collect_starting_frame=False, n_springs=None):
     output_path_parameters = os.path.join(output_folder, "parameters")
     os.makedirs(output_path_parameters, exist_ok=True)
     parameters = {}
@@ -301,13 +298,13 @@ def main(videos_to_analyse,output_folder,starting_frame=False, n_springs=None):
                 first = False
         elif reuse == 'n':
             if first:
-                parameters[video] = set_parameters(video, starting_frame=starting_frame, n_springs=n_springs)
+                parameters[video] = set_parameters(video, collect_starting_frame=collect_starting_frame, n_springs=n_springs)
                 first = False
             elif not first:
                 parameters[video] = copy.copy(parameters[videos_to_analyse[i-1]])
                 parameters[video]["starting_frame"] = int(input("What frame to start with: "))
                 while not show_parameters_result(video, parameters[video]):
-                    parameters[video] = set_parameters(video, starting_frame=starting_frame, n_springs=n_springs)
+                    parameters[video] = set_parameters(video, collect_starting_frame=collect_starting_frame, n_springs=n_springs)
             with open(os.path.join(output_path_parameters, f"{video_name}_video_parameters.pickle"), 'wb') as f:
                 pickle.dump({video: parameters[video]}, f)
     return output_path_parameters

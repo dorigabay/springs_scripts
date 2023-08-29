@@ -36,14 +36,14 @@ class Calculation(Ants):
     def initiate_springs_angles_matrix(self):
         #TODO: make the 3rd line in this function to be functional (if np.sum(np.abs(linspace_angles-self.previous_detections[2]))==0:)
         linspace_angles = np.linspace(-np.pi, np.pi - np.pi / self.n_springs, self.n_springs).reshape(1, self.n_springs)
-        if self.previous_detections[2] is not None:
-            if np.sum(np.abs(linspace_angles - self.previous_detections[2])) == 0:
+        if self.previous_detections["springs_angles_reference_order"] is not None:
+            if np.sum(np.abs(linspace_angles - self.previous_detections["springs_angles_reference_order"])) == 0:
                 if len(self.bundles_labels) == self.n_springs:
                     self.springs_angles_reference_order = np.sort(self.bundles_labels).reshape(1, self.n_springs)
                 else:
-                    self.springs_angles_reference_order = self.previous_detections[2]
+                    self.springs_angles_reference_order = self.previous_detections["springs_angles_reference_order"]
             else:
-                self.springs_angles_reference_order = self.previous_detections[2]
+                self.springs_angles_reference_order = self.previous_detections["springs_angles_reference_order"]
         elif len(self.bundles_labels) == self.n_springs:
             self.springs_angles_reference_order = np.sort(self.bundles_labels).reshape(1, self.n_springs)
         else:

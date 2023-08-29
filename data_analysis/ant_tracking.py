@@ -3,12 +3,15 @@ import numpy as np
 import scipy.io as sio
 from scipy.ndimage.morphology import binary_closing
 import subprocess
+import time
 
 
 class AntTracking:
-    def __init__(self, data):
-        output_path, data_paths = data[1], data[0]
-        self.frame_size = (1920, 1080)
+    def __init__(self, data_paths, output_path, frame_size, restart=False):
+        # output_path, data_paths = data[1], data[0]
+        # self.frame_size = (3840, 2160)
+        self.restart = restart
+        self.frame_size = frame_size
         self.sub_dirs_names = [os.path.basename(os.path.split(os.path.normpath(path))[-2]) for path in data_paths]
         self.output_path = os.path.join(output_path, f"{self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]}")
         print(f"Tracking ants for {self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]}")
@@ -18,7 +21,7 @@ class AntTracking:
         self.connect_occasions(self.output_path)
 
     def first_tracking_calculation(self, data_paths, output_path):
-        if not os.path.exists(os.path.join(output_path, "tracking_data.mat")):
+        if self.restart or not os.path.exists(os.path.join(output_path, "tracking_data.mat")):
             complete_ants_centers_x = np.array([])
             complete_ants_centers_y = np.array([])
             for count, path in enumerate(data_paths):
@@ -45,9 +48,19 @@ class AntTracking:
             run_output = subprocess.run(execution_string, shell=True, capture_output=True)
             print(run_output.stdout.decode("utf-8"))
 
+    def wait_for_existance(self, path, file_name):
+        existing_attempts = 0
+        while not os.path.exists(os.path.join(path, file_name)):
+            print(f"waiting for matlab to finish tracking... (waited for {existing_attempts * 10} seconds already)")
+            time.sleep(10)
+            existing_attempts += 1
+            if existing_attempts > 100:
+                return ValueError("matlab is stuck, please check")
+
     def correct_tracked_ants(self, post_processing_path):
         "This function removes all new labels that were create inside the frame, and not on the boundries (10% of the frame)"
-        if not os.path.exists(os.path.join(post_processing_path, "tracking_data_corrected.mat")):
+        if self.restart or not os.path.exists(os.path.join(post_processing_path, "tracking_data_corrected.mat")):
+            self.wait_for_existance(post_processing_path, "tracking_data.mat")
             print("Correcting tracked ants...")
             tracked_ants = sio.loadmat(os.path.join(post_processing_path, "tracking_data.mat"))["tracked_blobs_matrix"]
             num_of_frames = tracked_ants.shape[2]
@@ -121,7 +134,7 @@ class AntTracking:
                 duplicated_labels = [disappeared_labels[x] for x in duplicated_idxs]
                 disappeared_labels = [np.min(duplicated_labels) if x in duplicated_labels else x for x in disappeared_labels]
 
-            print(f"Finishing tracking correction for {post_processing_path}...")
+            print(f"\nFinishing tracking correction for {post_processing_path}...")
             for unique_label in np.unique(tracked_ants[:, 2, :]):
                 occurrences = np.count_nonzero(tracked_ants[:, 2, :] == unique_label)
                 if occurrences < 20:
@@ -139,9 +152,10 @@ class AntTracking:
         else: return False
 
     def assign_ants_to_springs(self, post_processing_path):
-        if not os.path.exists(os.path.join(post_processing_path, "ants_assigned_to_springs.npz")):
+        if self.restart or not os.path.exists(os.path.join(post_processing_path, "ants_assigned_to_springs.npz")):
+            self.wait_for_existance(post_processing_path, "tracking_data_corrected.mat")
             print(f"Processing {post_processing_path}...")
-            tracked_ants = sio.loadmat(os.path.join(post_processing_path, "tracking_data_corrected.mat"))["tracked_blobs_matrix"].astype(np.uint32)
+            tracked_ants = sio.loadmat(os.path.join(post_processing_path, "tracking_data_corrected.mat"))["tracked_blobs_matrix"].astype(np.uint16)
             unique_elements, indices = np.unique(tracked_ants[:,2,:], return_inverse=True)
             tracked_ants[:,2,:] = indices.reshape(tracked_ants[:,2,:].shape)
             N_ants_around_springs = np.load(os.path.join(post_processing_path, "N_ants_around_springs.npz"))["arr_0"].astype(np.uint8)
@@ -211,7 +225,7 @@ class AntTracking:
         return ants_assigned_to_springs
 
     def connect_occasions(self, post_processing_path):
-        if not os.path.exists(os.path.join(post_processing_path, "ants_assigned_to_springs_fixed.npz")):
+        if self.restart or not os.path.exists(os.path.join(post_processing_path, "ants_assigned_to_springs_fixed.npz")):
             print("Connecting occasions...")
             missing_info = np.load(os.path.join(post_processing_path, "missing_info.npz"))["arr_0"]
             ants_assigned_to_springs = np.load(os.path.join(post_processing_path, "ants_assigned_to_springs.npz"))["arr_0"]
@@ -219,7 +233,7 @@ class AntTracking:
             last_time_value = np.full(last_value.shape, np.nan)
             last_time_value[last_value != 0] = 0
             for frame in range(1,ants_assigned_to_springs.shape[0]):
-                print("Frame: ", frame)
+                print("\r Frame: ", frame, end="")
                 current_info = ants_assigned_to_springs[frame,:]
                 current_springs = np.unique(current_info[current_info != 0])
                 springs_were_nan = current_springs[np.isnan(missing_info[frame-1,current_springs-1])]

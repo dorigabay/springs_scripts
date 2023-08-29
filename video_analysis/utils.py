@@ -120,7 +120,6 @@ def calc_angles(points_to_measure, object_center, tip_point):
 def create_box_coordinates(center, margin, reduction_factor=1, resolution=(3840, 2160)):
     if len(center.shape) == 1:
         center = np.array([center])
-    # print(center.shape)
     coordinates = np.zeros((center.shape[0], 4))
     for i in range(len(center)):
         y = [center[i][0] * reduction_factor - margin, center[i][0] * reduction_factor + margin]

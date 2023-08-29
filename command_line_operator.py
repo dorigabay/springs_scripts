@@ -16,7 +16,7 @@ def parse_args():
     parser.add_argument('--object_crop_margin', '-ocm', type=int, default=200, help='Number of pixels to slice out from each direction (top,bottom,left,right)')
     parser.add_argument('--perspective_squares_crop_margin', '-pcm', type=int, default=100, help='Number of pixels to slice out from each direction (top,bottom,left,right)')
     parser.add_argument('--output_dir','-o', type=str, help='Path to output directory. If not given the program will create a directory within the input folder')
-    parser.add_argument('--collect_start_frame', help='If True, then the program will request frame to start analysing for each vidoe',action='store_true')
+    parser.add_argument('--collect_starting_frame', help='If True, then the program will request frame to start analysing for each video',action='store_true')
     parser.add_argument('--continue_from_last', '-con', help='If True, then the program will continue from the last frame analysed',action='store_true')
     parser.add_argument('--starting_frame', help='Frame to start with',type=int,default=None)
     parser.add_argument('--skip', type=int, help='Number of skipping frames',default=1)
@@ -90,25 +90,27 @@ def run_analysis(video_path_args):
     output_dir,vidname = create_output_dir(video_path,args)
     print("Start processing video: ",video_path)
     video_parameters = collect_color_parameters.get_parameters(os.path.join(args["dir_path"], "parameters"), video_path)
+    video_parameters["starting_frame"] = args["starting_frame"]
     # video_parameters["crop_coordinates"] = None #only for calibration videos
-    main.main(video_path, output_dir, video_parameters,starting_frame=args["starting_frame"],continue_from_last=args["continue_from_last"])
+    main.main(video_path, output_dir, video_parameters, continue_from_last=args["continue_from_last"])
     print("Finished processing video: ", video_path)
     # remove vidoe path from 'Unanalyzed_videos.txt' file:
     # write_or_remove_files_paths_in_txt_file(video_path=video_path)
+
 
 if __name__ == '__main__':
     args = parse_args()
     if not args["iter_dir"]:
         if args['collect_parameters']:
             print("Collecting parameters for all videos in directory: ",args["dir_path"])
-            collect_color_parameters.main([args["vid_path"]], args["dir_path"], starting_frame=args["collect_start_frame"])
+            collect_color_parameters.main([args["vid_path"]], args["dir_path"], starting_frame=args["collect_starting_frame"])
         run_analysis(([args["vid_path"],args]))
     elif args["iter_dir"]:
         videos_to_analyze = find_videos_to_analyze(args)
         write_or_remove_files_paths_in_txt_file(videos_to_analyze=videos_to_analyze)
         if args['collect_parameters']:
             print("Collecting parameters for all videos in directory: ",args["dir_path"])
-            collect_color_parameters.main(videos_to_analyze, args["dir_path"], starting_frame=args["collect_start_frame"])
+            collect_color_parameters.main(videos_to_analyze, args["dir_path"], starting_frame=args["collect_starting_frame"])
         print("Number of processors exist:",mp.cpu_count())
         print("Mumber of processors used for this task:",str(args["nCPU"]))
         # pool = mp.Pool(args["nCPU"])
@@ -120,4 +122,4 @@ if __name__ == '__main__':
     print("-"*80)
     print("Finished processing all videos in directory: ", args["dir_path"])
 
-# python command_line_operator.py --dir_path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\13.8\ --output_dir Z:\Dor_Gabay\ThesisProject\data\2-videos_analysis\ --collect_parameters --iter_dir --nCPU 1
+# python command_line_operator.py --dir_path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\13.8\ --output_dir Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\test\ --collect_parameters --iter_dir --nCPU 1

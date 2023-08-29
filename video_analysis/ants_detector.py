@@ -55,3 +55,5 @@ class Ants(Springs):
         ants_centers = center_of_mass(labeled_image, labeled_image, range(1, num_labels+1))
         self.ants_centers = np.array(ants_centers)
 
+        cv2.imshow('ants', cv2.resize(self.labeled_ants.astype(bool).astype(np.uint8) * 255, (0, 0), fx=0.3, fy=0.3))
+        cv2.waitKey(1)
