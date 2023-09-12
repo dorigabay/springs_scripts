@@ -91,6 +91,18 @@ def fit_line(points):
     return slope, intercept
 
 
+def create_color_mask(image, color_spaces):
+    blurred = cv2.GaussianBlur(image, (3, 3), 0)
+    hsv_image = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+    binary_mask = np.zeros(image.shape[:-1], "int")
+    for hsv_space in color_spaces:
+        mask1 = cv2.inRange(hsv_image, hsv_space[0], hsv_space[1])
+        mask2 = cv2.inRange(hsv_image, hsv_space[2], hsv_space[3])
+        binary_mask[(mask1 + mask2) != 0] = 1
+    binary_mask = close_element(binary_mask, COLOR_CLOSING)
+    return binary_mask
+
+
 def mask_object_colors(parameters, image):
     binary_color_masks = {x: None for x in parameters["colors_spaces"]}
     blurred = cv2.GaussianBlur(image, (3, 3), 0)
@@ -146,15 +158,15 @@ def collect_points(image, n_points, show_color=False):
         if event == cv2.EVENT_LBUTTONDOWN:
             points.append([y, x])
     points = []
-    cv2.imshow("Pick a pixel (only one point)", image)
-    cv2.setMouseCallback("Pick a pixel (only one point)", click_event)
+    cv2.imshow(f"Pick {n_points} pixels", image)
+    cv2.setMouseCallback(f"Pick {n_points} pixels", click_event)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
     if len(points) != n_points: collect_points(image, n_points)
     return np.array(points)
 
 
-def get_a_frame(video, starting_frame=0):
+def get_a_frame(video, analysis_frame=0):
     """
     Gets the first frame for choosing points.
     The function reduces the resolution to the resolution that will be used int the detection part - this is important
@@ -164,7 +176,7 @@ def get_a_frame(video, starting_frame=0):
     :return:
     """
     cap = cv2.VideoCapture(video)
-    cap.set(cv2.CAP_PROP_POS_FRAMES, starting_frame)
+    cap.set(cv2.CAP_PROP_POS_FRAMES, analysis_frame)
     ret, frame = cap.read()
     # frame = cv2.resize(frame, (0, 0), fx=.3, fy=.3)
     return frame
@@ -217,6 +229,25 @@ def create_circular_mask(image_dim, center=None, radius=None):
 
     mask = dist_from_center <= radius
     return mask
+
+def process_image(image, alpha=2.5, beta=0, gradiant_threshold=10, sobel_kernel_size=1, blur_kernel=(7,7)):
+    from scipy.ndimage import binary_fill_holes
+    image = neutrlize_colour(image, alpha=alpha, beta=beta)
+    image = white_balance_bgr(image)
+
+    kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])  # sharpening kernel
+    image = cv2.filter2D(image, -1, kernel)
+    # sobel mask:
+    image_gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    sobel_x = cv2.Sobel(image_gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel_size)
+    sobel_y = cv2.Sobel(image_gray, cv2.CV_64F, 0, 1, ksize=sobel_kernel_size)
+    gradient_magnitude = np.sqrt(sobel_x ** 2 + sobel_y ** 2)
+    sobel_mask = (gradient_magnitude > gradiant_threshold).astype("uint8")
+    binary_fill_holes(sobel_mask, output=sobel_mask)
+    # sharpen image:
+    image = cv2.GaussianBlur(image, blur_kernel, 0)
+    image[~(sobel_mask.astype(bool))] = [255, 255, 255]
+    return image
 
 
 # def combine_masks(list_of_masks):

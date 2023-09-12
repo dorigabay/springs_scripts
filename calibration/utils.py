@@ -1,10 +1,6 @@
 import os
-import pickle
 import numpy as np
 import cv2
-from general_video_scripts.collect_analysis_parameters import neutrlize_colour
-from video_analysis.springs_detector import Springs
-from scipy.ndimage import label, sum
 
 
 # def collect_normalization_length(video_path, output_path, staring_frame=0, n_frames=100):

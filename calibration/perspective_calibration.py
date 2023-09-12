@@ -13,12 +13,11 @@ import os.path
 import cv2
 from skimage import filters
 import numpy as np
-import utils
 import copy
 from scipy.ndimage import label, center_of_mass
-from general_video_scripts import collect_analysis_parameters
 from skimage import transform
 from video_analysis import utils as utils_video_analysis
+
 
 def extract_image(video_path,frame_number):
     cap = cv2.VideoCapture(video_path)
@@ -140,6 +139,19 @@ def closest_to_camera(distances,centers,labels):
     return center_largest_centers
 
 
+def projective_transformation(dst, coordinates_to_project):
+    """
+    :param dst: destination coordinates - the perspective squares centers
+    :param coordinates_to_project: the coordinates to project
+    :return:
+    """
+    distances = np.linalg.norm(dst[0]-dst[1]), np.linalg.norm(dst[0]-dst[3])
+    src = np.array([dst[0],[dst[0][0]+distances[0],dst[0][1]],[dst[0][0]+distances[0],dst[0][1]+distances[1]],[dst[0][0],dst[0][1]+distances[1]]])
+    M = cv2.getPerspectiveTransform(src, dst)
+    M_inv = np.linalg.inv(M)
+    source_coordinates = cv2.perspectiveTransform(coordinates_to_project.reshape(-1, 1, 2), M_inv)
+    source_coordinates = source_coordinates.reshape(-1, 2)
+    return source_coordinates
 
 def estimate_projective_transformation_parameters(image):
     print("Please select the co-linear  coordinates:")

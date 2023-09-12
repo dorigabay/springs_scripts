@@ -28,7 +28,7 @@ def get_csv_line_count(csv_file):
     return line_count
 
 
-def save_data(output_dir, snap_data, calculations=None, n_springs=20, max_ants=100, continue_from_last=False):
+def save_data(output_dir, snapshot_data, calculations=None, n_springs=20, max_ants=100, continue_from_last=False):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     if calculations is None:
@@ -62,8 +62,8 @@ def save_data(output_dir, snap_data, calculations=None, n_springs=20, max_ants=1
              "ants_attached_labels", "ants_attached_forgotten_labels",
              "perspective_squares_coordinates_y", "perspective_squares_coordinates_x",
              "perspective_squares_sizes_width", "perspective_squares_sizes_height"]
-    pickle.dump(snap_data, open(os.path.join(output_dir, f'snap_data_{snap_data["current_time"]}.pickle'), "wb"))
-    if snap_data["frame_count"]==0:
+    pickle.dump(snapshot_data, open(os.path.join(output_dir, f'snap_data_{snapshot_data["current_time"]}.pickle'), "wb"))
+    if snapshot_data["frame_count"]==0:
         for d, n in zip(arrays[:], names[:]):
             with open(os.path.join(output_dir, str(n) + '.csv'), 'wb') as f:
                 np.savetxt(f, d, delimiter=',')
@@ -73,7 +73,7 @@ def save_data(output_dir, snap_data, calculations=None, n_springs=20, max_ants=1
             with open(os.path.join(output_dir, str(n) + '.csv'), 'a') as f:
                 if continue_from_last:
                     line_count = get_csv_line_count(os.path.join(output_dir, str(n) + '.csv'))
-                    if line_count == snap_data["frame_count"]+1:
+                    if line_count == snapshot_data["frame_count"]+1:
                         continue
                     else:
                         np.savetxt(f, d, delimiter=',')
@@ -82,7 +82,7 @@ def save_data(output_dir, snap_data, calculations=None, n_springs=20, max_ants=1
                 f.close()
 
 
-def present_analysis_result(frame, calculations):
+def present_analysis_result(frame, calculations, video_name=" "):
     image_to_illustrate = frame
     for point_red in calculations.spring_ends_centers:
         image_to_illustrate = cv2.circle(image_to_illustrate, point_red.astype(int), 1, (0, 0, 255), 2)
@@ -106,7 +106,7 @@ def present_analysis_result(frame, calculations):
     image_to_illustrate = cv2.circle(image_to_illustrate, calculations.object_center, 1, (0, 0, 0), 2)
     image_to_illustrate = cv2.circle(image_to_illustrate, calculations.tip_point, 1, (0, 255, 0), 2)
     image_to_illustrate = utils.crop_frame_by_coordinates(image_to_illustrate, calculations.object_crop_coordinates)
-    cv2.imshow("frame", utils.white_balance_bgr(image_to_illustrate))
+    cv2.imshow(video_name, utils.white_balance_bgr(image_to_illustrate))
     cv2.waitKey(1)
 
 
@@ -114,11 +114,11 @@ def main(video_path, output_dir, parameters, continue_from_last=False):
     cap = cv2.VideoCapture(video_path)
     if continue_from_last and len([f for f in os.listdir(output_dir) if f.startswith("snap_data")]) != 0:
         snaps = [f for f in os.listdir(output_dir) if f.startswith("snap_data")]
-        snap_data = pickle.load(open(os.path.join(output_dir, snaps[-1]), "rb"))
-        parameters["starting_frame"] = snap_data["frame_count"]
-        snap_data["current_time"] = datetime.datetime.now().strftime("%d.%m.%Y-%H%M")
+        snapshot_data = pickle.load(open(os.path.join(output_dir, snaps[-1]), "rb"))
+        parameters["starting_frame"] = snapshot_data["frame_count"]
+        snapshot_data["current_time"] = datetime.datetime.now().strftime("%d.%m.%Y-%H%M")
     else:
-        snap_data = {"object_center_coordinates": parameters["object_center_coordinates"][0],
+        snapshot_data = {"object_center_coordinates": parameters["object_center_coordinates"][0],
                      "tip_point": None, "springs_angles_reference_order": None,
                      "sum_needle_radius": 0, "analysed_frame_count": 0, "frame_count": 0,
                      "current_time": datetime.datetime.now().strftime("%d.%m.%Y-%H%M"),
@@ -127,37 +127,39 @@ def main(video_path, output_dir, parameters, continue_from_last=False):
     cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["starting_frame"])
     while True:
         ret, frame = cap.read()
-        if (snap_data["skipped_frames"] % 25 == 0 and snap_data["skipped_frames"] != 0):
+        if (snapshot_data["skipped_frames"] % 25 == 0 and snapshot_data["skipped_frames"] != 0):
             print("\r Jumping 25 frames ahead, and analysing the entire frame", end="")
-            cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["starting_frame"] + snap_data["frame_count"] + 24)
+            cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["starting_frame"] + snapshot_data["frame_count"] + 24)
             for i in range(24):
-                save_data(output_dir, snap_data=snap_data, continue_from_last=continue_from_last)
-                snap_data["frame_count"] += 1
-            snap_data["skipped_frames"] += 24
+                save_data(output_dir, snapshot_data=snapshot_data, n_springs=parameters["n_springs"], continue_from_last=continue_from_last)
+                snapshot_data["frame_count"] += 1
+            snapshot_data["skipped_frames"] += 24
         else:
             if frame is None: break
+            # cv2.imshow("frame", frame)
+            # cv2.waitKey(0)
             try:
-                calculations = Calculation(parameters, frame, snap_data)
-                snap_data["object_center_coordinates"] = calculations.object_center[[1, 0]]
-                snap_data["tip_point"] = calculations.tip_point
-                snap_data["springs_angles_reference_order"] = calculations.springs_angles_reference_order
-                snap_data["sum_needle_radius"] += int(calculations.object_needle_radius)
-                snap_data["analysed_frame_count"] += 1
-                snap_data["perspective_squares_coordinates"] = utils.swap_columns(calculations.perspective_squares_properties[:, 0])
-                snap_data["skipped_frames"] = 0
-                snap_data["perspective_square_dimensions"] = calculations.perspective_squares_properties[:, 1]
-                save_data(output_dir, calculations=calculations, snap_data=snap_data, continue_from_last=continue_from_last,
+                calculations = Calculation(parameters, frame, snapshot_data)
+                snapshot_data["object_center_coordinates"] = calculations.object_center[[1, 0]]
+                snapshot_data["tip_point"] = calculations.tip_point
+                snapshot_data["springs_angles_reference_order"] = calculations.springs_angles_reference_order
+                snapshot_data["sum_needle_radius"] += int(calculations.object_needle_radius)
+                snapshot_data["analysed_frame_count"] += 1
+                snapshot_data["perspective_squares_coordinates"] = utils.swap_columns(calculations.perspective_squares_properties[:, 0])
+                snapshot_data["skipped_frames"] = 0
+                snapshot_data["perspective_square_dimensions"] = calculations.perspective_squares_properties[:, 1]
+                save_data(output_dir, calculations=calculations, snapshot_data=snapshot_data, continue_from_last=continue_from_last,
                           n_springs=parameters["n_springs"], max_ants=parameters["max_ants_number"])
-                present_analysis_result(frame, calculations)
-                print("\r Analyzed frame number: ", snap_data["frame_count"], end=" "*150)
+                present_analysis_result(frame, calculations, os.path.basename(video_path).split(".")[0])
+                print("\r Analyzed frame number: ", snapshot_data["frame_count"], end=" "*150)
             except:
-                print("\r Skipped frame: ", snap_data["frame_count"], end=" "*150)
-                snap_data["skipped_frames"] += 1
-                save_data(output_dir, snap_data=snap_data, n_springs=parameters["n_springs"], continue_from_last=continue_from_last)
-            snap_data["frame_count"] += 1
+                print("\r Skipped frame: ", snapshot_data["frame_count"], end=" "*150)
+                snapshot_data["skipped_frames"] += 1
+                save_data(output_dir, snapshot_data=snapshot_data, n_springs=parameters["n_springs"], continue_from_last=continue_from_last)
+            snapshot_data["frame_count"] += 1
         continue_from_last = False
     cap.release()
-    if not os.path.exists(os.path.join(output_dir, f'analysis_ended_{snap_data["current_time"]}.pickle')):
+    if not os.path.exists(os.path.join(output_dir, f'analysis_ended_{snapshot_data["current_time"]}.pickle')):
         save_as_mathlab_matrix(output_dir)
-    pickle.dump("video_ended", open(os.path.join(output_dir, f'analysis_ended_{snap_data["current_time"]}.pickle'), "wb"))
+    pickle.dump("video_ended", open(os.path.join(output_dir, f'analysis_ended_{snapshot_data["current_time"]}.pickle'), "wb"))
 

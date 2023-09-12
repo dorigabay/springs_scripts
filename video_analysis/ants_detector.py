@@ -11,12 +11,12 @@ from video_analysis.springs_detector import Springs
 OBJECT_DILATION_SIZE = 5
 FIRST_OPENING_STRUCTURE = np.ones((1, 1))
 SECOND_OPENING_STRUCTURE = np.ones((2, 2))
-MIN_ANTS_SIZE = 20
+MIN_ANTS_SIZE = 30
 SOBEL_KERNEL_SIZE = 1
 GRADIANT_THRESHOLD = 90
-LOWER_HSV_VALUES = np.array([0, 60, 0])
+LOWER_HSV_VALUES = np.array([0, 0, 0])
 UPPER_HSV_VALUES = np.array([179, 255, 200])
-ANTS_EXTENSION_LENGTH = 5
+ANTS_EXTENSION_LENGTH = 3
 
 
 class Ants(Springs):
@@ -54,6 +54,8 @@ class Ants(Springs):
         self.labeled_ants = utils.extend_lines(labeled_image, extend_by=ANTS_EXTENSION_LENGTH)
         ants_centers = center_of_mass(labeled_image, labeled_image, range(1, num_labels+1))
         self.ants_centers = np.array(ants_centers)
+        if self.ants_centers.shape[0] == 0:
+            self.ants_centers = np.full((0, 2), np.nan)
 
-        cv2.imshow('ants', cv2.resize(self.labeled_ants.astype(bool).astype(np.uint8) * 255, (0, 0), fx=0.3, fy=0.3))
-        cv2.waitKey(1)
+        # cv2.imshow('ants', cv2.resize(self.labeled_ants.astype(bool).astype(np.uint8) * 255, (0, 0), fx=0.3, fy=0.3))
+        # cv2.waitKey(1)

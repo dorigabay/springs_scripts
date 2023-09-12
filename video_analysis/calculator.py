@@ -6,7 +6,7 @@ from scipy.ndimage import maximum_filter
 from video_analysis import utils
 from video_analysis.ants_detector import Ants
 
-ANTS_SPRINGS_OVERLAP_SIZE = 7
+ANTS_SPRINGS_OVERLAP_SIZE = 5
 
 
 class Calculation(Ants):
