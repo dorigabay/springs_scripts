@@ -114,7 +114,7 @@ if __name__ == "__main__":
         video_path = os.path.join(output_path,f"{video_name}.MP4")
         frames_to_keep = find_frames_to_keep(video_name)
         parameters_path = os.path.join(output_path,"parameters")
-        from video_analysis.collect_analysis_parameters import get_parameters
+        from video_analysis.parameters_collector import get_parameters
         parameters = get_parameters(parameters_path, video_path)
         slice_video(video_path, output_path, frames_to_keep=frames_to_keep, cropping_coordinates=parameters["crop_coordinates"])
     print("done")

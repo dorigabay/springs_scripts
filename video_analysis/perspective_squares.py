@@ -1,13 +1,11 @@
 import cv2
 import numpy as np
-from scipy.ndimage import binary_fill_holes
-
-#local imports:
+# local imports:
 from video_analysis import utils
 
 
-NEUTRALIZE_COLOUR_ALPHA = 2.5
-BLUR_KERNEL = (7, 7)
+# NEUTRALIZE_COLOUR_ALPHA = 2.5
+# BLUR_KERNEL = (7, 7)
 COLOR_CLOSING = 5
 SQUARE_ON_BORDER_RATIO_THRESHOLD = 0.4
 
@@ -15,14 +13,14 @@ SQUARE_ON_BORDER_RATIO_THRESHOLD = 0.4
 class PerspectiveSquares:
     def __init__(self, parameters, image, previous_detections):
         self.parameters = parameters
+        self.image = image
         self.previous_detections = previous_detections
         boolean_masks_connected, boolean_masks_unconnected, perspective_squares_crop_coordinates =\
             self.get_perspective_squares_masks(image)
         try:
             squares_properties = self.get_squares_properties(boolean_masks_connected)
             self.perspective_squares_properties, self.all_perspective_squares_mask =\
-                self.perspective_squares_coordinates_transformation(squares_properties,
-                     perspective_squares_crop_coordinates, boolean_masks_unconnected)
+                self.coordinates_transformation(squares_properties, perspective_squares_crop_coordinates, boolean_masks_unconnected)
         except:
             self.perspective_squares_properties = np.full((4, 4), np.nan)
             self.all_perspective_squares_mask = np.full(self.parameters["resolution"], False, dtype="bool")
@@ -30,14 +28,14 @@ class PerspectiveSquares:
                 self.all_perspective_squares_mask[coordinates[0]:coordinates[1], coordinates[2]:coordinates[3]] = mask
 
     def get_perspective_squares_masks(self, image):
-        prepared_images, perspective_squares_crop_coordinates = self.prepare_images(image, self.parameters["pcm"])
+        prepared_images, perspective_squares_crop_coordinates = self.prepare_images(image)
         boolean_masks_connected, boolean_masks_unconnected = self.mask_perspective_squares(self.parameters["colors_spaces"]["p"], prepared_images)
         if self.are_squares_on_frame_border(boolean_masks_unconnected):
-            prepared_images, perspective_squares_crop_coordinates = self.prepare_images(image, self.parameters["pcm"]*5)
+            prepared_images, perspective_squares_crop_coordinates = self.prepare_images(image)
             boolean_masks_connected, boolean_masks_unconnected = self.mask_perspective_squares(
                 self.parameters["colors_spaces"]["p"], prepared_images)
-            # if self.are_squares_on_frame_border(boolean_masks_unconnected):
-            #     raise ValueError("Perspective squares are on border.")
+            if self.are_squares_on_frame_border(boolean_masks_unconnected):
+                raise ValueError("Perspective squares are on border.")
         return boolean_masks_connected, boolean_masks_unconnected, perspective_squares_crop_coordinates
 
     def are_squares_on_frame_border(self, squares_boolean_masks):
@@ -46,43 +44,22 @@ class PerspectiveSquares:
             on_frame_border[key] = np.array([np.sum(square_mask[0, :]), np.sum(square_mask[-1, :]), np.sum(square_mask[:, 0]), np.sum(square_mask[:, -1])])
         return np.any(on_frame_border/self.parameters["pcm"] > SQUARE_ON_BORDER_RATIO_THRESHOLD)
 
-    def prepare_images(self, image, box_margin):
+    def prepare_images(self, image, box_margin_factor=5):
         if (self.previous_detections["skipped_frames"] >= 25) or self.previous_detections["frame_count"] == 0:
-            # corners_coordinates = np.array([[0,0], [self.parameters["resolution"][0], 0], [0, self.parameters["resolution"][1]], [self.parameters["resolution"][0], self.parameters["resolution"][1]]])
-            corners_coordinates = np.array([[0,0], [0, self.parameters["resolution"][1]], [self.parameters["resolution"][0], self.parameters["resolution"][1]],[self.parameters["resolution"][0], 0]])
-            crop_coordinates = utils.create_box_coordinates(corners_coordinates, 500)
+            corners_coordinates = np.array([[0, 0],
+                                            [0, self.parameters["resolution"][1]],
+                                            [self.parameters["resolution"][0], self.parameters["resolution"][1]],
+                                            [self.parameters["resolution"][0], 0]])
+            crop_coordinates = utils.create_box_coordinates(corners_coordinates, self.parameters["ocm"] * box_margin_factor)
         else:
             crop_coordinates = utils.create_box_coordinates(self.previous_detections["perspective_squares_coordinates"], self.parameters["ocm"])
-        # if self.previous_detections["skipped_frames"] >= 25  or self.previous_detections["frame_count"] == 0:
-        #     box_margin = 500
-        # crop_coordinates = utils.create_box_coordinates(self.previous_detections["perspective_squares_coordinates"], box_margin)
         prepared_images = {}
         for count in range(len(crop_coordinates)):
-            # print(crop_coordinates)
             cropped_image = utils.crop_frame_by_coordinates(image, crop_coordinates[count])
-            # prepared_images[count] = utils.white_balance_bgr(utils.neutrlize_colour(cropped_image, alpha=2.5, beta=0))
-            prepared_images[count] = utils.process_image(cropped_image, alpha=2.5, blur_kernel=BLUR_KERNEL)
+            prepared_images[count] = utils.process_image(cropped_image, alpha=self.parameters["NEUTRALIZE_COLOUR_ALPHA"],
+                                                                        blur_kernel=self.parameters["BLUR_KERNEL"],
+                                                                        gradiant_threshold=self.parameters["GRADIANT_THRESHOLD"])
         return prepared_images, crop_coordinates
-
-    # def process_image(self, image):
-    #     image = utils.neutrlize_colour(image, alpha=2.5, beta=0)
-    #     image = utils.white_balance_bgr(image)
-    #
-    #     kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])  # sharpening kernel
-    #     image = cv2.filter2D(image, -1, kernel)
-    #     # sobel mask:
-    #     image_gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-    #     SOBEL_KERNEL_SIZE = 1
-    #     GRADIANT_THRESHOLD = 10
-    #     sobel_x = cv2.Sobel(image_gray, cv2.CV_64F, 1, 0, ksize=SOBEL_KERNEL_SIZE)
-    #     sobel_y = cv2.Sobel(image_gray, cv2.CV_64F, 0, 1, ksize=SOBEL_KERNEL_SIZE)
-    #     gradient_magnitude = np.sqrt(sobel_x ** 2 + sobel_y ** 2)
-    #     sobel_mask = (gradient_magnitude > GRADIANT_THRESHOLD).astype("uint8")
-    #     binary_fill_holes(sobel_mask, output=sobel_mask)
-    #     # sharpen image:
-    #     image = cv2.GaussianBlur(image, (7, 7), 0)
-    #     image[~(sobel_mask.astype(bool))] = [255, 255, 255]
-    #     return image
 
     def mask_perspective_squares(self, color_spaces, images):
         boolean_masks_connected = {}
@@ -106,26 +83,42 @@ class PerspectiveSquares:
         return boolean_masks_connected, boolean_masks_unconnected
 
     def get_squares_properties(self, masks):
-        squares_properties = np.array([[[0, 0], [0, 0]] for x in range(len(masks))])
+        squares_properties = np.full((len(masks), 4), 0, np.float64)
+        # rectangle_similarity_scores = np.full(len(masks), np.nan)
         for count, mask in masks.items():
             mask = mask.astype("uint8")
             indices = np.argwhere(mask > 0)
             hull = cv2.convexHull(indices)
+            contour = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             rect = cv2.minAreaRect(hull)
             box = cv2.boxPoints(rect)
-            box = np.int0(box)
+            # box = np.int0(box)
+            rectangle_similarity_score = cv2.matchShapes(utils.swap_columns(np.copy(box)), contour[0][0], 1, 0.0)
+            length_side_a = np.linalg.norm(box[0] - box[1])
+            length_side_b = np.linalg.norm(box[0] - box[3])
+            squareness_score = (length_side_a - length_side_b) / (length_side_a * length_side_b)
             center_x = np.mean(box[:, 1])
             center_y = np.mean(box[:, 0])
-            width = np.linalg.norm(box[0] - box[1])
-            height = np.linalg.norm(box[1] - box[2])
-            squares_properties[count] = [[center_x, center_y], [width, height]]
+            squares_properties[count] = [center_x, center_y, rectangle_similarity_score, squareness_score]
         return squares_properties
 
-    def perspective_squares_coordinates_transformation(self, squares_properties, crop_coordinates, boolean_masks_unconnected):
-        coordinates = squares_properties[:,0,:] # x, y
-        addition = np.copy(crop_coordinates[:, [2,0]]) # x, y
-        squares_properties[:, 0, :] = (coordinates + addition).astype(np.uint16)
+    def coordinates_transformation(self, squares_properties, crop_coordinates, boolean_masks_unconnected):
+        coordinates = squares_properties[:, 0:2]  # x, y
+        addition = np.copy(crop_coordinates[:, [2, 0]])  # x, y
+        squares_properties[:, 0:2] = (coordinates + addition).astype(np.uint16)
         squares_mask_unconnected = np.full(self.parameters["resolution"], False, dtype="bool")
         for count, coordinates in enumerate(crop_coordinates):
             squares_mask_unconnected[coordinates[0]:coordinates[1], coordinates[2]:coordinates[3]] = boolean_masks_unconnected[count]
         return squares_properties, squares_mask_unconnected
+
+
+def save_data(output_path, snapshot_data, perspective_squares=None, continue_from_last=False):
+    if perspective_squares is None:
+        arrays = [np.full((1, 4), np.nan) for _ in range(4)]
+    else:
+        arrays = [perspective_squares.perspective_squares_properties[:, 0].reshape(1, 4),
+                  perspective_squares.perspective_squares_properties[:, 1].reshape(1, 4),
+                  perspective_squares.perspective_squares_properties[:, 2].reshape(1, 4),
+                  perspective_squares.perspective_squares_properties[:, 3].reshape(1, 4)]
+    names = ["perspective_squares_coordinates_x", "perspective_squares_coordinates_y", "perspective_squares_rectangle_similarity", "perspective_squares_squareness"]
+    utils.save_data(output_path, arrays, names, snapshot_data, continue_from_last)

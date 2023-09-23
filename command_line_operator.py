@@ -4,7 +4,7 @@ import argparse
 import multiprocessing as mp
 import pickle
 #local packages
-from video_analysis.collect_analysis_parameters import CollectAnalysisParameters
+from video_analysis.parameters_collector import CollectAnalysisParameters
 import video_analysis.main as main
 
 
@@ -122,8 +122,8 @@ if __name__ == '__main__':
     print("-"*80)
     print("Finished processing all videos in directory: ", args["dir_path"])
 
-# python command_line_operator.py --dir_path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\13.8\ --output_dir Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\ --collect_parameters --iter_dir --nCPU 1
-# python command_line_operator.py --dir_path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\13.8\ --output_dir Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\ --complete_unanalyzed --iter_dir --nCPU 15
-# python command_line_operator.py --dir_path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\calibration\ --output_dir Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\ --collect_parameters --iter_dir --nCPU 10
+# python command_line_operator.py --dir_path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\20.8\ --output_dir Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\ --collect_parameters --iter_dir --nCPU 9
+# python command_line_operator.py --dir_path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\13.8\ --output_dir Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\ --collect_parameters --iter_dir --nCPU 9
 # python command_line_operator.py --dir_path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\calibration\plus_0.1\ --output_dir Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\ --collect_parameters --iter_dir --nCPU 9
-# python command_line_operator.py --dir_path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\calibration\S5930009\ --output_dir Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\ --collect_parameters --iter_dir
+# python command_line_operator.py --dir_path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\calibration\plus_0.2\ --output_dir Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\ --collect_parameters --iter_dir --nCPU 1
+# python command_line_operator.py --dir_path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\calibration\plus_0.2\ --output_dir Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\ --cu --iter_dir

@@ -7,12 +7,10 @@ import time
 
 
 class AntTracking:
-    def __init__(self, data_paths, output_path, frame_size, restart=False):
-        # output_path, data_paths = data[1], data[0]
-        # self.frame_size = (3840, 2160)
+    def __init__(self, data_paths, output_path, frame_resolution, restart=False):
         self.restart = restart
-        self.frame_size = frame_size
-        self.sub_dirs_names = [os.path.basename(os.path.split(os.path.normpath(path))[-2]) for path in data_paths]
+        self.frame_size = frame_resolution
+        self.sub_dirs_names = [os.path.basename(os.path.split(os.path.normpath(path))[-1]) for path in data_paths]
         self.output_path = os.path.join(output_path, f"{self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]}")
         print(f"Tracking ants for {self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]}")
         self.first_tracking_calculation(data_paths, self.output_path)
@@ -39,6 +37,9 @@ class AntTracking:
             for i in range(ants_centers.shape[0]):
                 ants_centers_mat[i, 0] = ants_centers[i, :, :]
             os.makedirs(output_path, exist_ok=True)
+            if self.restart:
+                print(f"removing old tracking data from {output_path}")
+                os.system(f"del {output_path}\\ants_centers.mat")
             print(f"saving to: {output_path}")
             sio.savemat(os.path.join(output_path, "ants_centers.mat"), {"ants_centers": ants_centers_mat})
             matlab_script_path = "Z:\\Dor_Gabay\\ThesisProject\\scripts\\munkres_tracker\\"
@@ -51,10 +52,10 @@ class AntTracking:
     def wait_for_existance(self, path, file_name):
         existing_attempts = 0
         while not os.path.exists(os.path.join(path, file_name)):
-            print(f"waiting for matlab to finish tracking... (waited for {existing_attempts * 10} seconds already)")
+            print(f"\rwaiting for matlab to finish tracking... (waited for {existing_attempts * 10} seconds already)")
             time.sleep(10)
             existing_attempts += 1
-            if existing_attempts > 100:
+            if existing_attempts > 10080:  # 3 hours
                 return ValueError("matlab is stuck, please check")
 
     def correct_tracked_ants(self, post_processing_path):

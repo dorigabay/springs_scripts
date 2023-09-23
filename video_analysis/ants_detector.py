@@ -3,7 +3,6 @@ import numpy as np
 from scipy.ndimage import label, center_of_mass
 from skimage.morphology import remove_small_objects, binary_closing, binary_opening
 from scipy.ndimage import maximum_filter, minimum_filter
-
 # local imports:
 from video_analysis import utils
 from video_analysis.springs_detector import Springs
@@ -19,10 +18,12 @@ UPPER_HSV_VALUES = np.array([179, 255, 200])
 ANTS_EXTENSION_LENGTH = 3
 
 
-class Ants(Springs):
-    def __init__(self,parameters, image, previous_detections):
-        super().__init__(parameters, image, previous_detections)
-        self.label_ants(image, self.whole_object_mask_unconnected, self.all_perspective_squares_mask)
+# class Ants(Springs):
+class Ants:
+    def __init__(self, image, springs, perspective_squares):
+        # super().__init__( image, previous_detections)
+        self.label_ants(image, springs.whole_object_mask_unconnected, perspective_squares.all_perspective_squares_mask)
+        # self.label_ants(image, object_mask, perspective_squares_mask)
 
     def label_ants(self, image, object_mask, perspective_squares_mask):
         image = utils.neutrlize_colour(utils.white_balance_bgr(np.copy(image)), alpha=2, beta=10)

@@ -1,12 +1,12 @@
-# import copy
 import cv2
 import numpy as np
+import os
+import scipy.io as sio
+import pickle
 # from skimage.morphology import skeletonize, thin
-# import os
 # import scipy.cluster as sclu
-from skimage.morphology import binary_dilation, binary_erosion
+from skimage.morphology import binary_dilation, binary_erosion, remove_small_objects
 from scipy.ndimage import maximum_filter, minimum_filter, label
-
 COLOR_CLOSING = np.ones((3, 3))
 
 
@@ -36,6 +36,23 @@ def connect_blobs(mask, overlap_size=1):
     labeled[boolean_overlap] = 1
     labeled[labeled == max_val] = 0
     return labeled.astype(bool)
+
+
+def remove_small_blobs(bool_mask, min_size: int = 0):
+    """
+    Removes from the input mask all the blobs having less than N adjacent pixels.
+    We set the small objects to the background label 0.
+    """
+    bool_mask = bool_mask.astype(bool)
+    if min_size > 0:
+        bool_mask = remove_small_objects(bool_mask, min_size=min_size)
+    return bool_mask
+
+
+def close_blobs(mask, structure):
+    mask = binary_dilation(mask, structure).astype(np.uint8)
+    mask = binary_erosion(mask, structure).astype(np.uint8)
+    return mask
 
 
 def extend_lines(matrix, extend_by=3):
@@ -99,7 +116,7 @@ def create_color_mask(image, color_spaces):
         mask1 = cv2.inRange(hsv_image, hsv_space[0], hsv_space[1])
         mask2 = cv2.inRange(hsv_image, hsv_space[2], hsv_space[3])
         binary_mask[(mask1 + mask2) != 0] = 1
-    binary_mask = close_element(binary_mask, COLOR_CLOSING)
+    binary_mask = close_blobs(binary_mask, COLOR_CLOSING)
     return binary_mask
 
 
@@ -113,7 +130,7 @@ def mask_object_colors(parameters, image):
             mask1 = cv2.inRange(hsv_image, hsv_space[0], hsv_space[1])
             mask2 = cv2.inRange(hsv_image, hsv_space[2], hsv_space[3])
             binary_mask[(mask1 + mask2) != 0] = 1
-        binary_mask = close_element(binary_mask, COLOR_CLOSING)
+        binary_mask = close_blobs(binary_mask, COLOR_CLOSING)
         binary_color_masks[color] = binary_mask
     return binary_color_masks
 
@@ -211,12 +228,6 @@ def crop_frame_by_coordinates(frame, crop_coordinates):
     return frame[crop_coordinates[0]:crop_coordinates[1],crop_coordinates[2]:crop_coordinates[3]]
 
 
-def close_element(mask, structure):
-    mask = binary_dilation(mask, structure).astype(np.uint8)
-    mask = binary_erosion(mask, structure).astype(np.uint8)
-    return mask
-
-
 def create_circular_mask(image_dim, center=None, radius=None):
     h, w = image_dim[0], image_dim[1]
     if center is None:  # use the middle of the image
@@ -229,6 +240,7 @@ def create_circular_mask(image_dim, center=None, radius=None):
 
     mask = dist_from_center <= radius
     return mask
+
 
 def process_image(image, alpha=2.5, beta=0, gradiant_threshold=10, sobel_kernel_size=1, blur_kernel=(7,7)):
     from scipy.ndimage import binary_fill_holes
@@ -250,271 +262,103 @@ def process_image(image, alpha=2.5, beta=0, gradiant_threshold=10, sobel_kernel_
     return image
 
 
-# def combine_masks(list_of_masks):
-#     combined = list_of_masks[0] + list_of_masks[1] + list_of_masks[2]
-#     return combined.astype("bool").astype(np.uint8)
+def save_data(output_path, arrays, names, snapshot_data, continue_from_last=False):
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+    if snapshot_data["frame_count"] == 0:
+        for d, n in zip(arrays[:], names[:]):
+            with open(os.path.join(output_path, str(n) + '.csv'), 'wb') as f:
+                np.savetxt(f, d, delimiter=',')
+                f.close()
+    else:
+        for d, n in zip(arrays[:], names[:]):
+            with open(os.path.join(output_path, str(n) + '.csv'), 'a') as f:
+                if continue_from_last:
+                    line_count = get_csv_line_count(os.path.join(output_path, str(n) + '.csv'))
+                    if line_count == snapshot_data["frame_count"]+1:
+                        continue
+                    else:
+                        np.savetxt(f, d, delimiter=',')
+                else:
+                        np.savetxt(f, d, delimiter=',')
+                f.close()
 
 
-# def convert_bool_to_binary(bool_mask):
-#     binary_mask = np.zeros(bool_mask.shape,"int")
-#     binary_mask[bool_mask] = 1
-#     return binary_mask
+def get_csv_line_count(csv_file):
+    with open(csv_file, 'r') as file:
+        line_count = sum(1 for _ in file)
+    return line_count
 
 
-# def correct_by_boundry(hue, boundry):
-#     """
-#     HSV space has boundry (179,255,255). The hue value is periodic boundry, therefore this function retain the value to within the boundries.
-#     :param hue: The color in HSV
-#     :param boundry: in the case of HSV it is (179,255,255)
-#     :return: The values after correction.
-#     """
-#     boundry = boundry + 1
-#     final = np.zeros(3)
-#     for i in range(3):
-#         if hue[i] < 0:
-#             if i == 0:
-#                 final[i] = boundry[i] + hue[i]
-#             else:
-#                 final[i] = 0
-#         elif hue[i] >= boundry[i]:
-#             if i == 0:
-#                 final[i] = np.abs(boundry[i] - hue[i])
-#             else:
-#                 final[i] = boundry[i]
-#         else:
-#             final[i] = hue[i]
-#     return final
+def save_as_mathlab_matrix(output_dir):
+    ants_centers_x = np.loadtxt(os.path.join(output_dir, "ants_centers_x.csv"), delimiter=",")
+    ants_centers_y = np.loadtxt(os.path.join(output_dir, "ants_centers_y.csv"), delimiter=",")
+    ants_centers = np.stack((ants_centers_x, ants_centers_y), axis=2)
+    ants_centers_mat = np.zeros((ants_centers.shape[0], 1), dtype=np.object)
+    for i in range(ants_centers.shape[0]):
+        ants_centers_mat[i, 0] = ants_centers[i, :, :]
+    sio.savemat(os.path.join(output_dir, "ants_centers.mat"), {"ants_centers": ants_centers_mat})
+    matlab_script_path = "Z:\\Dor_Gabay\\ThesisProject\\scripts\\munkres_tracker\\"
+    os.chdir(matlab_script_path)
+    os.system("PATH=$PATH:'C:\Program Files\MATLAB\R2022a\bin'")
+    execution_string = f"matlab -r ""ants_tracking('" + output_dir + "\\')"""
+    os.system(execution_string)
 
 
-# def most_common_hue(frame):
-#     """
-#     Finds the most common hue in the frame, uses clustering method.
-#     :return: The commmon hue in HSV
-#     """
-#     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-#     ar = np.asarray(frame)
-#     shape = frame.shape
-#     ar = ar.reshape(np.product(shape[:2]), shape[2]).astype(float)
-#     NUM_CLUSTERS = 5
-#     codes, dist = sclu.vq.kmeans(ar, NUM_CLUSTERS)
-#     vecs, dist = scipy.cluster.vq.vq(ar, codes)  # assign codes
-#     counts, bins = np.histogram(vecs, len(codes))  # count occurrences
-#     index_max = np.argmax(counts)  # find most frequent
-#     peak = codes[index_max].astype("int")
-#     print('most frequent color (background) is {})'.format(peak))
-#     return peak
 
 
-# def create_background_mask(image,background_color):
-#     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+# def is_square(points, tolerance=120):
+#     if len(points) != 4:
+#         raise ValueError("Input should contain exactly four points.")
 #
-#     BACKGROUND_MARGIN = np.array([15, 30, 20])
-#     BOUNDRY = np.array([179, 255, 255])
-#     lower_bg = correct_by_boundry(background_color - BACKGROUND_MARGIN, BOUNDRY)
-#     upper_bg = correct_by_boundry(background_color + BACKGROUND_MARGIN, BOUNDRY)
-#     mask = cv2.inRange(hsv, lower_bg, upper_bg)
-#     return mask
+#     # Calculate distances between all pairs of points
+#     pairwise_distances = np.linalg.norm(points[:, None] - points, axis=2)
+#
+#     # Calculate angles between line segments
+#     vectors = points[:, None] - points
+#     dot_products = np.sum(vectors[:, :, None] * vectors[:, None, :], axis=0)
+#     norms = np.linalg.norm(vectors, axis=0)
+#     angles = np.degrees(np.arccos(np.clip(dot_products / (norms * norms[:, None]), -1.0, 1.0)))
+#
+#     # Sort the distances to find the longest and shortest sides
+#     sorted_distances = np.sort(pairwise_distances.ravel())
+#     shortest_side = sorted_distances[0]
+#     longest_side = sorted_distances[-1]
+#
+#     # Check if all angles are close to 90 degrees and sides are of similar length
+#     angle_similarity = np.all(np.isclose(angles, 90, atol=tolerance))
+#     side_similarity = np.isclose(shortest_side, longest_side, atol=tolerance)
+#     print(angle_similarity, side_similarity)
+#     # Return True if the input points resemble a square, otherwise False
+#     return angle_similarity and side_similarity
 
 
-# def biggest_contour(contours):
-#     areas = [cv2.contourArea(c) for c in contours]
-#     sorted_areas = np.sort(areas)
-#     cnt = contours[areas.index(sorted_areas[-1])]
-#     return cnt
-
-
-# def find_contour_center(contour):
-#     M = cv2.moments(contour)
-#     cX = int(M["m10"] / M["m00"])
-#     cY = int(M["m01"] / M["m00"])
-#     return np.array([cX,cY])
-
-
-# def get_xy_list_from_contour(contours):
-#     full_dastaset = []
-#     for contour in contours:
-#         xy_list = []
-#         for position in contour:
-#             [[x, y]] = position
-#             xy_list.append([x, y])
-#         full_dastaset.append(xy_list)
-#     return full_dastaset
-
-
-# def create_mask(frame,hsv_space):
-#     blurred = cv2.GaussianBlur(frame, (3, 3), 0)
-#     imgHSV = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
-#     mask1 = cv2.inRange(imgHSV, hsv_space[0], hsv_space[1])
-#     mask2 = cv2.inRange(imgHSV, hsv_space[2], hsv_space[3])
-#     return mask1+mask2
-
-# def obtain_dilated_contour(frame,hsv_space,iterations=2):
-#     """
-#     Create a mask based on a given HSV space, dilate it and find the contours of the mask.
-#     :param frame:
-#     :param hsv_space: A list of with lower HSV as first element, higher hsv as second.
-#      Since the Hue space in HSV could be set around 0, there is a need to provide a second HSV space.
-#      Therefore, the third and forth elements are the lower and higher HSV space respectively.
-#      If the Hue space is between 0 and 179, just set the second space as the first one.
-#     :return: The counturs of the mask.
-#     """
-#     mask = create_mask(frame,hsv_space)
-#     kernel = np.ones((3, 3), np.uint8)
-#     img_dilation = cv2.dilate(mask, kernel, iterations=iterations)
-#     contours, _ = cv2.findContours(img_dilation, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-#     return contours
-
-
-# def obtain_skeleton(frame):
-#     """
-#     Obtain the skeleton of the contour, that was drawen before in green color (0,255,0).
-#     """
-#     rgb_lower = np.array([0, 255, 0])
-#     rgb_upper = np.array([0, 255, 0])
-#     mask = cv2.inRange(frame, rgb_lower, rgb_upper)
-#     mask_thinned = thin(mask)
-#     skeleton_image = skeletonize(mask_thinned, method='lee')
-#     return skeleton_image
-
-
-# def get_data(skeleton_image):
-#     xy_coords = np.flip(np.column_stack(np.where(skeleton_image > 0)), axis=1)
-#     x, y = np.array(xy_coords[:, 0]), np.array(xy_coords[:, 1])
-#     data = x, y
-#     return data
-
-
-# def crop_frame_by_contour(frame,absolute_min,absolute_max,margin,cap):
-#     """
-#     In order to reduce computational load, this function crop the current frame, based on the contour coordinates of the former frame.
-#     Croping is set to be N pixel before minimum X,Y, and N pixels after maximum X,Y.
-#     Since the with the margin the cropping coordinates ca exceed the frame dimensions, there is a need to limit it with limit frame.
-#     :param frame: The frame to be cropped.
-#     :param absolute_min: The lowest X and Y coordinates of the countour in the frame before.
-#     :param absolute_max:  The highest X and Y coordinates of the countour in the frame before.
-#     :param margin: The number of pixels to remove or add to absolute_min or absolute_min respectively.
-#     :param cap: The frame capture, used for limit_frame
-#     :return: A copy (instead if a reference) of the cropped frame.
-#     """
-#     frame_coordinates = np.array([(absolute_min[1] - margin[1]), (absolute_max[1] + margin[1]), (absolute_min[0] - margin[0]),(absolute_max[0] + margin[0])])
-#     frame_coordinates = limit_frame(frame_coordinates, cap, frame_coordinates=True)
-#     frame = frame[frame_coordinates[0]:frame_coordinates[1], frame_coordinates[2]:frame_coordinates[3]]
-#     return copy.copy(frame)
-
-
-# def limit_frame(np_array,cap,frame_coordinates=False):
-#     """
-#     Limit the coordinates for cropping frames, to the dimensions of the frame.
-#     :param np_array:
-#     :param cap: The frame capture.
-#     :param frame_coordinates:
-#     :return:
-#     """
-#     width = int(cap.get(3))
-#     height = int(cap.get(4))
-#     np_array[np_array < 0] = 0
-#     if frame_coordinates:
-#         if np_array[3] > width:
-#             np_array[3] = width
-#         if np_array[1] > height:
-#             np_array[1] = height
-#     else:
-#         if np_array[0] > width:
-#             np_array[0] = width
-#         if np_array[1] > height:
-#             np_array[1] = height
-#     return(np_array)
-
-
-# def write_contour_size_single(output_dir,frame_number,contour_size,first):
-#     """
-#     Writes the contour area size in a file called contour_sizes. This sheet will later be used to find frames with bad detection of the object.
-#     :param output_dir: output directory the save the sheet in.
-#     :param frame_number: The frame index/number.
-#     :param contour_size: The countur area size.
-#     :param first: If True, the function will first create a new file, if not it will only add new frames and contour sizes.
-#     """
-#     if first:
-#         log_file = open(os.path.join(output_dir, "contour_sizes.csv"), "w")
-#         log_file.write("frame_number,contour_size" + "\n")
-#         log_file.write(str(frame_number) + "," + str(contour_size) + "\n")
-#     else:
-#         log_file = open(os.path.join(output_dir, "contour_sizes.csv"), "a")
-#         log_file.write(str(frame_number)+","+str(contour_size) + "\n")
-
-
-# def write_contour_size(output_dir,frame_number,contour_class,first,no_contours =False):
-#     """
-#     Writes the contour area size in a file called contour_sizes. This sheet will later be used to find frames with bad detection of the object.
-#     This function is the same as write_contour_size_single, only here it is for detection of synchtonization experimets.
-#     :param output_dir: output directory the save the sheet in.
-#     :param frame_number: The frame index/number.
-#     :param contour_class: Wheter the left of right pendulum.
-#     :param contour_size: The countur area size.
-#     :param first: If True, the function will first create a new file, if not it will only add new frames and contour sizes.
-#     :param no_contours: If True, the None will be written.
-#     :return:
-#     """
-#     if first:
-#         log_file = open(os.path.join(output_dir, "contour_sizes.csv"), "w")
-#         log_file.write("frame_number,contour_size_left,contour_size_right" + "\n")
-#         log_file.write(str(frame_number) + "," + str(contour_class.cnt_area_left)+","+str(contour_class.cnt_area_right) + "\n")
-#     else:
-#         log_file = open(os.path.join(output_dir, "contour_sizes.csv"), "a")
-#         if no_contours: log_file.write(str(frame_number)+",None,None\n")
-#         else: log_file.write(str(frame_number) + "," + str(contour_class.cnt_area_left)+","+str(contour_class.cnt_area_right) + "\n")
-
-
-
-
-
-# def remove_rectangle(frame,coordinates,element_color_by_name):
-#     """
-#     This functions creates a rectangle in red or white color, to remove pixels that disturb the detection of the object.
-#     :param frame: The frame to be change.
-#     :param coordinates: The coordinates of the rectangle's corners (top-left,bootom-right)
-#     :param element_color_by_name: The color of the obejct, if red rectangle will be white, if white rectangle will be red.
-#     """
-#     if element_color_by_name == "white": color = (0,0,255)
-#     elif element_color_by_name == "red": color = (255,255,255)
-#     else: color = (0,255,0)
-#     start_point = (coordinates[2],coordinates[0])
-#     end_point = (coordinates[3],coordinates[1])
-#     cv2.rectangle(frame, start_point, end_point, color, -1)
-#     cv2.rectangle(frame, start_point, end_point, color, 2)
-#     return frame
-
-
-# def create_mask_with_contour(spaces,frame):
-#     image_contours = copy.copy(frame)
-#     for space in spaces:
-#         contours = obtain_dilated_contour(frame, space)
-#         image_contours = cv2.drawContours(image_contours, contours, -1, (0, 255, 0), -1)
-#     return image_contours
-
-
-# def find_lines(skel,frame):
-#     result = frame.copy()
-#     edges = cv2.Canny(skel, 50, 150)
-#     cv2.imshow("edges",edges)
-#     lines = cv2.HoughLinesP(edges,1,np.pi/180,40,minLineLength=30,maxLineGap=30)
-#     i = 0
-#     for line in lines:
-#         for x1,y1,x2,y2 in line:
-#             i+=1
-#             cv2.line(result,(x1,y1),(x2,y2),(255,0,0),1)
-#     cv2.imshow("res",result)
-#     cv2.waitKey(0)
-
-
-# def combine_masks(list_of_masks):
-#     combined_mask = list_of_masks[0]
-#     for m in list_of_masks[1:]:
-#         combined_mask += m
-#     result = 255 * combined_mask
-#     result = result.clip(0, 255).astype("uint8")
-#     return result
-
-
-
-
+# def rotate_points(points, angle_degrees=45):
+#     if len(points) < 2:
+#         raise ValueError("Input should contain at least two points.")
+#
+#     # Get the first point as the pivot
+#     pivot = points[0]
+#
+#     # Convert the angle from degrees to radians
+#     angle_radians = np.radians(angle_degrees)
+#
+#     # Calculate the sine and cosine of the angle
+#     cos_theta = np.cos(angle_radians)
+#     sin_theta = np.sin(angle_radians)
+#
+#     # Create a transformation matrix for the rotation
+#     rotation_matrix = np.array([[cos_theta, -sin_theta],
+#                                  [sin_theta, cos_theta]])
+#
+#     # Translate the points so that the pivot becomes the origin
+#     translated_points = points - pivot
+#
+#     # Apply the rotation matrix to the translated points
+#     rotated_points = np.dot(rotation_matrix, translated_points.T).T
+#
+#     # Translate the points back to their original position
+#     rotated_points += pivot
+#
+#     return rotated_points
