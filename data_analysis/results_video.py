@@ -107,7 +107,7 @@ class ResultVideo:
         set_first_video = os.path.basename(sets_video_paths[set_count][0]).split(".")[0]
         set_last_video = os.path.basename(sets_video_paths[set_count][-1]).split(".")[0]
         data_analysis_sub_path = os.path.join(data_analysis_path, f"{set_first_video}-{set_last_video}")
-        start, end = np.array(sets_frames[set_count][video_count], int)-sets_frames[set_count-1][-1][1]
+        start, end = sets_frames[set_count][video_count]-sets_frames[set_count-1][-1][1]
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, video_count)
         self.needle_tip_coordinates = np.load(os.path.join(data_analysis_sub_path, "needle_tip_coordinates.npz"))['arr_0'][start:end]
         self.object_center_coordinates = np.load(os.path.join(data_analysis_sub_path, "object_center_coordinates.npz"))['arr_0'][start:end]
@@ -186,11 +186,12 @@ class ResultVideo:
 
 
 if __name__ == "__main__":
-    spring_type = "plus_0.1"
-    date = "13.8"
-    video_name = "S5760014"
-    video_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\1-videos\\summer_2023\\{date}\\{spring_type}\\{video_name}.MP4"
-    video_analysis_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\{date}\\{spring_type}\\{video_name}\\"
+    spring_type = "plus_0.2"
+    date = "16.8"
+    # video_name = "S5790001"
+    video_name = "S5790009"
+    video_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\1-videos\\summer_2023\\{spring_type}\\{date}\\{video_name}.MP4"
+    video_analysis_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\{spring_type}\\{date}\\{video_name}\\"
     data_analysis_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\{spring_type}\\"
-    self = ResultVideo(video_path, video_analysis_path, data_analysis_path, n_frames_to_save=1000, reduction_factor=0.1)
+    self = ResultVideo(video_path, video_analysis_path, data_analysis_path, n_frames_to_save=1000, reduction_factor=0.4)
 

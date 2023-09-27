@@ -4,6 +4,10 @@ import scipy.io as sio
 from scipy.ndimage.morphology import binary_closing
 import subprocess
 import time
+from multiprocessing import Pool
+from itertools import repeat
+# local imports:
+import utils
 
 
 class AntTracking:
@@ -247,6 +251,66 @@ class AntTracking:
             np.savez_compressed(os.path.join(post_processing_path, "ants_assigned_to_springs_fixed.npz"), ants_assigned_to_springs)
             return ants_assigned_to_springs
 
+
+def process_ant_tracking_data(data, output_path, restart=False):
+    pool = Pool()
+    pool.starmap(AntTracking, zip(data.sets_video_paths, repeat(output_path), repeat(data.video_resolution), repeat(restart)))
+    pool.close()
+    pool.join()
+    profile_ants_behavior(output_path)
+
+
+def profile_ants_behavior(output_path):
+    sub_dirs_paths = [os.path.join(output_path, sub_dir) for sub_dir in os.listdir(output_path) if os.path.isdir(os.path.join(output_path, sub_dir))]
+    for count, path in enumerate(sub_dirs_paths):
+        print("\nProfiling ants for: ", path)
+        ants_assigned_to_springs = np.load(os.path.join(path, "ants_assigned_to_springs_fixed.npz"))["arr_0"][:, :-1].astype(np.uint8)
+        ants_attached_labels = np.load(os.path.join(path, "ants_attached_labels.npz"))["arr_0"]
+        profiles = np.full(6, np.nan)  # ant, spring, start, end, precedence, sudden_appearance
+        for ant in range(ants_assigned_to_springs.shape[1]):
+            print("\r Ant number: ", ant, end="")
+            attachment = ants_assigned_to_springs[:, ant]
+            events_springs = np.split(attachment, np.arange(len(attachment[1:]))[np.diff(attachment) != 0] + 1)
+            events_frames = np.split(np.arange(len(attachment)),
+                                     np.arange(len(attachment[1:]))[np.diff(attachment) != 0] + 1)
+            precedence = 0
+            for event in range(len(events_springs)):
+                if events_springs[event][0] != 0 and len(events_springs[event]) > 1:
+                    precedence += 1
+                    start, end = events_frames[event][0], events_frames[event][-1]
+                    sudden_appearance = np.any(np.isnan(ants_attached_labels[start-3:start, events_springs[event][0] - 1])).astype(np.uint8)
+                    profiles = np.vstack((profiles, np.array([ant + 1, events_springs[event][0], start, end, precedence, sudden_appearance])))
+        profiles = profiles[1:, :]
+        for count, query_data in enumerate(
+                ["force_magnitude", "force_direction", "N_ants_around_springs", "fixed_end_angle_to_nest",
+                 "angular_velocity", "tangential_force"]):
+            if query_data == "angular_velocity":
+                data = np.load(os.path.join(path, "fixed_end_angle_to_nest.npz"))["arr_0"]
+                data = np.nanmedian(utils.calc_angular_velocity(data, diff_spacing=1) / 1, axis=1)
+            elif query_data == "N_ants_around_springs":
+                data = np.load(os.path.join(path, f"{query_data}.npz"))["arr_0"]
+                all_profiles_data2 = np.full((len(profiles), 10000), np.nan)
+            else:
+                data = np.load(os.path.join(path, f"{query_data}.npz"))["arr_0"]
+            all_profiles_data = np.full((len(profiles), 10000), np.nan)
+            for profile in range(len(profiles)):
+                # ant = int(profiles[profile, 0] - 1)
+                spring = int(profiles[profile, 1])
+                start = int(profiles[profile, 2])
+                end = int(profiles[profile, 3])
+                if not end - start + 1 > 10000:
+                    if query_data == "angular_velocity":
+                        all_profiles_data[profile, 0:end - start + 1] = data[start:end + 1]
+                    elif query_data == "N_ants_around_springs":
+                        all_profiles_data[profile, 0:end - start + 1] = data[start:end + 1, int(spring - 1)]
+                        all_profiles_data2[profile, 0:end - start + 1] = np.nansum(data[start:end + 1], axis=1)
+                    else:
+                        all_profiles_data[profile, 0:end - start + 1] = data[start:end + 1, int(spring - 1)]
+            if query_data == "N_ants_around_springs":
+                np.savez_compressed(os.path.join(path, f"all_profiles_{query_data}_sum.npz"),
+                                    all_profiles_data2)
+            np.savez_compressed(os.path.join(path, f"all_profiles_{query_data}.npz"), all_profiles_data)
+        np.savez_compressed(os.path.join(path, "all_profiles_information.npz"), profiles)
 
 # if __name__=="__main__":
 #     # directory = "Z:\\Dor_Gabay\\ThesisProject\\data\\analysed_with_tracking\\15.9.22\\plus0.3mm_force\\"

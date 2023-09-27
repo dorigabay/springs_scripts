@@ -1,11 +1,9 @@
 import cv2
 import numpy as np
 # local imports:
-from video_analysis import utils
+import utils
 
 
-# NEUTRALIZE_COLOUR_ALPHA = 2.5
-# BLUR_KERNEL = (7, 7)
 COLOR_CLOSING = 5
 SQUARE_ON_BORDER_RATIO_THRESHOLD = 0.4
 
@@ -57,7 +55,7 @@ class PerspectiveSquares:
         for count in range(len(crop_coordinates)):
             cropped_image = utils.crop_frame_by_coordinates(image, crop_coordinates[count])
             prepared_images[count] = utils.process_image(cropped_image, alpha=self.parameters["NEUTRALIZE_COLOUR_ALPHA"],
-                                                                        blur_kernel=self.parameters["BLUR_KERNEL"],
+                                                                        blur_kernel=self.parameters["NEUTRALIZE_COLOUR_BETA"],
                                                                         gradiant_threshold=self.parameters["GRADIANT_THRESHOLD"])
         return prepared_images, crop_coordinates
 
@@ -78,7 +76,7 @@ class PerspectiveSquares:
                 biggest_blob = np.argmax(blobs_sizes[1:]) + 1
                 boolean_mask[labels != biggest_blob] = False
             boolean_masks_unconnected[count] = boolean_mask
-            boolean_mask = utils.connect_blobs(boolean_mask,COLOR_CLOSING)
+            boolean_mask = utils.connect_blobs(boolean_mask, COLOR_CLOSING)
             boolean_masks_connected[count] = boolean_mask
         return boolean_masks_connected, boolean_masks_unconnected
 
@@ -112,7 +110,7 @@ class PerspectiveSquares:
         return squares_properties, squares_mask_unconnected
 
 
-def save_data(output_path, snapshot_data, perspective_squares=None, continue_from_last=False):
+def save_data(snapshot_data, parameters, perspective_squares=None):
     if perspective_squares is None:
         arrays = [np.full((1, 4), np.nan) for _ in range(4)]
     else:
@@ -121,4 +119,4 @@ def save_data(output_path, snapshot_data, perspective_squares=None, continue_fro
                   perspective_squares.perspective_squares_properties[:, 2].reshape(1, 4),
                   perspective_squares.perspective_squares_properties[:, 3].reshape(1, 4)]
     names = ["perspective_squares_coordinates_x", "perspective_squares_coordinates_y", "perspective_squares_rectangle_similarity", "perspective_squares_squareness"]
-    utils.save_data(output_path, arrays, names, snapshot_data, continue_from_last)
+    utils.save_data(arrays, names, snapshot_data, parameters)

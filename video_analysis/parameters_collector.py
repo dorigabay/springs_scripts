@@ -5,12 +5,14 @@ import numpy as np
 import scipy.cluster as sclu
 from PIL import Image
 # local imports:
-import video_analysis.utils as utils
+import utils
 
 
 GRADIANT_THRESHOLD = 5
 NEUTRALIZE_COLOUR_ALPHA = 2.5
-BLUR_KERNEL = (7, 7)
+NEUTRALIZE_COLOUR_BETA = (7, 7)
+ANTS_NEUTRALIZE_COLOUR_ALPHA = 2
+ANTS_NEUTRALIZE_COLOUR_BETA = 10
 OBJECT_COORDINATES_MARGIN = 200
 PERSPECTIVE_SQUARES_MARGIN = 100
 IMAGE_RESIZE_FACTOR = 0.25
@@ -21,35 +23,31 @@ MAX_ANTS_NUMBER = 100
 
 
 class CollectAnalysisParameters:
-    def __init__(self, videos_to_analyse, output_path, collect_starting_frame=False, external_parameters=None):
+    def __init__(self, videos_to_analyse, output_path, external_parameters=None):
         self.n_springs = self.insist_input_type("int", "How many springs are used? (default is 20)")
         self.collect_starting_frame = self.insist_input_type("yes_no", "Do you want to collect a starting frame number for each video?")
-        self.collect_analysis_frame = self.insist_input_type("yes_no", "Do you want to collect a frame number to analyze for each video?")
+        # self.collect_analysis_frame = self.insist_input_type("yes_no", "Do you want to collect a frame number to analyze for each video?")
         self.collect_image_processing_parameters = self.insist_input_type("yes_no", "Do you want to collect image processing parameters for each video?")
         for count, video in enumerate(videos_to_analyse):
             print("Collecting color parameters for: ", video)
-            # video_name = os.path.basename(video).split(".")[0]
             if not os.path.exists(os.path.join(output_path, "video_analysis_parameters.pickle")):
                 video_parameters = self.collect_parameters(video)
                 parameters = {os.path.normpath(video): video_parameters}
             else:
-                # print("Found previous parameters file, loading it...")
                 parameters = pickle.load(open(os.path.join(output_path, "video_analysis_parameters.pickle"), 'rb'))
                 if not os.path.normpath(video) in parameters.keys():
                     print("There are no parameters for this video")
                     if count != 0 and self.insist_input_type("yes_no", "Should I use the previous video's parameters?"):
                         video_parameters = parameters[os.path.normpath(videos_to_analyse[count - 1])]
+                        if self.insist_input_type("yes_no", "Do you want to edit the parameters for this video?"):
+                            video_parameters = self.collect_parameters(video, parameters=video_parameters)
                     else:
-                        video_parameters = parameters[os.path.normpath(videos_to_analyse[count - 1])]
-                        video_parameters = self.collect_parameters(video, parameters=video_parameters)
+                        video_parameters = self.collect_parameters(video)
                 else:
                     print("Found previous parameters for this video, loading it...")
                     video_parameters = parameters[os.path.normpath(video)]
                     if self.insist_input_type("yes_no", "Do you want to edit the parameters for this video?"):
-                        if count != 0 and self.insist_input_type("yes_no", "Should I use the previous video's parameters?"):
-                            video_parameters = parameters[os.path.normpath(videos_to_analyse[count - 1])]
-                        else:
-                            video_parameters = self.collect_parameters(video, parameters=video_parameters)
+                        video_parameters = self.collect_parameters(video, parameters=video_parameters)
                 parameters[os.path.normpath(video)] = video_parameters
             pickle.dump(parameters, open(os.path.join(output_path, f"video_analysis_parameters.pickle"), 'wb'))
 
@@ -65,9 +63,9 @@ class CollectAnalysisParameters:
                           "perspective_squares_coordinates": self.perspective_squares_coordinates,
                           "colors_spaces": self.colors_spaces,
                           "GRADIANT_THRESHOLD": self.GRADIANT_THRESHOLD,
-                          "NEUTRALIZE_COLOUR_ALPHA": self.NEUTRALIZE_COLOUR_ALPHA,
-                          "BLUR_KERNEL": self.BLUR_KERNEL,}
-            if not self.insist_input_type("yes_no", "Do you want to edit this video's parameters again?"):
+                          "NEUTRALIZE_COLOUR_ALPHA": self.NEUTRALIZE_COLOUR_ALPHA, "NEUTRALIZE_COLOUR_BETA": self.NEUTRALIZE_COLOUR_BETA,
+                          "ANTS_NEUTRALIZE_COLOUR_ALPHA": self.ANTS_NEUTRALIZE_COLOUR_ALPHA, "ANTS_NEUTRALIZE_COLOUR_BETA": self.ANTS_NEUTRALIZE_COLOUR_BETA,}
+            if not self.insist_input_type("yes_no", "Do you want to edit this video's parameters again? (This action won't delete what you've already collected)"):
                 break
         return parameters
 
@@ -81,7 +79,7 @@ class CollectAnalysisParameters:
         else:
             self.GRADIANT_THRESHOLD = GRADIANT_THRESHOLD if parameters is None else parameters["GRADIANT_THRESHOLD"]
             self.NEUTRALIZE_COLOUR_ALPHA = NEUTRALIZE_COLOUR_ALPHA if parameters is None else parameters["NEUTRALIZE_COLOUR_ALPHA"]
-            self.BLUR_KERNEL = BLUR_KERNEL if parameters is None else parameters["BLUR_KERNEL"]
+            self.NEUTRALIZE_COLOUR_BETA = NEUTRALIZE_COLOUR_BETA if parameters is None else parameters["NEUTRALIZE_COLOUR_BETA"]
         self.ocm = OBJECT_COORDINATES_MARGIN if parameters is None else parameters["ocm"]
         self.pcm = PERSPECTIVE_SQUARES_MARGIN if parameters is None else parameters["pcm"]
         self.image_resize_factor = IMAGE_RESIZE_FACTOR if parameters is None else parameters["image_resize_factor"]
@@ -89,12 +87,16 @@ class CollectAnalysisParameters:
         self.color_space_margin = COLOR_SPACE_MARGIN if parameters is None else parameters["color_space_margin"]
         self.hsv_space_boundary = HSV_SPACE_BOUNDARY if parameters is None else parameters["hsv_space_boundary"]
         self.max_ants_number = MAX_ANTS_NUMBER if parameters is None else parameters["max_ants_number"]
+        self.ANTS_NEUTRALIZE_COLOUR_ALPHA = ANTS_NEUTRALIZE_COLOUR_ALPHA if parameters is None else parameters["ANTS_NEUTRALIZE_COLOUR_ALPHA"]
+        self.ANTS_NEUTRALIZE_COLOUR_BETA = ANTS_NEUTRALIZE_COLOUR_BETA if parameters is None else parameters["ANTS_NEUTRALIZE_COLOUR_BETA"]
 
     def collect_point_on_screen_parameters(self, video_path, parameters=None):
         self.colors_spaces = {"b": [], "r": [], "g": [], "p": []} if parameters is None else parameters["colors_spaces"]
-        image = utils.get_a_frame(video_path, analysis_frame=int(input("What frame to analyze: ")) if self.collect_analysis_frame else self.starting_frame)
+        cap = cv2.VideoCapture(video_path)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(input("From which frame would you like to collect the parameters?: ")))
+        _, image = cap.read()
         image = utils.process_image(image, alpha=self.NEUTRALIZE_COLOUR_ALPHA,
-                                           blur_kernel=self.BLUR_KERNEL,
+                                           blur_kernel=self.NEUTRALIZE_COLOUR_BETA,
                                            gradiant_threshold=self.GRADIANT_THRESHOLD)
         reduced_resolution = cv2.resize(image, (0, 0), fx=self.image_resize_factor, fy=self.image_resize_factor)
         if (parameters is None) or self.insist_input_type("yes_no", "Do you want to collect crop coordinates?"):
@@ -117,7 +119,7 @@ class CollectAnalysisParameters:
                     overlays_image[utils.create_color_mask(collage_image, self.colors_spaces[color_short]).astype(bool)] = [0, 255, 0]
                     cv2.imshow(color_name, overlays_image)
                     cv2.waitKey(0)
-                    ask_sentence = "Want to add more color spaces? (y/n/r to remove the last color)"
+                    ask_sentence = "Want to add more colors? (y/n or 'r' to remove the last color)"
                     add_colors = self.insist_input_type("str_list", ask_sentence, str_list=["y", "n", "r"])
                 else:
                     add_colors = "y"
@@ -191,7 +193,7 @@ class CollectAnalysisParameters:
         counts, bins = np.histogram(vecs, len(codes))  # count occurrences
         index_max = np.argmax(counts)  # find most frequent
         peak = codes[index_max].astype("int")
-        print('most frequent color (background) is {})'.format(peak))
+        # print('most frequent color (background) is {})'.format(peak))
         return peak
 
     def correct_by_boundry(self, hue, boundry):
@@ -259,8 +261,8 @@ class CollectAnalysisParameters:
         image_hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         background_color = self.most_common_hue(frame)
         background_color2 = self.get_background_color(frame)
-        print("background_color", background_color)
-        print("background_color2", background_color2)
+        # print("background_color", background_color)
+        # print("background_color2", background_color2)
         points_hsv = []
         for point in points:
             points_hsv.append(image_hsv[point[0], point[1], :])

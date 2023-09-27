@@ -4,8 +4,8 @@ from scipy.ndimage import label, center_of_mass
 from skimage.morphology import remove_small_objects, binary_closing, binary_opening
 from scipy.ndimage import maximum_filter, minimum_filter
 # local imports:
-from video_analysis import utils
-from video_analysis.springs_detector import Springs
+import utils
+
 
 OBJECT_DILATION_SIZE = 5
 FIRST_OPENING_STRUCTURE = np.ones((1, 1))
@@ -18,15 +18,13 @@ UPPER_HSV_VALUES = np.array([179, 255, 200])
 ANTS_EXTENSION_LENGTH = 3
 
 
-# class Ants(Springs):
 class Ants:
     def __init__(self, image, springs, perspective_squares):
-        # super().__init__( image, previous_detections)
+        self.parameters = springs.parameters
         self.label_ants(image, springs.whole_object_mask_unconnected, perspective_squares.all_perspective_squares_mask)
-        # self.label_ants(image, object_mask, perspective_squares_mask)
 
     def label_ants(self, image, object_mask, perspective_squares_mask):
-        image = utils.neutrlize_colour(utils.white_balance_bgr(np.copy(image)), alpha=2, beta=10)
+        image = cv2.convertScaleAbs(image, alpha=self.parameters["ANTS_NEUTRALIZE_COLOUR_ALPHA"], beta=self.parameters["ANTS_NEUTRALIZE_COLOUR_BETA"])
         image_gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
         sobel_x = cv2.Sobel(image_gray, cv2.CV_64F, 1, 0, ksize=SOBEL_KERNEL_SIZE)
         sobel_y = cv2.Sobel(image_gray, cv2.CV_64F, 0, 1, ksize=SOBEL_KERNEL_SIZE)

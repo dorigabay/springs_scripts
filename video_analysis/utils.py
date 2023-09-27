@@ -77,34 +77,14 @@ def extend_lines(matrix, extend_by=3):
 
 
 def fit_line(points):
-    """Fit a line to a set of points using the least squares method.
-
-    Parameters
-    ----------
-    points : numpy array
-        An Nx2 array, where the first column represents the y-values and the second column represents the x-values.
-
-    Returns
-    -------
-    slope : float
-        The slope of the fitted line.
-    intercept : float
-        The intercept of the fitted line.
-    """
-    # Extract the x and y values from the points array
     x = points[:, 1]
     y = points[:, 0]
-
-    # Compute the mean of the x and y values
     x_mean = np.mean(x)
     y_mean = np.mean(y)
-
-    # Compute the slope and intercept using the least squares method
     numerator = np.sum((x - x_mean) * (y - y_mean))
     denominator = np.sum((x - x_mean) ** 2)
     slope = numerator / denominator
     intercept = y_mean - slope * x_mean
-
     return slope, intercept
 
 
@@ -120,19 +100,19 @@ def create_color_mask(image, color_spaces):
     return binary_mask
 
 
-def mask_object_colors(parameters, image):
-    binary_color_masks = {x: None for x in parameters["colors_spaces"]}
-    blurred = cv2.GaussianBlur(image, (3, 3), 0)
-    hsv_image = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
-    for color in parameters["colors_spaces"]:
-        binary_mask = np.zeros(image.shape[:-1], "int")
-        for hsv_space in parameters["colors_spaces"][color]:
-            mask1 = cv2.inRange(hsv_image, hsv_space[0], hsv_space[1])
-            mask2 = cv2.inRange(hsv_image, hsv_space[2], hsv_space[3])
-            binary_mask[(mask1 + mask2) != 0] = 1
-        binary_mask = close_blobs(binary_mask, COLOR_CLOSING)
-        binary_color_masks[color] = binary_mask
-    return binary_color_masks
+# def mask_object_colors(parameters, image):
+#     binary_color_masks = {x: None for x in parameters["colors_spaces"]}
+#     blurred = cv2.GaussianBlur(image, (3, 3), 0)
+#     hsv_image = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+#     for color in parameters["colors_spaces"]:
+#         binary_mask = np.zeros(image.shape[:-1], "int")
+#         for hsv_space in parameters["colors_spaces"][color]:
+#             mask1 = cv2.inRange(hsv_image, hsv_space[0], hsv_space[1])
+#             mask2 = cv2.inRange(hsv_image, hsv_space[2], hsv_space[3])
+#             binary_mask[(mask1 + mask2) != 0] = 1
+#         binary_mask = close_blobs(binary_mask, COLOR_CLOSING)
+#         binary_color_masks[color] = binary_mask
+#     return binary_color_masks
 
 
 def calc_angles(points_to_measure, object_center, tip_point):
@@ -183,32 +163,6 @@ def collect_points(image, n_points, show_color=False):
     return np.array(points)
 
 
-def get_a_frame(video, analysis_frame=0):
-    """
-    Gets the first frame for choosing points.
-    The function reduces the resolution to the resolution that will be used int the detection part - this is important
-    since if the resolution scaling will be changed in either functions, it will lead for discrepancy.
-    :param video:
-    :param starting_frame: The default is the first frame.
-    :return:
-    """
-    cap = cv2.VideoCapture(video)
-    cap.set(cv2.CAP_PROP_POS_FRAMES, analysis_frame)
-    ret, frame = cap.read()
-    # frame = cv2.resize(frame, (0, 0), fx=.3, fy=.3)
-    return frame
-
-
-def neutrlize_colour(frame,alpha=2, beta=0):
-    """
-    Takes the frame and neutralizes the colors, by adjusting the white balance
-    :param frame: The frame to neutralize.
-    :return: The neutralized frame.
-    """
-    frame = cv2.convertScaleAbs(frame, alpha=alpha, beta=beta)
-    return frame
-
-
 def white_balance_bgr(img_bgr):
     img_hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
     h, s, v = cv2.split(img_hsv)
@@ -221,10 +175,6 @@ def white_balance_bgr(img_bgr):
 
 
 def crop_frame_by_coordinates(frame, crop_coordinates):
-    """
-    Crop the frame by choosen coordinates.
-    :param frame: Frame to cropped.
-    """
     return frame[crop_coordinates[0]:crop_coordinates[1],crop_coordinates[2]:crop_coordinates[3]]
 
 
@@ -244,7 +194,7 @@ def create_circular_mask(image_dim, center=None, radius=None):
 
 def process_image(image, alpha=2.5, beta=0, gradiant_threshold=10, sobel_kernel_size=1, blur_kernel=(7,7)):
     from scipy.ndimage import binary_fill_holes
-    image = neutrlize_colour(image, alpha=alpha, beta=beta)
+    image = cv2.convertScaleAbs(image, alpha=alpha, beta=beta)
     image = white_balance_bgr(image)
 
     kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])  # sharpening kernel
@@ -262,10 +212,11 @@ def process_image(image, alpha=2.5, beta=0, gradiant_threshold=10, sobel_kernel_
     return image
 
 
-def save_data(output_path, arrays, names, snapshot_data, continue_from_last=False):
-    if not os.path.exists(output_path):
-        os.makedirs(output_path)
-    if snapshot_data["frame_count"] == 0:
+def save_data(arrays, names, snapshot_data, parameters):
+    output_path = parameters["output_path"]
+    continue_from_last = parameters["continue_from_last"]
+    os.makedirs(output_path, exist_ok=True)
+    if snapshot_data["frame_count"]-1 == 0:
         for d, n in zip(arrays[:], names[:]):
             with open(os.path.join(output_path, str(n) + '.csv'), 'wb') as f:
                 np.savetxt(f, d, delimiter=',')
@@ -275,7 +226,7 @@ def save_data(output_path, arrays, names, snapshot_data, continue_from_last=Fals
             with open(os.path.join(output_path, str(n) + '.csv'), 'a') as f:
                 if continue_from_last:
                     line_count = get_csv_line_count(os.path.join(output_path, str(n) + '.csv'))
-                    if line_count == snapshot_data["frame_count"]+1:
+                    if line_count == snapshot_data["frame_count"]:
                         continue
                     else:
                         np.savetxt(f, d, delimiter=',')
@@ -290,7 +241,7 @@ def get_csv_line_count(csv_file):
     return line_count
 
 
-def save_as_mathlab_matrix(output_dir):
+def convert_ants_centers_to_mathlab(output_dir):
     ants_centers_x = np.loadtxt(os.path.join(output_dir, "ants_centers_x.csv"), delimiter=",")
     ants_centers_y = np.loadtxt(os.path.join(output_dir, "ants_centers_y.csv"), delimiter=",")
     ants_centers = np.stack((ants_centers_x, ants_centers_y), axis=2)
@@ -305,60 +256,30 @@ def save_as_mathlab_matrix(output_dir):
     os.system(execution_string)
 
 
+def present_analysis_result(frame, calculations, springs, video_name=" "):
+    image_to_illustrate = frame
+    for point_red in springs.spring_ends_centers:
+        image_to_illustrate = cv2.circle(image_to_illustrate, point_red.astype(int), 1, (0, 0, 255), 2)
+    for point_blue in springs.spring_middle_part_centers:
+        image_to_illustrate = cv2.circle(image_to_illustrate, point_blue.astype(int), 1, (255, 0, 0), 2)
+    for count_, angle in enumerate(calculations.springs_angles_ordered):
+        if angle != 0:
+            if angle in springs.fixed_ends_edges_bundles_labels:
+                point = springs.fixed_ends_edges_centers[springs.fixed_ends_edges_bundles_labels.index(angle)]
+                image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 0, 0), 2)
+                image_to_illustrate = cv2.putText(image_to_illustrate, str(count_), point, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+                image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 0, 0), 2)
+            if angle in springs.free_ends_edges_bundles_labels:
+                point = springs.free_ends_edges_centers[springs.free_ends_edges_bundles_labels.index(angle)]
+                image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 0, 0), 2)
+    for label, ant_center_x, ant_center_y in zip(calculations.ants_attached_labels, calculations.ants_centers_x[0], calculations.ants_centers_y[0]):
+        if label != 0:
+            point = (int(ant_center_x), int(ant_center_y))
+            image_to_illustrate = cv2.putText(image_to_illustrate, str(int(label)-1), point, cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 1)
+    image_to_illustrate = cv2.circle(image_to_illustrate, springs.object_center_coordinates, 1, (0, 0, 0), 2)
+    image_to_illustrate = cv2.circle(image_to_illustrate, springs.tip_point, 1, (0, 255, 0), 2)
+    image_to_illustrate = crop_frame_by_coordinates(image_to_illustrate, springs.object_crop_coordinates)
+    cv2.imshow(video_name, white_balance_bgr(image_to_illustrate))
+    cv2.waitKey(1)
 
 
-
-# def is_square(points, tolerance=120):
-#     if len(points) != 4:
-#         raise ValueError("Input should contain exactly four points.")
-#
-#     # Calculate distances between all pairs of points
-#     pairwise_distances = np.linalg.norm(points[:, None] - points, axis=2)
-#
-#     # Calculate angles between line segments
-#     vectors = points[:, None] - points
-#     dot_products = np.sum(vectors[:, :, None] * vectors[:, None, :], axis=0)
-#     norms = np.linalg.norm(vectors, axis=0)
-#     angles = np.degrees(np.arccos(np.clip(dot_products / (norms * norms[:, None]), -1.0, 1.0)))
-#
-#     # Sort the distances to find the longest and shortest sides
-#     sorted_distances = np.sort(pairwise_distances.ravel())
-#     shortest_side = sorted_distances[0]
-#     longest_side = sorted_distances[-1]
-#
-#     # Check if all angles are close to 90 degrees and sides are of similar length
-#     angle_similarity = np.all(np.isclose(angles, 90, atol=tolerance))
-#     side_similarity = np.isclose(shortest_side, longest_side, atol=tolerance)
-#     print(angle_similarity, side_similarity)
-#     # Return True if the input points resemble a square, otherwise False
-#     return angle_similarity and side_similarity
-
-
-# def rotate_points(points, angle_degrees=45):
-#     if len(points) < 2:
-#         raise ValueError("Input should contain at least two points.")
-#
-#     # Get the first point as the pivot
-#     pivot = points[0]
-#
-#     # Convert the angle from degrees to radians
-#     angle_radians = np.radians(angle_degrees)
-#
-#     # Calculate the sine and cosine of the angle
-#     cos_theta = np.cos(angle_radians)
-#     sin_theta = np.sin(angle_radians)
-#
-#     # Create a transformation matrix for the rotation
-#     rotation_matrix = np.array([[cos_theta, -sin_theta],
-#                                  [sin_theta, cos_theta]])
-#
-#     # Translate the points so that the pivot becomes the origin
-#     translated_points = points - pivot
-#
-#     # Apply the rotation matrix to the translated points
-#     rotated_points = np.dot(rotation_matrix, translated_points.T).T
-#
-#     # Translate the points back to their original position
-#     rotated_points += pivot
-#
-#     return rotated_points

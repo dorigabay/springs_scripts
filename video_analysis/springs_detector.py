@@ -4,8 +4,7 @@ import numpy as np
 from scipy.ndimage import label, generate_binary_structure, center_of_mass, maximum_filter, binary_fill_holes
 from skimage.measure import regionprops, find_contours
 # local imports:
-from video_analysis import utils
-from video_analysis.perspective_squares import PerspectiveSquares
+import utils
 
 
 # GRADIANT_THRESHOLD = 5
@@ -41,7 +40,7 @@ class Springs:
             object_crop_coordinates = utils.create_box_coordinates(self.previous_detections["object_center_coordinates"], self.parameters["ocm"])[0]
         image_processed = utils.crop_frame_by_coordinates(frame, object_crop_coordinates)
         image_processed = utils.process_image(image_processed, alpha=self.parameters["NEUTRALIZE_COLOUR_ALPHA"],
-                                                               blur_kernel=self.parameters["BLUR_KERNEL"],
+                                                               blur_kernel=self.parameters["NEUTRALIZE_COLOUR_BETA"],
                                                                gradiant_threshold=self.parameters["GRADIANT_THRESHOLD"])
         return image_processed, object_crop_coordinates
 
@@ -104,13 +103,9 @@ class Springs:
         biggest_blob = needle_prop[np.argmax([x.area for x in needle_prop])].label
         needle_mask_empty_closed[np.invert(labeled==biggest_blob)] = 0
         needle_mask_full = np.zeros(needle_mask_empty_closed.shape,"uint8")
-        # cv2.imshow("needle_mask_empty_closed", cv2.resize(needle_mask_empty_closed.astype("uint8")*255, (0,0), fx=0.3, fy=0.3))
-        # cv2.waitKey(0)
         binary_fill_holes(needle_mask_empty_closed,output=needle_mask_full)
         inner_mask = needle_mask_full - needle_mask_empty_closed
         inner_mask_center = center_of_mass(inner_mask)
-        # cv2.imshow("needle_mask_empty_closed", cv2.resize(inner_mask.astype("uint8")*255, (0,0), fx=0.3, fy=0.3))
-        # cv2.waitKey(0)
         # if the center is not found, use the previous detection:
         if not np.isnan(np.sum(inner_mask_center)):
             object_center = [int(x) for x in inner_mask_center]

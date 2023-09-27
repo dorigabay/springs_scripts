@@ -3,7 +3,7 @@ import os
 import numpy as np
 from scipy.ndimage import maximum_filter
 # local imports:
-from video_analysis import utils
+import utils
 
 
 ANTS_SPRINGS_OVERLAP_SIZE = 5
@@ -98,7 +98,7 @@ class Calculation:
                 self.ants_attached_forgotten_labels[ants_on_two_springs - 1] = springs_forgotten
                 self.ants_attached_labels[ants_on_spring_end - 1] = np.arange(1, self.springs.n_springs + 1)[spring_position][0]
             N_ants_around_springs[spring_position] = len(ants_on_spring_end)
-            size_ants_around_springs[spring_position] = np.sum(np.isin(self.springs.labeled_ants, ants_on_spring_end))
+            size_ants_around_springs[spring_position] = np.sum(np.isin(self.ants.labeled_ants, ants_on_spring_end))
         return N_ants_around_springs.reshape(1, self.springs.n_springs), size_ants_around_springs.reshape(1, self.springs.n_springs)
 
     def reorder_coordinates(self, springs_order):
@@ -131,7 +131,7 @@ class Calculation:
             self.springs.n_springs), free_ends_y.reshape(1, self.springs.n_springs), blue_part_x.reshape(1, 2), blue_part_y.reshape(1, 2)
 
 
-def save_data(output_path, snapshot_data, parameters, calculations=None, continue_from_last=False):
+def save_data(snapshot_data, parameters, calculations=None):
     max_ants = parameters["max_ants_number"]
     n_springs = parameters["n_springs"]
     if calculations is None:
@@ -139,6 +139,8 @@ def save_data(output_path, snapshot_data, parameters, calculations=None, continu
         empty_2_values = np.full((1, 2), np.nan)
         empty_ants = np.full((1, max_ants), np.nan)
         arrays = [empty_springs for _ in range(6)] + [empty_2_values, empty_2_values] + [empty_ants for _ in range(4)]
+        snapshot_data["skipped_frames"] += 1
+        print("\r Skipped frame: ", snapshot_data["frame_count"], end=" " * 150)
     else:
         arrays = [calculations.N_ants_around_springs, calculations.size_ants_around_springs,
                   calculations.fixed_ends_coordinates_x, calculations.fixed_ends_coordinates_y,
@@ -147,9 +149,14 @@ def save_data(output_path, snapshot_data, parameters, calculations=None, continu
                   calculations.ants_centers_x, calculations.ants_centers_y,
                   calculations.ants_attached_labels.reshape(1, max_ants),
                   calculations.ants_attached_forgotten_labels.reshape(1, max_ants)]
+        snapshot_data["analysed_frame_count"] += 1
+        snapshot_data["skipped_frames"] = 0
+        print("\r Analyzed frame number: ", snapshot_data["frame_count"], end=" " * 150)
     names = ["N_ants_around_springs", "size_ants_around_springs",
              "fixed_ends_coordinates_x", "fixed_ends_coordinates_y", "free_ends_coordinates_x",
              "free_ends_coordinates_y", "needle_part_coordinates_x", "needle_part_coordinates_y",
              "ants_centers_x", "ants_centers_y", "ants_attached_labels", "ants_attached_forgotten_labels"]
-    utils.save_data(output_path, arrays, names, snapshot_data, continue_from_last)
-    pickle.dump(snapshot_data, open(os.path.join(output_path, f'snap_data_{snapshot_data["current_time"]}.pickle'), "wb"))
+    snapshot_data["frame_count"] += 1
+    utils.save_data(arrays, names, snapshot_data, parameters)
+    pickle.dump(snapshot_data, open(os.path.join(parameters["output_path"], f'snap_data_{snapshot_data["current_time"]}.pickle'), "wb"))
+    return snapshot_data
