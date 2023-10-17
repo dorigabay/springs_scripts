@@ -1,24 +1,10 @@
 import copy
-import glob
 import numpy as np
-from scipy.ndimage import label,sum_labels
+from scipy.ndimage import label, sum_labels
+from scipy.signal import savgol_filter
 import os
-from scipy.optimize import curve_fit
 import cv2
-
-
-# def bound_angle(angle):
-#     above_2pi = angle > 2 * np.pi
-#     below_0 = angle < 0
-#     angle[above_2pi] = angle[above_2pi] - 2 * np.pi
-#     angle[below_0] = angle[below_0] + 2 * np.pi
-#     return angle
-
-
-# def load_first_frame(video_path):
-#     video = cv2.VideoCapture(video_path)
-#     ret, frame = video.read()
-#     return frame
+import time
 
 
 def projection_on_axis(X, Y, axis=0):
@@ -39,16 +25,16 @@ def projection_on_axis(X, Y, axis=0):
 
 
 def calc_pulling_angle_matrix(a, b, c):
-    a,b,c  = copy.copy(a).astype(float),copy.copy(b).astype(float),copy.copy(c).astype(float)
-    a,b,c = a-b,b-b,c-b
+    a, b, c = copy.copy(a).astype(float), copy.copy(b).astype(float), copy.copy(c).astype(float)
+    a, b, c = a-b, b-b, c-b
     for col in range(c.shape[1]):
-        a[:,col],c[:,col] = projection_on_axis(a[:,col],c[:,col],axis=1)
+        a[:, col], c[:, col] = projection_on_axis(a[:, col], c[:, col], axis=1)
     ba = a - b
     bc = c - b
-    ba_y = ba[:,:,0]
-    ba_x = ba[:,:,1]
-    dot = ba_y*bc[:,:,0] + ba_x*bc[:,:,1]
-    det = ba_y*bc[:,:,1] - ba_x*bc[:,:,0]
+    ba_y = ba[:, :, 0]
+    ba_x = ba[:, :, 1]
+    dot = ba_y*bc[:, :, 0] + ba_x*bc[:, :, 1]
+    det = ba_y*bc[:, :, 1] - ba_x*bc[:, :, 0]
     angles = np.arctan2(det, dot)
     return angles
 
@@ -70,13 +56,6 @@ def calc_angle_matrix(a, b, c):
     det = ba_y*bc[:,:,1] - ba_x*bc[:,:,0]
     angles = np.arctan2(det, dot)
     return angles
-
-
-def deduce_bias_equation(x,y):
-    def bias_equation(x, a, b,c):
-        return a*np.cos(x+b)+c
-    params, _ = curve_fit(bias_equation, x, y)
-    return lambda x: bias_equation(x, *params)
 
 
 def normalize(y, x, bias_equation):
@@ -117,10 +96,6 @@ def calc_translation_velocity(coordinates, spacing=1):
     coordinates = coordinates.copy()
     horizontal_component = difference(coordinates[:, 0], spacing=spacing)
     vertical_component = difference(coordinates[:, 1], spacing=spacing)
-    # relative_horizontal_component = difference(relative_coordinates[:, :, 0], spacing=spacing)
-    # relative_vertical_component = difference(relative_coordinates[:, :, 1], spacing=spacing)
-    # horizontal_component = horizontal_component - np.nanmedian(relative_horizontal_component, axis=1)
-    # vertical_component = vertical_component - np.nanmedian(relative_vertical_component, axis=1)
     movement_direction = np.arctan2(vertical_component, horizontal_component)
     movement_magnitude = np.sqrt(horizontal_component ** 2 + vertical_component ** 2)
     return movement_direction, movement_magnitude
@@ -157,58 +132,34 @@ def find_cells_to_interpolate(array, min_size=8):
     return cells_to_interpolate
 
 
-def filter_continuity(binary_array,min_size=0,max_size=np.inf):
+def filter_continuity(binary_array, min_size=0, max_size=np.inf):
     binary_array_dilated = column_dilation(binary_array)
-    labeled,labels = label(binary_array_dilated)
+    labeled, labels = label(binary_array_dilated)
     labels = np.arange(labels+1)[1:]
-    labeled_summed = sum_labels(binary_array_dilated,labeled,index=labels).astype(int)
-    labels_to_remove = labels[np.invert((labeled_summed>min_size)&(labeled_summed<max_size))]
-    labeled[np.isin(labeled,labels_to_remove)]=0
-    labeled = labeled[:,list(range(0,labeled.shape[1],2))]
-    return labeled>=1
+    labeled_summed = sum_labels(binary_array_dilated, labeled,index=labels).astype(int)
+    labels_to_remove = labels[np.invert((labeled_summed > min_size) & (labeled_summed < max_size))]
+    labeled[np.isin(labeled, labels_to_remove)] = 0
+    labeled = labeled[:, list(range(0,labeled.shape[1], 2))]
+    return labeled >= 1
 
 
-# def find_dirs(path):
-#     to_analyze = {}
-#     directories_to_search = [path]
-#     while directories_to_search:
-#         dir = directories_to_search.pop()
-#         found_dirs = [folder_name for folder_name in [x for x in os.walk(dir)][0][1] if "_force" in folder_name]
-#         for found_dir in found_dirs:
-#             videos_names = [x for x in os.walk(os.path.join(dir,found_dir))][0][1]
-#             videos_paths = [os.path.normpath(os.path.join(dir,found_dir,x))+"\\" for x in videos_names]
-#             videos_paths_filtered = [x for x in videos_paths if len(glob.glob(x+'\\*.csv'))>0]
-#             if found_dir not in to_analyze:
-#                 to_analyze[found_dir] = videos_paths_filtered
-#             else:
-#                 to_analyze[found_dir] += videos_paths_filtered
-#         else:
-#             for subdir in [x for x in os.walk(dir)][0][1]:
-#                 directories_to_search.append(os.path.join(dir, subdir))
-#     return to_analyze
-
-
-# def get_outliers(array, threshold=1.1):
-#     # get the outliers from an array
-#     # outliers are defined as values that are more than percent_threshold away from the median
-#     median = np.nanmedian(array)
-#     outliers = np.where(np.abs(array - median) > threshold * median)[0]
-#     return outliers
+def sine_function(x, amplitude, frequency, phase, offset):
+    return amplitude * np.sin(frequency * x + phase) + offset
 
 
 def norm_values(explained, explaining, models):
     explaining = np.expand_dims(explaining, axis=2)
     X = np.concatenate((np.sin(explaining), np.cos(explaining)), axis=2)
-    not_nan_idx = ~(np.isnan(explained) + np.isnan(X).any(axis=2))
     prediction_matrix = np.zeros(explained.shape)
     for col in range(explained.shape[1]):
+        not_nan_idx = ~(np.isnan(explained[:, col]) + np.isnan(X[:, col]).any(axis=1))
         model = models[col]
         if len(explained.shape) == 2:
-            prediction_matrix[not_nan_idx[:, col], col] = model.predict(X[not_nan_idx[:, col], col, :])
+            prediction_matrix[not_nan_idx, col] = model.predict(X[not_nan_idx, col, :]).flatten()
     return prediction_matrix
 
 
-def create_projective_transform_matrix(dst, dst_quality=None, quality_threshold=0.02, src_dimensions=(3840, 2160)):
+def create_projective_transform_matrix(dst, dst_quality=None, quality_threshold=0.02, src_dimensions=np.array([3840,1920])):
     perfect_squares = dst_quality < quality_threshold if dst_quality is not None else np.full(dst.shape[0], True)
     PTMs = np.full((dst.shape[0], 3, 3), np.nan)
     w, h = src_dimensions
@@ -216,6 +167,7 @@ def create_projective_transform_matrix(dst, dst_quality=None, quality_threshold=
         if np.all(perfect_square) and not np.any(np.isnan(dst[count])):
             sdst = dst[count].astype(np.float32)
             src = np.array([[0, 0], [0, h], [w, 0], [w, h]]).astype(np.float32)
+            # src = np.array([zero_point, zero_point+np.array([0, h]), zero_point+np.array([w, 0]), zero_point+np.array([w, h])]).astype(np.float32)
             PTM, _ = cv2.findHomography(src, sdst, 0)
             PTMs[count] = PTM
     return PTMs
@@ -223,12 +175,15 @@ def create_projective_transform_matrix(dst, dst_quality=None, quality_threshold=
 
 def apply_projective_transform(coordinates, projective_transformation_matrices):
     original_shape = coordinates.shape
+    # print("coordinates before", coordinates.shape)
     if len(original_shape) == 2:
         coordinates = np.expand_dims(np.expand_dims(coordinates, axis=1), axis=2)
     elif len(original_shape) == 3:
         coordinates = np.expand_dims(coordinates, axis=2)
     transformed_coordinates = np.full(coordinates.shape, np.nan)
     nan_count = 0
+    # print("coordinates_after", coordinates.shape)
+    # print("coordinates_after", coordinates[count])
     for count, PTM in enumerate(projective_transformation_matrices):
         if not np.any(np.isnan(PTM)):
             PTM_inv = np.linalg.inv(PTM)
@@ -238,4 +193,57 @@ def apply_projective_transform(coordinates, projective_transformation_matrices):
     transformed_coordinates[np.isnan(coordinates)] = np.nan
     transformed_coordinates = transformed_coordinates.reshape(original_shape)
     return transformed_coordinates
+
+
+def wait_for_existance(path, file_name):
+    existing_attempts = 0
+    while not os.path.exists(os.path.join(path, file_name)):
+        print(f"\rWaiting for external program to finish... (waited for {existing_attempts * 10} seconds already)")
+        time.sleep(10)
+        existing_attempts += 1
+        if existing_attempts > 10080:  # 3 hours
+            raise ValueError("matlab is stuck, please check")
+
+
+def project_plane_perspective(coordinates, params):
+    height, x_center, y_center = params
+    # x_center, y_center = 3840 * 0.57, 1920 * 0.82
+    # height = 0.015
+    plane_to_center_distance = coordinates - np.array([x_center, y_center])
+    plane_displacement_distance = plane_to_center_distance * (height / (1 - height))
+    plane_correct_coordinates = coordinates - plane_displacement_distance
+    return plane_correct_coordinates
+
+
+def smooth_columns(array):
+    for col in range(array.shape[1]):
+        array[:, col] = np.abs(np.round(savgol_filter(array[:, col], 31, 2)))
+    return array
+
+
+# import pandas as pd
+#
+#
+# def force_calculations(force_magnitude, force_direction, angle_to_nest, object_center_coordinates):
+#     # self.force_magnitude[~np.isnan(self.force_magnitude)*self.rest_bool] -= np.nanmean(self.force_magnitude[~np.isnan(self.force_magnitude)*self.rest_bool])
+#     # self.force_direction[~np.isnan(self.force_direction)*self.rest_bool] -= np.nanmean(self.force_direction[~np.isnan(self.force_direction)*self.rest_bool])
+#     net_force_direction, net_force_magnitude, net_tangential_force = calc_net_force(force_magnitude, force_direction, angle_to_nest)
+#     angular_velocity = calc_angular_velocity(angle_to_nest, diff_spacing=20) / 20
+#     angular_velocity = np.where(np.isnan(angular_velocity).all(axis=1), np.nan, np.nanmedian(angular_velocity, axis=1))
+#     momentum_direction, momentum_magnitude = calc_translation_velocity(object_center_coordinates, spacing=40)
+#     net_force_direction = np.array(pd.Series(net_force_direction).rolling(window=40, center=True).median())
+#     net_force_magnitude = np.array(pd.Series(net_force_magnitude).rolling(window=40, center=True).median())
+#     net_tangential_force = np.array(pd.Series(net_tangential_force).rolling(window=5, center=True).median())
+#     return net_force_direction, net_force_magnitude, net_tangential_force, angular_velocity, momentum_direction, momentum_magnitude
+#
+#
+# def calc_net_force(force_magnitude, force_direction, angle_to_nest):
+#     horizontal_component = force_magnitude * np.cos(force_direction + angle_to_nest)
+#     vertical_component = force_magnitude * np.sin(force_direction + angle_to_nest)
+#     net_force_direction = np.arctan2(np.nansum(vertical_component, axis=1), np.nansum(horizontal_component, axis=1))
+#     net_force_magnitude = np.sqrt(np.nansum(horizontal_component, axis=1) ** 2 + np.nansum(vertical_component, axis=1) ** 2)
+#     tangential_force = np.sin(force_direction) * force_magnitude
+#     net_tangential_force = np.where(np.isnan(tangential_force).all(axis=1), np.nan, np.nansum(tangential_force, axis=1))
+#     return net_force_direction, net_force_magnitude, net_tangential_force
+
 

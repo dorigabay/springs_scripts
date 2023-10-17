@@ -3,20 +3,57 @@ import numpy as np
 import os
 import scipy.io as sio
 import pickle
-# from skimage.morphology import skeletonize, thin
-# import scipy.cluster as sclu
+import datetime
 from skimage.morphology import binary_dilation, binary_erosion, remove_small_objects
-from scipy.ndimage import maximum_filter, minimum_filter, label
+from scipy.ndimage import maximum_filter, minimum_filter, label, binary_fill_holes
+import matplotlib.pyplot as plt
+
+
 COLOR_CLOSING = np.ones((3, 3))
 
 
-def find_farthest_point(point, contour):
-    point = np.array([point[1],point[0]])
-    distances = np.sqrt(np.sum(np.square(contour-point),1))
+def find_circle(mask):
+    # image_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # image_gray = cv2.GaussianBlur(mask, (9, 9), 2)
+    cv2.imshow('mask', mask)
+    cv2.waitKey(0)
+    circles = cv2.HoughCircles(
+        mask,  # Input image
+        cv2.HOUGH_GRADIENT,  # Detection method (Hough Gradient method)
+        dp=1,  # Inverse ratio of the accumulator resolution to the image resolution
+        minDist=20,  # Minimum distance between detected centers of the circles
+        param1=50,  # Upper threshold for the internal Canny edge detector
+        param2=30,  # Threshold for center detection
+        minRadius=10,  # Minimum radius of the detected circles
+        maxRadius=100  # Maximum radius of the detected circles
+    )
+
+    if circles is not None:
+        # Convert the circle coordinates to integer values
+        circles = np.uint16(np.around(circles))
+
+        # Draw the detected circles on the original image
+        for circle in circles[0, :]:
+            center = (circle[0], circle[1])  # Circle center
+            radius = circle[2]  # Circle radius
+
+            # Draw the circle outline
+            cv2.circle(mask, center, radius, (0, 255, 0), 2)
+
+        # Display the image with detected circles
+        cv2.imshow('Detected Circles', mask)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+    else:
+        print("No circles were detected.")
+
+
+def get_farthest_point(point, contour, n_points=50, inverse=False):
+    contour = swap_columns(contour.copy())
+    distances = np.sqrt(np.sum(np.square(contour-point), 1))
     # take the average of the 50 farthest points
-    farthest_points = np.argsort(distances)[-50:]
-    farthest_point = np.mean(contour[farthest_points],0).astype(int)
-    farthest_point = np.array([farthest_point[1],farthest_point[0]])
+    farthest_points = np.argsort(distances)[-n_points:] if not inverse else np.argsort(distances)[:n_points]
+    farthest_point = np.mean(contour[farthest_points], 0)#.astype(int)
     return farthest_point, np.max(distances)
 
 
@@ -52,6 +89,19 @@ def remove_small_blobs(bool_mask, min_size: int = 0):
 def close_blobs(mask, structure):
     mask = binary_dilation(mask, structure).astype(np.uint8)
     mask = binary_erosion(mask, structure).astype(np.uint8)
+    return mask
+
+
+def clean_mask(mask, min_size, fill_holes=True, circle_center_remove=None, circle_radius_remove=None):
+    mask = mask.astype(bool)
+    if not (circle_center_remove is None or circle_radius_remove is None):
+        inner_circle_mask = create_circular_mask(mask.shape, center=circle_center_remove, radius=circle_radius_remove * 0.9)
+        outer_circle_mask = create_circular_mask(mask.shape, center=circle_center_remove, radius=circle_radius_remove * 2.5)
+        mask[inner_circle_mask] = False
+        mask[np.invert(outer_circle_mask)] = False
+    if fill_holes:
+        mask = binary_fill_holes(mask.astype(np.uint8)).astype(bool)
+    mask = remove_small_blobs(mask, min_size)
     return mask
 
 
@@ -159,8 +209,12 @@ def collect_points(image, n_points, show_color=False):
     cv2.setMouseCallback(f"Pick {n_points} pixels", click_event)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
-    if len(points) != n_points: collect_points(image, n_points)
-    return np.array(points)
+    points = np.array(points)
+    if points.shape[0] != n_points:
+        print(f"Wrong number of points picked, please pick exactly {n_points} points")
+        del points
+        points = collect_points(image, n_points)
+    return points
 
 
 def white_balance_bgr(img_bgr):
@@ -174,8 +228,8 @@ def white_balance_bgr(img_bgr):
     return balanced_img_bgr
 
 
-def crop_frame_by_coordinates(frame, crop_coordinates):
-    return frame[crop_coordinates[0]:crop_coordinates[1],crop_coordinates[2]:crop_coordinates[3]]
+def crop_frame(frame, coordinates):
+    return frame[coordinates[0]:coordinates[1], coordinates[2]:coordinates[3]]
 
 
 def create_circular_mask(image_dim, center=None, radius=None):
@@ -214,7 +268,7 @@ def process_image(image, alpha=2.5, beta=0, gradiant_threshold=10, sobel_kernel_
 
 def save_data(arrays, names, snapshot_data, parameters):
     output_path = parameters["output_path"]
-    continue_from_last = parameters["continue_from_last"]
+    continue_from_last = parameters["continue_from_last_snapshot"]
     os.makedirs(output_path, exist_ok=True)
     if snapshot_data["frame_count"]-1 == 0:
         for d, n in zip(arrays[:], names[:]):
@@ -256,7 +310,7 @@ def convert_ants_centers_to_mathlab(output_dir):
     os.system(execution_string)
 
 
-def present_analysis_result(frame, calculations, springs, video_name=" "):
+def present_analysis_result(frame, calculations, springs, ants, video_name=" ", reduction_factor=1, waitKey=1):
     image_to_illustrate = frame
     for point_red in springs.spring_ends_centers:
         image_to_illustrate = cv2.circle(image_to_illustrate, point_red.astype(int), 1, (0, 0, 255), 2)
@@ -265,21 +319,154 @@ def present_analysis_result(frame, calculations, springs, video_name=" "):
     for count_, angle in enumerate(calculations.springs_angles_ordered):
         if angle != 0:
             if angle in springs.fixed_ends_edges_bundles_labels:
-                point = springs.fixed_ends_edges_centers[springs.fixed_ends_edges_bundles_labels.index(angle)]
+                point = springs.fixed_ends_edges_centers[springs.fixed_ends_edges_bundles_labels.index(angle)].astype(int)
                 image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 0, 0), 2)
                 image_to_illustrate = cv2.putText(image_to_illustrate, str(count_), point, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
                 image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 0, 0), 2)
             if angle in springs.free_ends_edges_bundles_labels:
-                point = springs.free_ends_edges_centers[springs.free_ends_edges_bundles_labels.index(angle)]
+                point = springs.free_ends_edges_centers[springs.free_ends_edges_bundles_labels.index(angle)].astype(int)
                 image_to_illustrate = cv2.circle(image_to_illustrate, point, 1, (0, 0, 0), 2)
     for label, ant_center_x, ant_center_y in zip(calculations.ants_attached_labels, calculations.ants_centers_x[0], calculations.ants_centers_y[0]):
         if label != 0:
             point = (int(ant_center_x), int(ant_center_y))
             image_to_illustrate = cv2.putText(image_to_illustrate, str(int(label)-1), point, cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 1)
-    image_to_illustrate = cv2.circle(image_to_illustrate, springs.object_center_coordinates, 1, (0, 0, 0), 2)
-    image_to_illustrate = cv2.circle(image_to_illustrate, springs.tip_point, 1, (0, 255, 0), 2)
-    image_to_illustrate = crop_frame_by_coordinates(image_to_illustrate, springs.object_crop_coordinates)
-    cv2.imshow(video_name, white_balance_bgr(image_to_illustrate))
-    cv2.waitKey(1)
+    image_to_illustrate = cv2.circle(image_to_illustrate, springs.object_center_coordinates.astype(int), 1, (0, 0, 0), 2)
+    image_to_illustrate = cv2.circle(image_to_illustrate, springs.tip_point.astype(int), 1, (0, 255, 0), 2)
+    image_to_illustrate = white_balance_bgr(crop_frame(image_to_illustrate, springs.object_crop_coordinates))
+    labeled_ants_cropped = crop_frame(ants.labeled_ants, springs.object_crop_coordinates)
+    num_features = np.max(labeled_ants_cropped)+1
+    cmap = plt.get_cmap('jet', num_features)
+    mapped = cmap(labeled_ants_cropped)[:, :, :3]
+    overlay_image = image_to_illustrate.copy()
+    boolean = labeled_ants_cropped != 0
+    boolean = np.repeat(boolean[:, :, np.newaxis], 3, axis=2)
+    overlay_image[boolean] = (mapped[boolean] * 255).astype(np.uint8)
+    # plt.imshow(overlay_image.astype(np.uint8))
+    # plt.title(video_name)
+    # plt.show()
+    if waitKey != -1:
+        cv2.imshow(video_name, overlay_image)
+        cv2.waitKey(waitKey)
+    return image_to_illustrate
 
 
+def create_snapshot_data(parameters=None, snapshot_data=None, calculations=None, squares=None, springs=None):
+    if snapshot_data is None:
+        if parameters["continue_from_last_snapshot"] and len([f for f in os.listdir(parameters["output_path"]) if f.startswith("snap_data")]) != 0:
+            snaps = [f for f in os.listdir(parameters["output_path"]) if f.startswith("snap_data")]
+            creation_time = [os.path.getctime(os.path.join(parameters["output_path"], f)) for f in snaps]
+            snapshot_data = pickle.load(open(os.path.join(parameters["output_path"], snaps[np.argmax(creation_time)]), "rb"))
+            parameters["starting_frame"] = snapshot_data["frame_count"]
+            snapshot_data["current_time"] = datetime.datetime.now().strftime("%d.%m.%Y-%H%M")
+        else:
+            snapshot_data = {"object_center_coordinates": parameters["object_center_coordinates"][0],
+                             "tip_point": None, "springs_angles_reference_order": None,
+                             "sum_needle_radius": 0, "analysed_frame_count": 0, "frame_count": 0,"skipped_frames": 0,
+                             "current_time": datetime.datetime.now().strftime("%d.%m.%Y-%H%M"),
+                             "perspective_squares_coordinates": parameters["perspective_squares_coordinates"]}
+    else:
+        snapshot_data["object_center_coordinates"] = springs.object_center_coordinates[[1, 0]]
+        snapshot_data["tip_point"] = springs.tip_point
+        snapshot_data["sum_needle_radius"] += int(springs.object_needle_radius)
+        snapshot_data["springs_angles_reference_order"] = calculations.springs_angles_reference_order
+        snapshot_data["perspective_squares_coordinates"] = swap_columns(squares.perspective_squares_properties[:, 0:2])
+    return snapshot_data
+
+
+def load_parameters(video_path, args):
+    try:
+        video_analysis_parameters = pickle.load(open(os.path.join(args["path"], "video_analysis_parameters.pickle"), 'rb'))[os.path.normpath(video_path)]
+    except:
+        raise ValueError("Video parameters for video: ", video_path, " not found. Please run the script with the flag --collect_parameters (-cp)")
+    video_analysis_parameters["starting_frame"] = args["starting_frame"] if args["starting_frame"] is not None else video_analysis_parameters["starting_frame"]
+    video_analysis_parameters["continue_from_last_snapshot"] = args["continue_from_last_snapshot"]
+    sub_dirs = os.path.normpath(video_path).split(args["path"])[1].split(".MP4")[0].split("\\")
+    video_analysis_parameters["output_path"] = os.path.join(args["path"], "analysis_output", *sub_dirs)\
+        if args["output_path"] is None else os.path.join(args["output_path"], *sub_dirs)
+    return video_analysis_parameters
+
+
+def insist_input_type(input_type, input_ask, str_list=None):
+    if input_type == "yes_no":
+        input_value = input(f"{input_ask} (y/n): ")
+        while not input_value.isalpha() or str(input_value) not in ["y", "n"]:
+            input_value = input("Please enter y or n: ")
+        return str(input_value) == "y"
+    if input_type == "str_list":
+        input_value = input(f"{input_ask}: ")
+        while not input_value.isalpha() or str(input_value) not in str_list:
+            input_value = input(f"Please enter {str(str_list)}: ")
+        return str(input_value)
+    if input_type == "int":
+        input_value = input(input_ask)
+        while not input_value.isdigit():
+            input_value = input("Please enter an integer: ")
+        return int(input_value)
+    if input_type == "float":
+        input_value = input(input_ask)
+        while not input_value.replace(".", "", 1).isdigit():
+            input_value = input("Please enter a float: ")
+        return float(input_value)
+
+
+# def cut_access_data(video_n_frames, parameters):
+#     print("Cutting access data", parameters["output_path"])
+#     import numpy as np
+#     data_names = ["perspective_squares_coordinates_x", "perspective_squares_coordinates_y", "perspective_squares_rectangle_similarity", "perspective_squares_squareness",
+#                   "N_ants_around_springs", "size_ants_around_springs", "fixed_ends_coordinates_x", "fixed_ends_coordinates_y", "free_ends_coordinates_x",
+#                   "free_ends_coordinates_y", "needle_part_coordinates_x", "needle_part_coordinates_y",
+#                   "ants_centers_x", "ants_centers_y", "ants_attached_labels", "ants_attached_forgotten_labels"]
+#     for data_name in data_names:
+#         file = np.loadtxt(os.path.join(parameters["output_path"], data_name+".csv"), delimiter=",")
+#         np.savetxt(os.path.join(parameters["output_path"], data_name+".csv"), file[:video_n_frames], delimiter=",")
+
+
+def calc_angle_matrix(a, b, c):
+    """
+    Calculate the angle between vectors a->b and b->c.
+    a, b, and c are all 3D arrays of the same shape, where last dimension is the x, y coordinates.
+    :param a:
+    :param b:
+    :param c:
+    :return:
+    """
+    ba = a - b
+    bc = c - b
+    ba_y = ba[:, :, 0]
+    ba_x = ba[:, :, 1]
+    dot = ba_y*bc[:, :, 0] + ba_x*bc[:, :, 1]
+    det = ba_y*bc[:, :, 1] - ba_x*bc[:, :, 0]
+    angles = np.arctan2(det, dot)
+    return angles
+
+
+def create_projective_transform_matrix(dst, dst_quality=None, quality_threshold=0.02, src_dimensions=(3840, 2160)):
+    perfect_squares = dst_quality < quality_threshold if dst_quality is not None else np.full(dst.shape[0], True)
+    PTMs = np.full((dst.shape[0], 3, 3), np.nan)
+    w, h = src_dimensions
+    for count, perfect_square in enumerate(perfect_squares):
+        if np.all(perfect_square) and not np.any(np.isnan(dst[count])):
+            sdst = dst[count].astype(np.float32)
+            src = np.array([[0, 0], [0, h], [w, 0], [w, h]]).astype(np.float32)
+            PTM, _ = cv2.findHomography(src, sdst, 0)
+            PTMs[count] = PTM
+    return PTMs
+
+
+def apply_projective_transform(coordinates, projective_transformation_matrices):
+    original_shape = coordinates.shape
+    if len(original_shape) == 2:
+        coordinates = np.expand_dims(np.expand_dims(coordinates, axis=1), axis=2)
+    elif len(original_shape) == 3:
+        coordinates = np.expand_dims(coordinates, axis=2)
+    transformed_coordinates = np.full(coordinates.shape, np.nan)
+    nan_count = 0
+    for count, PTM in enumerate(projective_transformation_matrices):
+        if not np.any(np.isnan(PTM)):
+            PTM_inv = np.linalg.inv(PTM)
+            transformed_coordinates[count] = cv2.perspectiveTransform(coordinates[count], PTM_inv)
+        else:
+            nan_count += 1
+    transformed_coordinates[np.isnan(coordinates)] = np.nan
+    transformed_coordinates = transformed_coordinates.reshape(original_shape)
+    return transformed_coordinates

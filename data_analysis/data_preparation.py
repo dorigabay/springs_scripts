@@ -1,145 +1,216 @@
 import os
-import pickle
+
+import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-from sklearn.pipeline import make_pipeline
-from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import PolynomialFeatures
-# local imports:
+import cv2
+import glob
+
+from scipy.optimize import curve_fit, minimize
+# local packages:
 from data_analysis import utils
-from post_processing import PostProcessing
-from data_analysis.ant_tracking import process_ant_tracking_data
 
 
-class CalculateForce:
-    def __init__(self, video_dir, data_paths, output_path):
-        self.video_dir = video_dir
-        self.output_path = output_path
+SQUARENESS_THRESHOLD = 0.0005
+RECTANGLE_SIMILARITY_THRESHOLD = 0.01
+QUALITY_THRESHOLD = SQUARENESS_THRESHOLD * RECTANGLE_SIMILARITY_THRESHOLD
+
+
+class DataPreparation:
+    def __init__(self, data_paths, videos_dir, n_springs=1, perspective_correction_params=None):
+        self.n_springs = n_springs
+        self.calib_mode = True if self.n_springs == 1 else False
         self.data_paths = data_paths
-        data = PostProcessing(data_paths, video_dir, n_springs=20)
-        self.calibration_model = pickle.load(open(calibration_model_path, "rb"))
-        self.create_bias_correction_models(data)
-        self.calc_spring_length(data)
-        self.calc_pulling_angle(data)
-        self.calc_force()
-        self.save_data(data)
-        self.test_correlation(data)
-        # process_ant_tracking_data(data, self.output_path, restart=False)
+        self.perspective_correction_params = perspective_correction_params
+        self.load_data(self.data_paths, videos_dir)
+        self.create_missing_perspective_squares(QUALITY_THRESHOLD)
+        self.rearrange_perspective_squares_order()
+        self.rearrange_springs_order()
+        self.create_video_sets()
+        self.n_ants_processing()
+        self.correct_perspectives(QUALITY_THRESHOLD)
+        self.calc_distances()
+        self.repeat_values()
+        self.calc_angle()
 
-    def create_bias_correction_models(self, data):
-        y_length = np.linalg.norm(data.free_ends_coordinates - data.fixed_ends_coordinates, axis=2)
-        y_angle = utils.calc_pulling_angle_matrix(data.fixed_ends_coordinates, data.object_center_repeated, data.free_ends_coordinates)
-        angles_to_nest = np.expand_dims(data.fixed_end_angle_to_nest, axis=2)
-        X = np.concatenate((np.sin(angles_to_nest), np.cos(angles_to_nest)), axis=2)
-        idx = data.rest_bool
-        self.models_lengths, self.models_angles = [], []
-        not_nan_idx = ~(np.isnan(y_angle) + np.isnan(X).any(axis=2)) * idx
-        for col in range(y_length.shape[1]):
-            X_fit = X[not_nan_idx[:, col], col]
-            y_length_fit = y_length[not_nan_idx[:, col], col]
-            y_angle_fit = y_angle[not_nan_idx[:, col], col]
-            model_length = make_pipeline(PolynomialFeatures(degree=1), LinearRegression())
-            model_angle = make_pipeline(PolynomialFeatures(degree=1), LinearRegression())
-            self.models_lengths.append(model_length.fit(X_fit, y_length_fit))
-            self.models_angles.append(model_angle.fit(X_fit, y_angle_fit))
+    def load_data(self, paths, video_dir):
+        paths = [paths] if isinstance(paths, str) else paths
+        perspective_squares_rectangle_similarity = np.concatenate([np.loadtxt(os.path.join(path, "perspective_squares_rectangle_similarity.csv"), delimiter=",") for path in paths], axis=0)
+        perspective_squares_squareness = np.concatenate([np.loadtxt(os.path.join(path, "perspective_squares_squareness.csv"), delimiter=",") for path in paths], axis=0)
+        self.perspective_squares_quality = perspective_squares_rectangle_similarity * perspective_squares_squareness
+        perspective_squares_coordinates_x = np.concatenate([np.loadtxt(os.path.join(path, "perspective_squares_coordinates_x.csv"), delimiter=",") for path in paths], axis=0)
+        perspective_squares_coordinates_y = np.concatenate([np.loadtxt(os.path.join(path, "perspective_squares_coordinates_y.csv"), delimiter=",") for path in paths], axis=0)
+        self.perspective_squares_coordinates = np.stack((perspective_squares_coordinates_x, perspective_squares_coordinates_y), axis=2)
+        self.ants_attached_labels = np.concatenate([np.loadtxt(os.path.join(path, "ants_attached_labels.csv"), delimiter=",") for path in paths], axis=0)
+        self.N_ants_around_springs = np.concatenate([np.loadtxt(os.path.join(path, "N_ants_around_springs.csv"), delimiter=",") for path in paths], axis=0)
+        self.size_ants_around_springs = np.concatenate([np.loadtxt(os.path.join(path, "size_ants_around_springs.csv"), delimiter=",") for path in paths], axis=0)
+        self.fixed_ends_coordinates = np.concatenate([np.stack((np.loadtxt(os.path.join(path, "fixed_ends_coordinates_x.csv"), delimiter=",").reshape(-1, self.n_springs),
+            np.loadtxt(os.path.join(path, "fixed_ends_coordinates_y.csv"), delimiter=",").reshape(-1, self.n_springs)), axis=2) for path in paths], axis=0)
+        self.free_ends_coordinates = np.concatenate([np.stack((np.loadtxt(os.path.join(path, "free_ends_coordinates_x.csv"), delimiter=",").reshape(-1, self.n_springs),
+            np.loadtxt(os.path.join(path, "free_ends_coordinates_y.csv"), delimiter=",").reshape(-1, self.n_springs)), axis=2) for path in paths], axis=0)
+        needle_coordinates = np.concatenate([np.loadtxt(os.path.join(path, "needle_part_coordinates_x.csv"), delimiter=",") for path in paths], axis=0)
+        needle_coordinates = np.stack((needle_coordinates, np.concatenate([np.loadtxt(os.path.join(path, "needle_part_coordinates_y.csv"), delimiter=",") for path in paths], axis=0)), axis=2)
+        self.object_center_coordinates = needle_coordinates[:, 0, :]
+        self.needle_tip_coordinates = needle_coordinates[:, -1, :]
+        self.video_n_frames = np.array([np.loadtxt(os.path.join(path, "N_ants_around_springs.csv"), delimiter=",").shape[0] for path in paths])
+        cap = cv2.VideoCapture(glob.glob(os.path.join(video_dir, "**", "*.MP4"), recursive=True)[0])
+        self.video_resolution = np.array((int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))))
+        cap.release()
 
-    def calc_pulling_angle(self, data):
-        self.pulling_angle = utils.calc_pulling_angle_matrix(data.fixed_ends_coordinates, data.object_center_repeated, data.free_ends_coordinates)
-        pulling_angle_prediction = utils.norm_values(self.pulling_angle, data.fixed_end_angle_to_nest, self.models_angles)
-        self.pulling_angle -= pulling_angle_prediction
-        for count, set_idx in enumerate(data.sets_frames):
-            start, end = set_idx[0][0], set_idx[-1][1]
-            rest_pull_angle = np.copy(self.pulling_angle[start:end])
-            rest_pull_angle[~data.rest_bool[start:end]] = np.nan
-            self.pulling_angle[start:end] -= np.nanmedian(rest_pull_angle, axis=0)
+    def rearrange_springs_order(self, threshold=10):
+        self.video_continuity_score = np.zeros(len(self.video_n_frames))
+        for count in range(1, len(self.video_n_frames)):
+            start, end = np.sum(self.video_n_frames[:count]), np.sum(self.video_n_frames[:count + 1])
+            previous_free_ends_coordinates = np.nanmedian(self.fixed_ends_coordinates[start - 5:start-1, :], axis=0)
+            current_free_ends_coordinates = np.nanmedian(self.fixed_ends_coordinates[start:start + 4, :], axis=0)
+            num_of_springs = self.fixed_ends_coordinates.shape[1]
+            arrangements_distances = np.zeros(num_of_springs)
+            for arrangement in range(num_of_springs):
+                rearrangement = np.append(np.arange(arrangement, num_of_springs), np.arange(0, arrangement))
+                arrangements_distances[arrangement] = np.nanmedian(np.linalg.norm(previous_free_ends_coordinates - current_free_ends_coordinates[rearrangement], axis=1))
+            best_arrangement = np.argmin(arrangements_distances)
+            if arrangements_distances[best_arrangement] < threshold: # higher than threshold means that this movie isn't a continuation of the previous one
+                rearrangement = np.append(np.arange(best_arrangement, num_of_springs), np.arange(0, best_arrangement))
+                self.N_ants_around_springs[start:end, :] = self.N_ants_around_springs[start:end, rearrangement]
+                self.size_ants_around_springs[start:end, :] = self.size_ants_around_springs[start:end, rearrangement]
+                self.fixed_ends_coordinates[start:end, :, :] = self.fixed_ends_coordinates[start:end, rearrangement, :]
+                self.free_ends_coordinates[start:end, :, :] = self.free_ends_coordinates[start:end, rearrangement, :]
+            self.video_continuity_score[count] = arrangements_distances[best_arrangement]
 
-    def calc_spring_length(self, data):
-        self.spring_length = np.linalg.norm(data.free_ends_coordinates - data.fixed_ends_coordinates, axis=2)
-        spring_length_prediction = utils.norm_values(self.spring_length, data.fixed_end_angle_to_nest, self.models_lengths)
-        smallest_zero_for_np_float64 = np.finfo(np.float64).tiny
-        self.spring_length[spring_length_prediction != 0] /= spring_length_prediction[spring_length_prediction != 0]
-        self.spring_length[spring_length_prediction == 0] /= smallest_zero_for_np_float64
+    def create_video_sets(self):
+        self.sets_frames = [[]]
+        self.sets_video_paths = [[]]
+        for count, score in enumerate(self.video_continuity_score):
+            if score < 10:
+                self.sets_video_paths[-1].append(self.data_paths[count])
+                if self.sets_frames[-1] == []:
+                    self.sets_frames[-1].append([0, self.video_n_frames[count] - 1])
+                else:
+                    frame_count = self.sets_frames[-1][-1][1]+1
+                    self.sets_frames[-1].append([frame_count, frame_count + self.video_n_frames[count] - 1])
+            else:
+                frame_count = self.sets_frames[-1][-1][1]+1
+                self.sets_frames.append([[frame_count, frame_count + self.video_n_frames[count] - 1]])
+                self.sets_video_paths.append([self.data_paths[count]])
 
-    def calc_force(self):
-        self.force_direction = np.full(self.pulling_angle.shape, np.nan, dtype=np.float64)
-        self.force_magnitude = np.full(self.pulling_angle.shape, np.nan, dtype=np.float64)
-        for s in range(self.pulling_angle.shape[1]):
-            X = np.stack((self.pulling_angle[:, s], self.spring_length[:, s]), axis=1)
-            exclude_idx = np.isnan(X).any(axis=1) + np.isinf(X).any(axis=1)
-            X = X[~exclude_idx]
-            forces_predicted = self.calibration_model.predict(X)
-            self.force_direction[~exclude_idx, s] = forces_predicted[:, 0]
-            self.force_magnitude[~exclude_idx, s] = forces_predicted[:, 1]
+    def create_missing_perspective_squares(self, quality_threshold):
+        real_squares = self.perspective_squares_quality < quality_threshold
+        self.perspective_squares_coordinates[~real_squares] = np.nan
+        reference_coordinates = self.perspective_squares_coordinates[np.all(real_squares, axis=1)][0]
+        diff = self.perspective_squares_coordinates - reference_coordinates[np.newaxis, :]
+        all_nan_rows = np.isnan(diff).all(axis=2).all(axis=1)
+        median_real_squares_diff = np.nanmedian(diff[~all_nan_rows], axis=1)
+        predicted_square_coordinates = np.repeat(reference_coordinates[np.newaxis, :], self.perspective_squares_coordinates.shape[0], axis=0)
+        predicted_square_coordinates[~all_nan_rows] += median_real_squares_diff[:, np.newaxis, :]
+        self.perspective_squares_coordinates[~np.isnan(predicted_square_coordinates)] = predicted_square_coordinates[~np.isnan(predicted_square_coordinates)]
+        self.perspective_squares_quality[~np.isnan(predicted_square_coordinates).any(axis=2)] = 0
 
-    def save_data(self, data):
-        for count, set_paths in enumerate(data.sets_video_paths):
-            sub_dirs_names = [os.path.basename(os.path.normpath(path)) for path in set_paths]
-            set_save_path = os.path.join(self.output_path, f"{sub_dirs_names[0]}-{sub_dirs_names[-1]}")
-            os.makedirs(set_save_path, exist_ok=True)
-            print("-" * 60)
-            print("saving data to:", set_save_path)
-            start, end = data.sets_frames[count][0][0], data.sets_frames[count][-1][1]
-            np.savez_compressed(os.path.join(set_save_path, "needle_tip_coordinates.npz"), data.needle_tip_coordinates[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "object_center_coordinates.npz"), data.object_center_coordinates[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "fixed_ends_coordinates.npz"), data.fixed_ends_coordinates[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "free_ends_coordinates.npz"), data.free_ends_coordinates[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "perspective_squares_coordinates.npz"), data.perspective_squares_coordinates[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "N_ants_around_springs.npz"), data.N_ants_around_springs[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "size_ants_around_springs.npz"), data.size_ants_around_springs[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "ants_attached_labels.npz"), data.ants_attached_labels[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "fixed_end_angle_to_nest.npz"), data.fixed_end_angle_to_nest[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "object_fixed_end_angle_to_nest.npz"), data.object_fixed_end_angle_to_nest[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "force_direction.npz"), self.force_direction[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "force_magnitude.npz"), self.force_magnitude[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "missing_info.npz"), np.isnan(data.free_ends_coordinates[start:end, :, 0]))
-        pickle.dump(data.sets_frames, open(os.path.join(self.output_path, "sets_frames.pkl"), "wb"))
-        pickle.dump(data.sets_video_paths, open(os.path.join(self.output_path, "sets_video_paths.pkl"), "wb"))
-        pickle.dump(data.num_of_frames_per_video, open(os.path.join(self.output_path, "num_of_frames_per_video.pkl"), "wb"))
+    def rearrange_perspective_squares_order(self):
+        x_assort = np.argsort(self.perspective_squares_coordinates[:, :, 0], axis=1)
+        y_assort = np.argsort(self.perspective_squares_coordinates[:, :, 1], axis=1)
+        for count, (frame_x_assort, frame_y_assort) in enumerate(zip(x_assort, y_assort)):
+            if not np.any(np.isnan(self.perspective_squares_coordinates[count])):
+                top_left_column = set(frame_x_assort[:2]).intersection(set(frame_y_assort[:2])).pop()
+                top_right_column = set(frame_x_assort[2:]).intersection(set(frame_y_assort[:2])).pop()
+                bottom_right_column = set(frame_x_assort[2:]).intersection(set(frame_y_assort[2:])).pop()
+                bottom_left_column = set(frame_x_assort[:2]).intersection(set(frame_y_assort[2:])).pop()
+                rearrangement = np.array([top_left_column, bottom_left_column, top_right_column, bottom_right_column])
+                self.perspective_squares_coordinates[count] = self.perspective_squares_coordinates[count, rearrangement, :]
 
-    def test_correlation(self, data, sets_idx=(0, -1)):
-        first_set_idx, last_set_idx = (sets_idx, sets_idx) if isinstance(sets_idx, int) else sets_idx
-        start, end = data.sets_frames[first_set_idx][0][0], data.sets_frames[last_set_idx][-1][1]
-        self.calculations(data)
-        corr_df = pd.DataFrame({"net_tangential_force": self.net_tangential_force[start:end], "angular_velocity": self.angular_velocity[start:end],
-                                "movement_magnitude": self.movement_magnitude[start:end], "movement_direction": self.movement_direction[start:end],
-                                "net_force_magnitude": self.net_force_magnitude[start:end], "net_force_direction": self.net_force_direction[start:end]
-                                })
-        self.corr_df = corr_df.dropna()
-        angular_velocity_correlation_score = corr_df.corr()["net_tangential_force"]["angular_velocity"]
-        translation_direction_correlation_score = corr_df.corr()["net_force_direction"]["movement_direction"]
-        translation_magnitude_correlation_score = corr_df.corr()["net_force_magnitude"]["movement_magnitude"]
-        print(f"correlation score between net tangential force and angular velocity: {angular_velocity_correlation_score}")
-        print(f"correlation score between net force direction and translation direction: {translation_direction_correlation_score}")
-        print(f"correlation score between net force magnitude and translation magnitude: {translation_magnitude_correlation_score}")
+    def correct_perspectives(self, quality_threshold):
+        # first perspective correction
+        PTMs = utils.create_projective_transform_matrix(self.perspective_squares_coordinates, self.perspective_squares_quality, quality_threshold, self.video_resolution)
+        self.perspective_squares_coordinates = utils.apply_projective_transform(self.perspective_squares_coordinates, PTMs)
+        self.fixed_ends_coordinates = utils.apply_projective_transform(self.fixed_ends_coordinates, PTMs)
+        self.free_ends_coordinates = utils.apply_projective_transform(self.free_ends_coordinates, PTMs)
+        self.object_center_coordinates = utils.apply_projective_transform(self.object_center_coordinates, PTMs)
+        self.needle_tip_coordinates = utils.apply_projective_transform(self.needle_tip_coordinates, PTMs)
+        # second perspective correction
+        perspective_correction_params = self.fit_perspective_params(self.fixed_ends_coordinates, self.needle_tip_coordinates, self.free_ends_coordinates)
+        self.fixed_ends_coordinates = utils.project_plane_perspective(self.fixed_ends_coordinates, perspective_correction_params[[0, 2, 3]])
+        needle_tip_repeated = np.copy(np.repeat(self.needle_tip_coordinates[:, np.newaxis, :], self.free_ends_coordinates.shape[1], axis=1))
+        self.needle_tip_coordinates = np.nanmedian(utils.project_plane_perspective(needle_tip_repeated, perspective_correction_params[[1, 2, 3]]), axis=1)
 
-    def calculations(self, data):
-        # self.force_magnitude[~np.isnan(self.force_magnitude)*self.rest_bool] -= np.nanmean(self.force_magnitude[~np.isnan(self.force_magnitude)*self.rest_bool])
-        # self.force_direction[~np.isnan(self.force_direction)*self.rest_bool] -= np.nanmean(self.force_direction[~np.isnan(self.force_direction)*self.rest_bool])
-        self.calc_net_force(data)
-        self.angular_velocity = utils.calc_angular_velocity(data.fixed_end_angle_to_nest, diff_spacing=20) / 20
-        self.angular_velocity = np.where(np.isnan(self.angular_velocity).all(axis=1), np.nan, np.nanmedian(self.angular_velocity, axis=1))
-        self.movement_direction, self.movement_magnitude = utils.calc_translation_velocity(data.object_center_coordinates, spacing=40)
-        self.net_force_direction = np.array(pd.Series(self.net_force_direction).rolling(window=40, center=True).median())
-        self.net_force_magnitude = np.array(pd.Series(self.net_force_magnitude).rolling(window=40, center=True).median())
-        self.net_tangential_force = np.array(pd.Series(self.net_tangential_force).rolling(window=5, center=True).median())
+    def fit_perspective_params(self, fixed_end_coordinates, needle_tip_coordinates, reference_coordinates):
+        def loss_func(params):
+            fixed_end_params = params[[0, 2, 3]]
+            needle_tip_params = params[[1, 2, 3]]
+            correct_fixed_end_coordinates = utils.project_plane_perspective(fixed_end_coordinates, fixed_end_params)
+            correct_needle_tip_repeated = utils.project_plane_perspective(needle_tip_repeated, needle_tip_params)
+            pulling_angle = utils.calc_pulling_angle_matrix(correct_fixed_end_coordinates, correct_needle_tip_repeated, reference_coordinates)
+            spring_length = np.linalg.norm(correct_fixed_end_coordinates - reference_coordinates, axis=2)
+            spring_length_needle = np.linalg.norm(needle_tip_repeated - reference_coordinates, axis=2)
+            length_score = np.mean(np.nanstd(spring_length, axis=0) / np.nanmean(spring_length, axis=0))
+            length_score_needle = np.mean(np.nanstd(spring_length_needle, axis=0) / np.nanmean(spring_length_needle, axis=0))
+            angle_score = np.mean(np.nanstd(pulling_angle, axis=0) / np.nanmean(pulling_angle, axis=0))
+            return length_score + length_score_needle  # + angle_score
+            # return length_score
+            # return angle_score
+        needle_tip_repeated = np.copy(np.repeat(needle_tip_coordinates[:, np.newaxis, :], reference_coordinates.shape[1], axis=1))
+        if np.sum(self.rest_bool) > 0:
+            fixed_end_coordinates[~self.rest_bool] = np.nan
+            needle_tip_repeated[~self.rest_bool] = np.nan
+        x0 = np.array([0.0025, 0.0025, 3840/2, 2160/2])
+        res = minimize(loss_func, x0=x0)#, method='nelder-mead', options={'xatol': 1e-8, 'disp': True})
+        # frame_grid = np.meshgrid(np.arange(self.video_resolution[0], step=100), np.arange(self.video_resolution[1], step=100))
+        # plt.scatter(frame_grid[0], frame_grid[1], alpha=0.0001)
+        # plt.scatter(res.x[2], res.x[3], c='r')
+        # plt.scatter(self.object_center_coordinates[0, 0], self.object_center_coordinates[0, 1], c='g')
+        # plt.gca().invert_yaxis()
+        # plt.show()
+        print("params: ", res.x, "loss: ", res.fun)
+        return res.x
 
-    def calc_net_force(self, data):
-        horizontal_component = self.force_magnitude * np.cos(self.force_direction + data.fixed_end_angle_to_nest)
-        vertical_component = self.force_magnitude * np.sin(self.force_direction + data.fixed_end_angle_to_nest)
-        self.net_force_direction = np.arctan2(np.nansum(vertical_component, axis=1), np.nansum(horizontal_component, axis=1))
-        self.net_force_magnitude = np.sqrt(np.nansum(horizontal_component, axis=1) ** 2 + np.nansum(vertical_component, axis=1) ** 2)
-        self.tangential_force = np.sin(self.force_direction) * self.force_magnitude
-        # self.net_tangential_force = np.nansum(self.tangential_force, axis=1)
-        self.net_tangential_force = np.where(np.isnan(self.tangential_force).all(axis=1), np.nan, np.nansum(self.tangential_force, axis=1))
+    def n_ants_processing(self):
+        if not self.calib_mode:
+            for count, set_idx in enumerate(self.sets_frames):
+                start, end = set_idx[0][0], set_idx[-1][1]
+                undetected_springs_for_long_time = utils.filter_continuity(utils.convert_bool_to_binary(np.isnan(self.fixed_ends_coordinates[start:end, :, 0])), min_size=8)
+                self.N_ants_around_springs[start:end, :] = np.round(
+                    utils.interpolate_data(self.N_ants_around_springs[start:end, :], utils.find_cells_to_interpolate(self.N_ants_around_springs[start:end, :])))
+                self.N_ants_around_springs[start:end, :][
+                    np.isnan(self.N_ants_around_springs[start:end, :])] = 0
+                self.N_ants_around_springs[start:end, :] = utils.smooth_columns(self.N_ants_around_springs[start:end, :])
+                self.N_ants_around_springs[start:end, :][undetected_springs_for_long_time] = np.nan
+                all_small_attaches = np.zeros(self.N_ants_around_springs[start:end, :].shape)
+                for n in np.unique(self.N_ants_around_springs[start:end, :])[1:]:
+                    if not np.isnan(n):
+                        short_attaches = utils.filter_continuity(self.N_ants_around_springs[start:end, :] == n, max_size=30)
+                        all_small_attaches[short_attaches] = 1
+                self.N_ants_around_springs[start:end, :] = \
+                    np.round(utils.interpolate_data(self.N_ants_around_springs[start:end, :], all_small_attaches.astype(bool)))
+            self.rest_bool = self.N_ants_around_springs == 0
+        else:
+            self.rest_bool = np.full(self.N_ants_around_springs.shape, False)
+            s, e = self.sets_frames[0][0][0], self.sets_frames[0][-1][1]
+            self.rest_bool[s:e] = True
 
+    def calc_distances(self):
+        object_center = np.repeat(self.object_center_coordinates[:, np.newaxis, :], self.n_springs, axis=1)
+        needle_tip_coordinates = np.repeat(self.needle_tip_coordinates[:, np.newaxis, :], self.n_springs, axis=1)
+        self.object_center_to_free_end_distance = np.linalg.norm(self.free_ends_coordinates - object_center, axis=2)
+        self.object_center_to_fixed_end_distance = np.linalg.norm(self.fixed_ends_coordinates - object_center, axis=2)
+        self.object_needle_tip_to_fixed_end_distance = np.linalg.norm(self.fixed_ends_coordinates - needle_tip_coordinates, axis=2)
+        self.needle_length = np.linalg.norm(self.needle_tip_coordinates - self.object_center_coordinates, axis=1)
+        # self.needle_length = np.nanmedian(np.linalg.norm(self.needle_tip_coordinates - self.object_center_coordinates, axis=1))
+        self.spring_length = np.linalg.norm(self.free_ends_coordinates - self.fixed_ends_coordinates, axis=2)
 
-if __name__ == "__main__":
-    spring_type = "plus_0.2"
-    video_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\1-videos\\summer_2023\\{spring_type}\\"
-    data_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\{spring_type}\\"
-    data_paths = [root for root, dirs, files in os.walk(data_dir) if not dirs]
-    data_paths = data_paths[:5]
-    output_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\{spring_type}\\"
-    calibration_model_path = os.path.join("Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\calibration\\", spring_type, "calibration_model.pkl")
-    self = CalculateForce(video_dir, data_paths, output_path)
+    def repeat_values(self):
+        nest_direction = np.stack((self.fixed_ends_coordinates[:, 0, 0], self.fixed_ends_coordinates[:, 0, 1] - 500), axis=1)
+        self.nest_direction_repeated = np.repeat(nest_direction[:, np.newaxis, :], self.fixed_ends_coordinates.shape[1], axis=1)
+        object_nest_direction = np.stack((self.object_center_coordinates[:, 0], self.object_center_coordinates[:, 1] - 500), axis=1)
+        self.object_nest_direction_repeated = np.repeat(object_nest_direction[:, np.newaxis, :], self.fixed_ends_coordinates.shape[1], axis=1)
+        self.object_center_repeated = np.copy(np.repeat(self.object_center_coordinates[:, np.newaxis, :], self.free_ends_coordinates.shape[1], axis=1))
+        self.needle_tip_repeated = np.copy(np.repeat(self.needle_tip_coordinates[:, np.newaxis, :], self.free_ends_coordinates.shape[1], axis=1))
+        self.needle_length_repeated = np.copy(np.repeat(self.needle_length[:, np.newaxis], self.free_ends_coordinates.shape[1], axis=1))
 
+    def calc_angle(self):
+        self.object_fixed_end_angle_to_nest = utils.calc_angle_matrix(self.object_nest_direction_repeated, self.object_center_repeated, self.fixed_ends_coordinates, ) + np.pi
+        # self.fixed_end_angle_to_nest = utils.calc_angle_matrix(self.object_center_repeated, self.fixed_ends_coordinates, self.nest_direction_repeated) + np.pi
+        self.fixed_end_angle_to_nest = utils.calc_angle_matrix(self.needle_tip_repeated, self.fixed_ends_coordinates, self.nest_direction_repeated) + np.pi
+        self.pulling_angle = utils.calc_pulling_angle_matrix(self.free_ends_coordinates, self.needle_tip_repeated, self.fixed_ends_coordinates)
+        if not self.calib_mode:
+            for count, set_idx in enumerate(self.sets_frames):
+                s, e = set_idx[0][0], set_idx[-1][1]
+                self.pulling_angle[s:e] -= np.nanmedian(np.where(~self.rest_bool[s:e], np.nan, self.pulling_angle[s:e]))
+        else:
+            self.pulling_angle -= np.nanmedian(np.where(~self.rest_bool, np.nan, self.pulling_angle))

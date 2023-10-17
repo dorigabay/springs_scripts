@@ -38,17 +38,17 @@ class Calculation:
 
     def initiate_springs_angles_matrix(self):
         #TODO: make the 3rd line in this function to be functional (if np.sum(np.abs(linspace_angles-self.previous_detections[2]))==0:)
-        linspace_angles = np.linspace(-np.pi, np.pi - np.pi / self.springs.n_springs, self.springs.n_springs).reshape(1, self.springs.n_springs)
+        linspace_angles = np.linspace(-np.pi, np.pi - np.pi / self.parameters["n_springs"], self.parameters["n_springs"]).reshape(1, self.parameters["n_springs"])
         if self.previous_detections["springs_angles_reference_order"] is not None:
             if np.sum(np.abs(linspace_angles - self.previous_detections["springs_angles_reference_order"])) == 0:
-                if len(self.springs.bundles_labels) == self.springs.n_springs:
-                    self.springs_angles_reference_order = np.sort(self.springs.bundles_labels).reshape(1, self.springs.n_springs)
+                if len(self.springs.bundles_labels) == self.parameters["n_springs"]:
+                    self.springs_angles_reference_order = np.sort(self.springs.bundles_labels).reshape(1, self.parameters["n_springs"])
                 else:
                     self.springs_angles_reference_order = self.previous_detections["springs_angles_reference_order"]
             else:
                 self.springs_angles_reference_order = self.previous_detections["springs_angles_reference_order"]
-        elif len(self.springs.bundles_labels) == self.springs.n_springs:
-            self.springs_angles_reference_order = np.sort(self.springs.bundles_labels).reshape(1, self.springs.n_springs)
+        elif len(self.springs.bundles_labels) == self.parameters["n_springs"]:
+            self.springs_angles_reference_order = np.sort(self.springs.bundles_labels).reshape(1, self.parameters["n_springs"])
         else:
             self.springs_angles_reference_order = linspace_angles
             min_index = np.argmin(np.abs(np.array(self.springs.bundles_labels)))
@@ -66,15 +66,15 @@ class Calculation:
             if assigned_class in assigned_angles_classes:
                 assigned_class = np.argsort(cos_diff)[0][-2]
             assigned_angles_classes.append(assigned_class)
-        new_springs_row = np.array([np.nan for x in range(self.springs.n_springs)])
+        new_springs_row = np.array([np.nan for x in range(self.parameters["n_springs"])])
         for angle_class, angle in zip(assigned_angles_classes, current_springs_angles):
             new_springs_row[angle_class] = angle
         return new_springs_row
 
     def occupied_springs(self, springs_order):
-        dilated_ends = maximum_filter(self.springs.free_ends_labeled, ANTS_SPRINGS_OVERLAP_SIZE)
-        labeled_ants_cropped = utils.crop_frame_by_coordinates(self.ants.labeled_ants, self.springs.object_crop_coordinates)
-        dilated_ants = maximum_filter(labeled_ants_cropped, ANTS_SPRINGS_OVERLAP_SIZE)
+        dilated_ends = maximum_filter(self.springs.free_ends_labeled, self.parameters["ANTS_SPRINGS_OVERLAP_SIZE"])
+        labeled_ants_cropped = utils.crop_frame(self.ants.labeled_ants, self.springs.object_crop_coordinates)
+        dilated_ants = maximum_filter(labeled_ants_cropped, self.parameters["ANTS_SPRINGS_OVERLAP_SIZE"])
         joints_labels = np.unique(dilated_ends[((dilated_ends != 0) * (dilated_ants != 0))])
 
         spring_ends_occupied = []
@@ -84,8 +84,8 @@ class Calculation:
             self.springs.bundles_labeled[dilated_ends == label] = bundle_label[0]
             spring_ends_occupied.append(bundle_label[0])
 
-        N_ants_around_springs = np.zeros(self.springs.n_springs).astype(np.uint8)
-        size_ants_around_springs = np.zeros(self.springs.n_springs).astype(np.uint32)
+        N_ants_around_springs = np.zeros(self.parameters["n_springs"]).astype(np.uint8)
+        size_ants_around_springs = np.zeros(self.parameters["n_springs"]).astype(np.uint32)
         self.ants_attached_labels = np.full(self.max_ants_number, 0).astype(np.uint8)
         self.ants_attached_forgotten_labels = np.full(self.max_ants_number, 0).astype(np.uint8)
         for spring_end in spring_ends_occupied:
@@ -96,14 +96,14 @@ class Calculation:
                 ants_on_two_springs = ants_on_spring_end[springs_forgotten != 0]
                 springs_forgotten = springs_forgotten[springs_forgotten != 0]
                 self.ants_attached_forgotten_labels[ants_on_two_springs - 1] = springs_forgotten
-                self.ants_attached_labels[ants_on_spring_end - 1] = np.arange(1, self.springs.n_springs + 1)[spring_position][0]
+                self.ants_attached_labels[ants_on_spring_end - 1] = np.arange(1, self.parameters["n_springs"] + 1)[spring_position][0]
             N_ants_around_springs[spring_position] = len(ants_on_spring_end)
             size_ants_around_springs[spring_position] = np.sum(np.isin(self.ants.labeled_ants, ants_on_spring_end))
-        return N_ants_around_springs.reshape(1, self.springs.n_springs), size_ants_around_springs.reshape(1, self.springs.n_springs)
+        return N_ants_around_springs.reshape(1, self.parameters["n_springs"]), size_ants_around_springs.reshape(1, self.parameters["n_springs"])
 
     def reorder_coordinates(self, springs_order):
         fixed_ends_x, fixed_ends_y, free_ends_x, free_ends_y = \
-            np.empty(self.springs.n_springs), np.empty(self.springs.n_springs), np.empty(self.springs.n_springs), np.empty(self.springs.n_springs)
+            np.empty(self.parameters["n_springs"]), np.empty(self.parameters["n_springs"]), np.empty(self.parameters["n_springs"]), np.empty(self.parameters["n_springs"])
         fixed_ends_x[:] = np.nan
         fixed_ends_y[:] = np.nan
         free_ends_x[:] = np.nan
@@ -127,8 +127,8 @@ class Calculation:
         blue_part_x[1] = self.springs.tip_point[0]
         blue_part_y[0] = self.springs.object_center_coordinates[1]
         blue_part_y[1] = self.springs.tip_point[1]
-        return fixed_ends_x.reshape(1, self.springs.n_springs), fixed_ends_y.reshape(1, self.springs.n_springs), free_ends_x.reshape(1,
-            self.springs.n_springs), free_ends_y.reshape(1, self.springs.n_springs), blue_part_x.reshape(1, 2), blue_part_y.reshape(1, 2)
+        return fixed_ends_x.reshape(1, self.parameters["n_springs"]), fixed_ends_y.reshape(1, self.parameters["n_springs"]), free_ends_x.reshape(1,
+            self.parameters["n_springs"]), free_ends_y.reshape(1, self.parameters["n_springs"]), blue_part_x.reshape(1, 2), blue_part_y.reshape(1, 2)
 
 
 def save_data(snapshot_data, parameters, calculations=None):

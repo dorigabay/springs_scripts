@@ -7,7 +7,7 @@ import scipy.io as sio
 # local imports:
 import utils
 # from data_analysis.data_preparation import PostProcessing
-
+from data_analysis.analysis import AnalyserPerSpring
 
 def create_video(class_object):
     save_path = os.path.join(class_object.data_analysis_path,
@@ -80,68 +80,89 @@ def create_color_space(hue_data, around_zero=False):
 #         return frame
 
 
-# class ResultVideo(PostProcessing):
-class ResultVideo:
-    def __init__(self, video_path, video_analysis_path, data_analysis_path, n_frames_to_save=100, reduction_factor=1.):
-        # super().__init__(data_path)
-        self.data_analysis_path = data_analysis_path
+class ResultsVideo:
+    def __init__(self, video_path, video_analysis_path, data_analysis_path, start_frame=0, n_frames_to_save=100, reduction_factor=1., n_springs=20):
         self.video_path = video_path
+        self.n_springs = n_springs
+        missing_sub_dirs = video_path.split('.MP4')[0].split(video_analysis_path.split(os.sep)[-2])[1:][0].split(os.sep)[1:]
+        self.video_analysis_path = os.path.join(video_analysis_path, *missing_sub_dirs)
+        self.data_analysis_path = data_analysis_path
+        self.start_frame = start_frame
         self.n_frames_to_save = 10e5 if (n_frames_to_save == -1) or (n_frames_to_save is None) else n_frames_to_save
         self.reduction_factor = reduction_factor
-        self.load_data(video_path, video_analysis_path, data_analysis_path)
-        self.calculations()
+        # self.calculations()
+        data = AnalyserPerSpring(self.data_analysis_path, os.path.basename(video_analysis_path))
+        self.load_data(data)
         self.force_magnitude_color_range, self.force_magnitude_color_range_bins = create_color_space(self.force_magnitude)
         self.tangential_force_color_range, self.tangential_force_color_range_bins = create_color_space(self.tangential_force, around_zero=True)
         self.net_tangential_force_color_range, self.net_tangential_force_color_range_bins = create_color_space(self.net_tangential_force, around_zero=True)
         self.velocity_color_range, self.velocity_color_range_bins = create_color_space(self.angular_velocity, around_zero=True)
         create_video(self)
 
-    def load_data(self, video_path, video_analysis_path, data_analysis_path):
-        self.cap = cv2.VideoCapture(video_path)
+    def load_data(self, data):
+        self.cap = cv2.VideoCapture(self.video_path)
         self.fps = int(self.cap.get(cv2.CAP_PROP_FPS))
         self.frames_num = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        sets_frames = pickle.load(open(os.path.join(data_analysis_path, "sets_frames.pkl"), "rb"))
-        sets_video_paths = pickle.load(open(os.path.join(data_analysis_path, "sets_video_paths.pkl"), "rb"))
+        self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.start_frame)
+        sets_frames = pickle.load(open(os.path.join(self.data_analysis_path, "sets_frames.pkl"), "rb"))
+        sets_video_paths = pickle.load(open(os.path.join(self.data_analysis_path, "sets_video_paths.pkl"), "rb"))
         set_count, video_count = [(set_count, video_count) for set_count, video_paths_set in enumerate(sets_video_paths) for video_count, video in enumerate(video_paths_set)
-                              if os.path.normpath(video) == os.path.normpath(video_analysis_path)][0]
+                              if os.path.normpath(video) == os.path.normpath(self.video_analysis_path)][0]
         set_first_video = os.path.basename(sets_video_paths[set_count][0]).split(".")[0]
         set_last_video = os.path.basename(sets_video_paths[set_count][-1]).split(".")[0]
-        data_analysis_sub_path = os.path.join(data_analysis_path, f"{set_first_video}-{set_last_video}")
-        start, end = sets_frames[set_count][video_count]-sets_frames[set_count-1][-1][1]
-        self.cap.set(cv2.CAP_PROP_POS_FRAMES, video_count)
+        data_analysis_sub_path = os.path.join(self.data_analysis_path, f"{set_first_video}-{set_last_video}")
+        set_s, set_e = sets_frames[set_count][0][0], sets_frames[set_count][-1][1]
+        start, end = sets_frames[set_count][video_count] - sets_frames[set_count-1][-1][1] if set_count != 0 else sets_frames[set_count][video_count]
+        start, end = start+self.start_frame, end+self.start_frame
         self.needle_tip_coordinates = np.load(os.path.join(data_analysis_sub_path, "needle_tip_coordinates.npz"))['arr_0'][start:end]
         self.object_center_coordinates = np.load(os.path.join(data_analysis_sub_path, "object_center_coordinates.npz"))['arr_0'][start:end]
-        self.N_ants_around_springs = np.load(os.path.join(data_analysis_sub_path, "N_ants_around_springs.npz"))['arr_0'][start:end]
-        self.size_ants_around_springs = np.load(os.path.join(data_analysis_sub_path, "size_ants_around_springs.npz"))['arr_0'][start:end]
         self.fixed_ends_coordinates = np.load(os.path.join(data_analysis_sub_path, "fixed_ends_coordinates.npz"))['arr_0'][start:end]
         self.free_ends_coordinates = np.load(os.path.join(data_analysis_sub_path, "free_ends_coordinates.npz"))['arr_0'][start:end]
+
+        rearrangement = np.append(np.arange(0, self.n_springs), np.arange(0, 0))
+        self.fixed_ends_coordinates = np.stack((np.loadtxt(os.path.join(self.video_analysis_path, "fixed_ends_coordinates_x.csv"), delimiter=",").reshape(-1, self.n_springs),
+                                                np.loadtxt(os.path.join(self.video_analysis_path, "fixed_ends_coordinates_y.csv"), delimiter=",").reshape(-1, self.n_springs)), axis=2)[self.start_frame:, rearrangement]
+        self.free_ends_coordinates = np.stack((np.loadtxt(os.path.join(self.video_analysis_path, "free_ends_coordinates_x.csv"), delimiter=",").reshape(-1, self.n_springs),
+                                               np.loadtxt(os.path.join(self.video_analysis_path, "free_ends_coordinates_y.csv"), delimiter=",").reshape(-1, self.n_springs)), axis=2)[self.start_frame:, rearrangement]
+        self.needle_part_coordinates = np.stack((np.loadtxt(os.path.join(self.video_analysis_path, "needle_part_coordinates_x.csv"), delimiter=","),
+                                                   np.loadtxt(os.path.join(self.video_analysis_path, "needle_part_coordinates_y.csv"), delimiter=",")), axis=2)[self.start_frame:]
+        self.object_center_coordinates = self.needle_part_coordinates[:, 0]
+        self.needle_tip_coordinates = self.needle_part_coordinates[:, -1]
+
         self.perspective_squares_coordinates = np.load(os.path.join(data_analysis_sub_path, "perspective_squares_coordinates.npz"))['arr_0'][start:end]
-        self.force_magnitude = np.load(os.path.join(data_analysis_sub_path, "force_magnitude.npz"))['arr_0'][start:end]
-        self.force_direction = np.load(os.path.join(data_analysis_sub_path, "force_direction.npz"))['arr_0'][start:end]
-        self.fixed_end_angle_to_nest = np.load(os.path.join(data_analysis_sub_path, "fixed_end_angle_to_nest.npz"))['arr_0'][start:end]
         self.object_fixed_end_angle_to_nest = np.load(os.path.join(data_analysis_sub_path, "object_fixed_end_angle_to_nest.npz"))['arr_0'][start:end]
         self.number_of_springs = self.fixed_ends_coordinates.shape[1]
+        self.N_ants_around_springs = data.N_ants_around_springs[set_s:set_e][start:end]
+        self.force_magnitude = data.force_magnitude[set_s:set_e][start:end]
+        self.force_direction = data.force_direction[set_s:set_e][start:end]
+        self.fixed_end_angle_to_nest = data.fixed_end_angle_to_nest[set_s:set_e][start:end]
+        self.tangential_force = data.tangential_force[set_s:set_e][start:end]
+        self.net_tangential_force = data.net_tangential_force[set_s:set_e][start:end]
+        self.angular_velocity = data.angular_velocity[set_s:set_e][start:end]
+
+        # self.object_center_repeated = np.copy(np.repeat(self.object_center_coordinates[:, np.newaxis, :], self.free_ends_coordinates.shape[1], axis=1))
+        # self.needle_tip_repeated = np.copy(np.repeat(self.needle_tip_coordinates[:, np.newaxis, :], self.free_ends_coordinates.shape[1], axis=1))
+        # self.pulling_angle = utils.calc_pulling_angle_matrix(self.fixed_ends_coordinates, self.object_center_repeated, self.free_ends_coordinates)
+        # self.spring_length = np.linalg.norm(self.free_ends_coordinates - self.fixed_ends_coordinates, axis=2)
+        # self.fixed_to_center_length = np.linalg.norm(self.object_center_repeated - self.fixed_ends_coordinates, axis=2)
+        # self.fixed_to_tip_angle = utils.calc_pulling_angle_matrix(self.object_center_repeated, self.needle_tip_repeated, self.fixed_ends_coordinates)
+        # self.N_ants_around_springs = np.load(os.path.join(data_analysis_sub_path, "N_ants_around_springs.npz"))['arr_0'][start:end]
+        # self.force_magnitude = np.load(os.path.join(data_analysis_sub_path, "force_magnitude.npz"))['arr_0'][start:end]
+        # self.force_direction = np.load(os.path.join(data_analysis_sub_path, "force_direction.npz"))['arr_0'][start:end]
+        # self.fixed_end_angle_to_nest = np.load(os.path.join(data_analysis_sub_path, "fixed_end_angle_to_nest.npz"))['arr_0'][start:end]
         # self.ants_assigned_to_springs = np.load(os.path.join(data_analysis_sub_path, "ants_assigned_to_springs_fixed.npz"))['arr_0'][frames_idx[0]:frames_idx[1]]
         # self.tracked_ants = sio.loadmat(os.path.join(data_analysis_sub_path, "tracking_data_corrected.mat"))["tracked_blobs_matrix"][frames_idx[0]:frames_idx[1]]
 
-    def calculations(self):
-        self.rest_bool = self.N_ants_around_springs == 0
-        self.force_magnitude[~np.isnan(self.force_magnitude)*self.rest_bool] -= np.nanmean(self.force_magnitude[~np.isnan(self.force_magnitude)*self.rest_bool])
-        self.force_direction[~np.isnan(self.force_direction) * self.rest_bool] -= np.nanmean(self.force_direction[~np.isnan(self.force_direction) * self.rest_bool])
-        self.tangential_force = np.sin(self.force_direction) * self.force_magnitude
-        self.net_tangential_force = np.nansum(self.tangential_force, axis=1)
-        self.net_tangential_force = np.array(pd.Series(self.net_tangential_force).rolling(window=40, center=True).median())
-        # self.angular_velocity = np.nanmedian(utils.calc_angular_velocity(self.fixed_end_angle_to_nest, diff_spacing=20) / 20, axis=1)
-        self.angular_velocity = np.nanmedian(utils.calc_angular_velocity(self.fixed_end_angle_to_nest, diff_spacing=40) / 40, axis=1)
 
     def draw_results_on_frame(self, frame, frame_num, reduction_factor=0.4):
         circle_coordinates = (np.concatenate((self.object_center_coordinates[frame_num, :].reshape(1, 2),
-                                         self.needle_tip_coordinates[frame_num, :].reshape(1, 2),
-                                         self.perspective_squares_coordinates[frame_num, :],), axis=0)*reduction_factor).astype(int)
-
+                                              self.needle_tip_coordinates[frame_num, :].reshape(1, 2),
+                                              self.perspective_squares_coordinates[frame_num, :],), axis=0)*reduction_factor).astype(int)
+        object_center = tuple((self.object_center_coordinates[frame_num, :]*reduction_factor).astype(int))
+        needle_tip = tuple((self.needle_tip_coordinates[frame_num, :]*reduction_factor).astype(int))
         four_colors = [(0, 255, 0), (0, 255, 0), (0, 255, 0), (0, 0, 255), (255, 0, 0), (255, 255, 0)]
         for (x, y), c in zip(circle_coordinates, four_colors):
-            cv2.circle(frame, (x, y), int(5*reduction_factor), c, 2)
+            cv2.circle(frame, (x, y), int(5*reduction_factor), (0, 0, 0), thickness=-1)
         # cv2.circle(frame, circles_coordinates, int(5*reduction_factor), color=[255, 0, 0], thickness=-1)
         # cv2.circle(frame, tuple((self.object_center_coordinates[frame_num, :]*reduction_factor).astype(int)), int(5*reduction_factor), color=[255, 0, 0], thickness=-1)
         # cv2.circle(frame, tuple((self.needle_tip_coordinates[frame_num, :]*reduction_factor).astype(int)), int(5*reduction_factor), color=[255, 0, 0], thickness=-1)
@@ -160,17 +181,24 @@ class ResultVideo:
             end_point = self.free_ends_coordinates[frame_num, spring, :]
             universal_angle = self.object_fixed_end_angle_to_nest[frame_num, spring] + np.pi/2 + self.force_direction[frame_num, spring]*-1
             vector_end_point = start_point + 100 * self.force_magnitude[frame_num, spring] * np.array([np.cos(universal_angle), np.sin(universal_angle)])
-            if not np.isnan(start_point).any() and not np.isnan(end_point).any():# and not  np.isnan(vector_end_point).any():
+            if not np.isnan(start_point).any() and not np.isnan(end_point).any() and not  np.isnan(vector_end_point).any():
                 start_point = tuple((start_point*reduction_factor).astype(int))
                 end_point = tuple((end_point*reduction_factor).astype(int))
                 vector_end_point = tuple((vector_end_point*reduction_factor).astype(int))
-                # cv2.line(frame, start_point, end_point, color=spring_color, thickness=int(5*reduction_factor))
-                # cv2.arrowedLine(frame, start_point, vector_end_point, color=tangential_force_color, thickness=1)
-                # cv2.arrowedLine(frame, start_point, vector_end_point, color=tangential_force_color, thickness=int(5*reduction_factor))
+                # cv2.line(frame, start_point, end_point, color=(0, 0, 0), thickness=2)
+                # cv2.line(frame, start_point, object_center, color=(0, 0, 0), thickness=2)
+                # cv2.line(frame, object_center, needle_tip, color=(0, 0, 0), thickness=2)
+                cv2.arrowedLine(frame, start_point, vector_end_point, color=tangential_force_color, thickness=1)
+                # cv2.arrowedLine(frame, start_point, vector_end_point, color=tangential_force_color, thickness=int(3*reduction_factor))
                 # cv2.putText(frame, str(self.N_ants_around_springs[frame_num, spring]), vector_end_point,
                 #             cv2.FONT_HERSHEY_SIMPLEX, 1*reduction_factor, (0,0,0), 2)
-                cv2.circle(frame, end_point, int(5*reduction_factor), (0, 255, 0), thickness=-1)
-                cv2.circle(frame, start_point, int(5*reduction_factor), (0, 255, 0), thickness=-1)
+                # cv2.putText(frame, str(np.round(self.pulling_angle[frame_num, spring], 4)), start_point, cv2.FONT_HERSHEY_SIMPLEX, 1*reduction_factor, (0, 0, 0), 2)
+                # cv2.putText(frame, str(np.round(self.spring_length[frame_num, spring], 4)), end_point, cv2.FONT_HERSHEY_SIMPLEX, 1*reduction_factor, (0, 0, 0), 2)
+                # cv2.putText(frame, str(np.round(self.fixed_to_center_length[frame_num, spring], 4)), object_center, cv2.FONT_HERSHEY_SIMPLEX, 1*reduction_factor, (0, 0, 0), 2)
+                # cv2.putText(frame, str(np.round(self.fixed_to_tip_angle[frame_num, spring], 4)), object_center, cv2.FONT_HERSHEY_SIMPLEX, 1*reduction_factor, (0, 0, 0), 2)
+                cv2.circle(frame, end_point, int(5*reduction_factor), (0, 0, 0), thickness=-1)
+                cv2.circle(frame, start_point, int(5*reduction_factor), (0, 0, 0), thickness=-1)
+
 
         # write the net tangential force on the frame
         net_tangential_force_color = [int(x) for x in self.net_tangential_force_color_range[np.argmin(np.abs(self.net_tangential_force[frame_num] - self.net_tangential_force_color_range_bins))]]
@@ -186,12 +214,13 @@ class ResultVideo:
 
 
 if __name__ == "__main__":
-    spring_type = "plus_0.2"
-    date = "16.8"
-    # video_name = "S5790001"
-    video_name = "S5790009"
-    video_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\1-videos\\summer_2023\\{spring_type}\\{date}\\{video_name}.MP4"
-    video_analysis_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\{spring_type}\\{date}\\{video_name}\\"
-    data_analysis_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\{spring_type}\\"
-    self = ResultVideo(video_path, video_analysis_path, data_analysis_path, n_frames_to_save=1000, reduction_factor=0.4)
+    import glob
+    spring_type = "plus_0.1"
+    # calib_or_experiment = "calibration"
+    calib_or_experiment = "experiment"
+    video_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\1-videos\\summer_2023\\{calib_or_experiment}\\{spring_type}\\"
+    video_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\{calib_or_experiment}\\{spring_type}\\"
+    data_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\{calib_or_experiment}\\{spring_type}\\"
+    video_path = os.path.normpath(glob.glob(os.path.join(video_dir, "**", "*.MP4"), recursive=True)[1])
+    self = ResultsVideo(video_path, video_analysis_dir, data_analysis_dir, n_frames_to_save=300, reduction_factor=0.4, n_springs=20)
 

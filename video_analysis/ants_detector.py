@@ -7,15 +7,17 @@ from scipy.ndimage import maximum_filter, minimum_filter
 import utils
 
 
-OBJECT_DILATION_SIZE = 5
 FIRST_OPENING_STRUCTURE = np.ones((1, 1))
 SECOND_OPENING_STRUCTURE = np.ones((2, 2))
-MIN_ANTS_SIZE = 30
 SOBEL_KERNEL_SIZE = 1
-GRADIANT_THRESHOLD = 90
-LOWER_HSV_VALUES = np.array([0, 0, 0])
-UPPER_HSV_VALUES = np.array([179, 255, 200])
+ANTS_BLOBS_CLOSING_SIZE = 3
 ANTS_EXTENSION_LENGTH = 3
+# OBJECT_DILATION_SIZE = 5
+# ANTS_MIN_SIZE = 30
+# ANTS_CLOSING_KERNEL = np.ones((2, 2))
+# GRADIANT_THRESHOLD = 90
+# LOWER_HSV_VALUES = np.array([0, 0, 0])
+# UPPER_HSV_VALUES = np.array([179, 255, 200])
 
 
 class Ants:
@@ -31,7 +33,7 @@ class Ants:
         gradient_magnitude = np.sqrt(sobel_x ** 2 + sobel_y ** 2)
         gradient_magnitude[object_mask > 0] = 0
         gradient_magnitude[perspective_squares_mask > 0] = 0
-        sobel_mask = gradient_magnitude > GRADIANT_THRESHOLD
+        sobel_mask = gradient_magnitude > self.parameters["ANTS_GRADIANT_THRESHOLD"]
         for i in range(1,4):
             sobel_mask = binary_opening(sobel_mask, FIRST_OPENING_STRUCTURE)
             sobel_mask[object_mask > 0] = False
@@ -40,15 +42,15 @@ class Ants:
         sobel_mask = binary_opening(sobel_mask, SECOND_OPENING_STRUCTURE)
 
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        color_mask = cv2.inRange(hsv, LOWER_HSV_VALUES, UPPER_HSV_VALUES) > 0
+        color_mask = cv2.inRange(hsv, self.parameters["ANTS_LOWER_HSV_VALUES"], self.parameters["ANTS_UPPER_HSV_VALUES"]) > 0
 
         combined_mask = color_mask * sobel_mask
-        combined_mask = binary_closing(combined_mask, np.ones((2, 2)))
-        combined_mask = remove_small_objects(combined_mask, MIN_ANTS_SIZE)
-        labeled_image, num_labels = label(utils.connect_blobs(combined_mask, overlap_size=3))
+        combined_mask = binary_closing(combined_mask, self.parameters["ANTS_CLOSING_KERNEL"])
+        combined_mask = remove_small_objects(combined_mask, self.parameters["ANTS_MIN_SIZE"])
+        labeled_image, num_labels = label(utils.connect_blobs(combined_mask, overlap_size=ANTS_BLOBS_CLOSING_SIZE))
 
-        maximum_filtered = maximum_filter(labeled_image, size=OBJECT_DILATION_SIZE)
-        minimum_filtered = minimum_filter(maximum_filtered, size=OBJECT_DILATION_SIZE) - labeled_image
+        maximum_filtered = maximum_filter(labeled_image, size=self.parameters["ANTS_OBJECT_DILATION_SIZE"])
+        minimum_filtered = minimum_filter(maximum_filtered, size=self.parameters["ANTS_OBJECT_DILATION_SIZE"]) - labeled_image
         labeled_image, num_labels = label((labeled_image + minimum_filtered).astype(bool))
         self.labeled_ants = utils.extend_lines(labeled_image, extend_by=ANTS_EXTENSION_LENGTH)
         ants_centers = center_of_mass(labeled_image, labeled_image, range(1, num_labels+1))

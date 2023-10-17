@@ -30,10 +30,7 @@ class PerspectiveSquares:
         boolean_masks_connected, boolean_masks_unconnected = self.mask_perspective_squares(self.parameters["colors_spaces"]["p"], prepared_images)
         if self.are_squares_on_frame_border(boolean_masks_unconnected):
             prepared_images, perspective_squares_crop_coordinates = self.prepare_images(image)
-            boolean_masks_connected, boolean_masks_unconnected = self.mask_perspective_squares(
-                self.parameters["colors_spaces"]["p"], prepared_images)
-            if self.are_squares_on_frame_border(boolean_masks_unconnected):
-                raise ValueError("Perspective squares are on border.")
+            boolean_masks_connected, boolean_masks_unconnected = self.mask_perspective_squares(self.parameters["colors_spaces"]["p"], prepared_images)
         return boolean_masks_connected, boolean_masks_unconnected, perspective_squares_crop_coordinates
 
     def are_squares_on_frame_border(self, squares_boolean_masks):
@@ -53,7 +50,7 @@ class PerspectiveSquares:
             crop_coordinates = utils.create_box_coordinates(self.previous_detections["perspective_squares_coordinates"], self.parameters["ocm"])
         prepared_images = {}
         for count in range(len(crop_coordinates)):
-            cropped_image = utils.crop_frame_by_coordinates(image, crop_coordinates[count])
+            cropped_image = utils.crop_frame(image, crop_coordinates[count])
             prepared_images[count] = utils.process_image(cropped_image, alpha=self.parameters["NEUTRALIZE_COLOUR_ALPHA"],
                                                                         blur_kernel=self.parameters["NEUTRALIZE_COLOUR_BETA"],
                                                                         gradiant_threshold=self.parameters["GRADIANT_THRESHOLD"])
@@ -103,7 +100,7 @@ class PerspectiveSquares:
     def coordinates_transformation(self, squares_properties, crop_coordinates, boolean_masks_unconnected):
         coordinates = squares_properties[:, 0:2]  # x, y
         addition = np.copy(crop_coordinates[:, [2, 0]])  # x, y
-        squares_properties[:, 0:2] = (coordinates + addition).astype(np.uint16)
+        squares_properties[:, 0:2] = (coordinates + addition)#.astype(np.uint16)
         squares_mask_unconnected = np.full(self.parameters["resolution"], False, dtype="bool")
         for count, coordinates in enumerate(crop_coordinates):
             squares_mask_unconnected[coordinates[0]:coordinates[1], coordinates[2]:coordinates[3]] = boolean_masks_unconnected[count]

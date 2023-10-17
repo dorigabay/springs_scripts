@@ -1,5 +1,3 @@
-import re
-
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -58,7 +56,7 @@ def plot_ant_profiles(analysed, window_size=11, title="", output_dir=None, profi
     #plot number of cases
     plt.clf()
     y = np.sum(analysed.single_ant_profiles, axis=0)
-    y = y[y>50]
+    y = y[y > 50]
     x = np.arange(0, y.shape[0], 1)/50
     plt.plot(x, y, color="purple")
     plt.ylabel(f"number of profiles")
@@ -66,18 +64,18 @@ def plot_ant_profiles(analysed, window_size=11, title="", output_dir=None, profi
     print("Saving figure to path: ", os.path.join(output_dir, f"number of profiles (movie {title}).png"))
     plt.savefig(os.path.join(output_dir, f"number of profiles (movie {title}).png"))
 
-    force_magnitude_copy = np.copy(analysed.all_profiles_force_magnitude)
-    tangential_force = np.abs(analysed.all_profiles_tangential_force)
+    force_magnitude_copy = np.copy(analysed.profiled_force_magnitude)
+    tangential_force = np.abs(analysed.profiled_tangential_force)
     # for y_ori, y_title in zip([force_magnitude_copy, tangential_force],["force magnitude", "tangential force"]):
     for y_ori, y_title in zip([tangential_force],["tangential force"]):
         for attachment in ["first attachment", "all but first attachment", "all attachments"]:
             if attachment == "first attachment":
                 bool = np.copy(analysed.single_ant_profiles)
-                bool[analysed.all_profiles_precedence != 1, :] = False
+                bool[analysed.profiles_precedence != 1, :] = False
                 y = np.copy(y_ori)
             elif attachment == "all but first attachment":
                 bool = np.copy(analysed.single_ant_profiles)
-                bool[analysed.all_profiles_precedence == 1, :] = False
+                bool[analysed.profiles_precedence == 1, :] = False
                 y = np.copy(y_ori)
             else:
                 bool = np.copy(analysed.single_ant_profiles)
@@ -107,7 +105,7 @@ def plot_ant_profiles(analysed, window_size=11, title="", output_dir=None, profi
 
 
 def draw_single_profiles(analysed, output_path, profile_min_length=200, exmaples_number=200):
-    occ = ((analysed.all_profiles_information[:, 3] - analysed.all_profiles_information[:,2]) > profile_min_length)\
+    occ = ((analysed.profiles[:, 3] - analysed.profiles[:,2]) > profile_min_length)\
           * np.all(analysed.all_profiles_N_ants_around_springs[:, 0:profile_min_length] == 1, axis=1)\
           * (analysed.all_profiles_information[:, 5] == 0)
           # * (analysed.all_profiles_information[:, 4] == 1) \
@@ -126,6 +124,33 @@ def draw_single_profiles(analysed, output_path, profile_min_length=200, exmaples
         plt.xlim(0, profile_min_length)
         plt.title(f"spring: {info[1]}, start: {info[2]}, end: {info[3]}, precedence: {info[4]}")
         plt.savefig(os.path.join(output_path, f"profile_{i}.png"))
+
+
+def angle_to_nest_bias(self):
+    import matplotlib.pyplot as plt
+    angles_to_nest = self.fixed_end_angle_to_nest[self.rest_bool]
+    # distance_from_center = np.linalg.norm((self.object_center_coordinates-self.video_resolution/2), axis=1)
+    force_magnitude = self.force_magnitude[self.rest_bool]
+    force_direction = self.force_direction[self.rest_bool]
+    # plot dot plot of angle to nest vs force magnitude
+    # plt.clf()
+    plt.scatter(angles_to_nest, force_magnitude, s=1, c=force_direction)
+    plt.xlabel("angle to nest")
+    plt.ylabel("force magnitude")
+    plt.title("angle to nest vs force magnitude")
+    plt.show()
+    # plot dot plot of angle to nest vs force direction
+    # plt.clf()
+    # plt.scatter(angles_to_nest, force_direction, s=1, c=force_magnitude)
+    # plt.xlabel("angle to nest")
+    # plt.ylabel("force direction")
+    # plt.title("angle to nest vs force direction")
+    # plt.colorbar()
+    # plt.show()
+# angle_to_nest_bias(self)
+
+
+
 
 # def plot_profiles_length_distrubution(analysed, window_size=1, title="", output_dir=None):
 #     for attachment in ["first attachment", "all but first attachment"]:
@@ -161,7 +186,7 @@ def draw_single_profiles(analysed, output_path, profile_min_length=200, exmaples
 # # plot_profiles_length_distrubution(analysed, title=spring_type, output_dir=output_dir)
 
 def plot_springs_bar_plot_comparison(analysed, window_size=5, title="", output_dir=None):
-    data = copy.copy(analysed.data)
+    data = copy.copy(analysed.calib_data)
     data["angular_velocity"] = np.abs(data["angular_velocity"])
     plt.clf()
     sns.barplot(x="spring_type", y="angular_velocity", data=data, edgecolor=".5", facecolor=(0, 0, 0, 0))
@@ -178,7 +203,7 @@ def plot_springs_bar_plot_comparison(analysed, window_size=5, title="", output_d
 
 def plot_springs_comparison(analysed, window_size=5, title="", output_dir=None):
     os.makedirs(output_dir, exist_ok=True)
-    data = copy.copy(analysed.data)
+    data = copy.copy(analysed.calib_data)
 
     # data["angular_velocity"] = np.abs(data["angular_velocity"])
     # data.loc[data.loc[:,"sum_N_ants"]<=1, "angular_velocity"] = np.nan
