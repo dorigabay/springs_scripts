@@ -16,24 +16,26 @@ QUALITY_THRESHOLD = SQUARENESS_THRESHOLD * RECTANGLE_SIMILARITY_THRESHOLD
 
 
 class DataPreparation:
-    def __init__(self, data_paths, videos_dir, n_springs=1, perspective_correction_params=None):
+    def __init__(self, data_paths, videos_path, n_springs=20):
+        self.data_paths = data_paths
+        self.videos_path = videos_path
         self.n_springs = n_springs
         self.calib_mode = True if self.n_springs == 1 else False
-        self.data_paths = data_paths
-        self.perspective_correction_params = perspective_correction_params
-        self.load_data(self.data_paths, videos_dir)
+        self.load_data()
         self.create_missing_perspective_squares(QUALITY_THRESHOLD)
         self.rearrange_perspective_squares_order()
         self.rearrange_springs_order()
         self.create_video_sets()
+        self.rearrange_springs_order_per_frame()
         self.n_ants_processing()
         self.correct_perspectives(QUALITY_THRESHOLD)
+        # self.correct_object_center()
         self.calc_distances()
         self.repeat_values()
         self.calc_angle()
 
-    def load_data(self, paths, video_dir):
-        paths = [paths] if isinstance(paths, str) else paths
+    def load_data(self):
+        paths = self.data_paths
         perspective_squares_rectangle_similarity = np.concatenate([np.loadtxt(os.path.join(path, "perspective_squares_rectangle_similarity.csv"), delimiter=",") for path in paths], axis=0)
         perspective_squares_squareness = np.concatenate([np.loadtxt(os.path.join(path, "perspective_squares_squareness.csv"), delimiter=",") for path in paths], axis=0)
         self.perspective_squares_quality = perspective_squares_rectangle_similarity * perspective_squares_squareness
@@ -52,7 +54,7 @@ class DataPreparation:
         self.object_center_coordinates = needle_coordinates[:, 0, :]
         self.needle_tip_coordinates = needle_coordinates[:, -1, :]
         self.video_n_frames = np.array([np.loadtxt(os.path.join(path, "N_ants_around_springs.csv"), delimiter=",").shape[0] for path in paths])
-        cap = cv2.VideoCapture(glob.glob(os.path.join(video_dir, "**", "*.MP4"), recursive=True)[0])
+        cap = cv2.VideoCapture(glob.glob(os.path.join(self.videos_path, "**", "*.MP4"), recursive=True)[0])
         self.video_resolution = np.array((int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))))
         cap.release()
 
@@ -60,13 +62,13 @@ class DataPreparation:
         self.video_continuity_score = np.zeros(len(self.video_n_frames))
         for count in range(1, len(self.video_n_frames)):
             start, end = np.sum(self.video_n_frames[:count]), np.sum(self.video_n_frames[:count + 1])
-            previous_free_ends_coordinates = np.nanmedian(self.fixed_ends_coordinates[start - 5:start-1, :], axis=0)
-            current_free_ends_coordinates = np.nanmedian(self.fixed_ends_coordinates[start:start + 4, :], axis=0)
+            previous_fixed_ends_coordinates = np.nanmedian(self.fixed_ends_coordinates[start - 5:start-1, :], axis=0)
+            current_fixed_ends_coordinates = np.nanmedian(self.fixed_ends_coordinates[start:start + 4, :], axis=0)
             num_of_springs = self.fixed_ends_coordinates.shape[1]
             arrangements_distances = np.zeros(num_of_springs)
             for arrangement in range(num_of_springs):
                 rearrangement = np.append(np.arange(arrangement, num_of_springs), np.arange(0, arrangement))
-                arrangements_distances[arrangement] = np.nanmedian(np.linalg.norm(previous_free_ends_coordinates - current_free_ends_coordinates[rearrangement], axis=1))
+                arrangements_distances[arrangement] = np.nanmedian(np.linalg.norm(previous_fixed_ends_coordinates - current_fixed_ends_coordinates[rearrangement], axis=1))
             best_arrangement = np.argmin(arrangements_distances)
             if arrangements_distances[best_arrangement] < threshold: # higher than threshold means that this movie isn't a continuation of the previous one
                 rearrangement = np.append(np.arange(best_arrangement, num_of_springs), np.arange(0, best_arrangement))
@@ -91,6 +93,29 @@ class DataPreparation:
                 frame_count = self.sets_frames[-1][-1][1]+1
                 self.sets_frames.append([[frame_count, frame_count + self.video_n_frames[count] - 1]])
                 self.sets_video_paths.append([self.data_paths[count]])
+
+    def rearrange_springs_order_per_frame(self, threshold=10):
+        import itertools
+        springs_order = np.arange(self.n_springs)
+        for set_idx in self.sets_frames:
+            s, e = set_idx[0][0], set_idx[-1][1] + 1
+            for frame in range(s + 1, e):
+                print(f"\rframe {frame}", end="")
+                distances = np.linalg.norm(self.fixed_ends_coordinates[frame, :] - self.fixed_ends_coordinates[frame-1, :], axis=1)
+                mismatched_springs = distances > threshold
+                if sum(mismatched_springs) >= 2:
+                    mismatched_springs = springs_order[mismatched_springs+np.isnan(distances)]
+                    print(f"distances: {distances}")
+                    permutations = list(itertools.permutations(mismatched_springs))
+                    for permutation in permutations:
+                        permutation = list(permutation)
+                        print(permutation)
+                        distances = np.linalg.norm(self.fixed_ends_coordinates[frame, permutation] - self.fixed_ends_coordinates[frame-1, mismatched_springs], axis=1)
+                        if np.sum(distances > threshold) < 2:
+                            self.N_ants_around_springs[frame, mismatched_springs] = self.N_ants_around_springs[frame, permutation]
+                            self.size_ants_around_springs[frame, mismatched_springs] = self.size_ants_around_springs[frame, permutation]
+                            self.fixed_ends_coordinates[frame, mismatched_springs] = self.fixed_ends_coordinates[frame, permutation]
+                            self.free_ends_coordinates[frame, mismatched_springs] = self.free_ends_coordinates[frame, permutation]
 
     def create_missing_perspective_squares(self, quality_threshold):
         real_squares = self.perspective_squares_quality < quality_threshold
@@ -125,7 +150,7 @@ class DataPreparation:
         self.object_center_coordinates = utils.apply_projective_transform(self.object_center_coordinates, PTMs)
         self.needle_tip_coordinates = utils.apply_projective_transform(self.needle_tip_coordinates, PTMs)
         # second perspective correction
-        perspective_correction_params = self.fit_perspective_params(self.fixed_ends_coordinates, self.needle_tip_coordinates, self.free_ends_coordinates)
+        perspective_correction_params = self.fit_perspective_params(self.fixed_ends_coordinates.copy(), self.needle_tip_coordinates.copy(), self.free_ends_coordinates.copy())
         self.fixed_ends_coordinates = utils.project_plane_perspective(self.fixed_ends_coordinates, perspective_correction_params[[0, 2, 3]])
         needle_tip_repeated = np.copy(np.repeat(self.needle_tip_coordinates[:, np.newaxis, :], self.free_ends_coordinates.shape[1], axis=1))
         self.needle_tip_coordinates = np.nanmedian(utils.project_plane_perspective(needle_tip_repeated, perspective_correction_params[[1, 2, 3]]), axis=1)
@@ -136,15 +161,15 @@ class DataPreparation:
             needle_tip_params = params[[1, 2, 3]]
             correct_fixed_end_coordinates = utils.project_plane_perspective(fixed_end_coordinates, fixed_end_params)
             correct_needle_tip_repeated = utils.project_plane_perspective(needle_tip_repeated, needle_tip_params)
-            pulling_angle = utils.calc_pulling_angle_matrix(correct_fixed_end_coordinates, correct_needle_tip_repeated, reference_coordinates)
             spring_length = np.linalg.norm(correct_fixed_end_coordinates - reference_coordinates, axis=2)
-            spring_length_needle = np.linalg.norm(needle_tip_repeated - reference_coordinates, axis=2)
+            spring_length_needle = np.linalg.norm(correct_needle_tip_repeated - reference_coordinates, axis=2)
+            # pulling_angle = utils.calc_pulling_angle_matrix(correct_fixed_end_coordinates, correct_needle_tip_repeated, reference_coordinates)
             length_score = np.mean(np.nanstd(spring_length, axis=0) / np.nanmean(spring_length, axis=0))
             length_score_needle = np.mean(np.nanstd(spring_length_needle, axis=0) / np.nanmean(spring_length_needle, axis=0))
-            angle_score = np.mean(np.nanstd(pulling_angle, axis=0) / np.nanmean(pulling_angle, axis=0))
-            return length_score + length_score_needle  # + angle_score
-            # return length_score
-            # return angle_score
+            # angle_score = np.mean(np.nanstd(pulling_angle, axis=0) / np.nanmean(pulling_angle, axis=0))
+            mean_score = np.mean([length_score, length_score_needle])
+            return mean_score
+
         needle_tip_repeated = np.copy(np.repeat(needle_tip_coordinates[:, np.newaxis, :], reference_coordinates.shape[1], axis=1))
         if np.sum(self.rest_bool) > 0:
             fixed_end_coordinates[~self.rest_bool] = np.nan
@@ -153,7 +178,7 @@ class DataPreparation:
         res = minimize(loss_func, x0=x0)#, method='nelder-mead', options={'xatol': 1e-8, 'disp': True})
         # frame_grid = np.meshgrid(np.arange(self.video_resolution[0], step=100), np.arange(self.video_resolution[1], step=100))
         # plt.scatter(frame_grid[0], frame_grid[1], alpha=0.0001)
-        # plt.scatter(res.x[2], res.x[3], c='r')
+        # plt.scatter(res.x[1], res.x[2], c='r')
         # plt.scatter(self.object_center_coordinates[0, 0], self.object_center_coordinates[0, 1], c='g')
         # plt.gca().invert_yaxis()
         # plt.show()
@@ -180,37 +205,48 @@ class DataPreparation:
                     np.round(utils.interpolate_data(self.N_ants_around_springs[start:end, :], all_small_attaches.astype(bool)))
             self.rest_bool = self.N_ants_around_springs == 0
         else:
-            self.rest_bool = np.full(self.N_ants_around_springs.shape, False)
+            self.rest_bool = np.full((self.N_ants_around_springs.shape[0], 1), False)
             s, e = self.sets_frames[0][0][0], self.sets_frames[0][-1][1]
-            self.rest_bool[s:e] = True
+            self.rest_bool[s:e+1] = True
+
+    def correct_object_center(self):
+        def loss(params):
+            distances = np.linalg.norm(points - params, axis=1)
+            return np.nanstd(distances)
+        if not self.calib_mode:
+            object_center_coordinates_approximated = np.full(self.object_center_coordinates.shape, np.nan)
+            for count, points in enumerate(self.fixed_ends_coordinates):
+                x0 = np.array([np.nanmedian(points[:, 0]), np.nanmedian(points[:, 1])])
+                res = minimize(loss, x0=x0)#, method='nelder-mead', options={'xatol': 1e-8, 'disp': True})
+                print(f"\r{count}", end="")
+                object_center_coordinates_approximated[count, :] = res.x
+            self.object_center_coordinates = object_center_coordinates_approximated
 
     def calc_distances(self):
-        object_center = np.repeat(self.object_center_coordinates[:, np.newaxis, :], self.n_springs, axis=1)
-        needle_tip_coordinates = np.repeat(self.needle_tip_coordinates[:, np.newaxis, :], self.n_springs, axis=1)
-        self.object_center_to_free_end_distance = np.linalg.norm(self.free_ends_coordinates - object_center, axis=2)
-        self.object_center_to_fixed_end_distance = np.linalg.norm(self.fixed_ends_coordinates - object_center, axis=2)
-        self.object_needle_tip_to_fixed_end_distance = np.linalg.norm(self.fixed_ends_coordinates - needle_tip_coordinates, axis=2)
-        self.needle_length = np.linalg.norm(self.needle_tip_coordinates - self.object_center_coordinates, axis=1)
-        # self.needle_length = np.nanmedian(np.linalg.norm(self.needle_tip_coordinates - self.object_center_coordinates, axis=1))
         self.spring_length = np.linalg.norm(self.free_ends_coordinates - self.fixed_ends_coordinates, axis=2)
-
-    def repeat_values(self):
-        nest_direction = np.stack((self.fixed_ends_coordinates[:, 0, 0], self.fixed_ends_coordinates[:, 0, 1] - 500), axis=1)
-        self.nest_direction_repeated = np.repeat(nest_direction[:, np.newaxis, :], self.fixed_ends_coordinates.shape[1], axis=1)
-        object_nest_direction = np.stack((self.object_center_coordinates[:, 0], self.object_center_coordinates[:, 1] - 500), axis=1)
-        self.object_nest_direction_repeated = np.repeat(object_nest_direction[:, np.newaxis, :], self.fixed_ends_coordinates.shape[1], axis=1)
-        self.object_center_repeated = np.copy(np.repeat(self.object_center_coordinates[:, np.newaxis, :], self.free_ends_coordinates.shape[1], axis=1))
-        self.needle_tip_repeated = np.copy(np.repeat(self.needle_tip_coordinates[:, np.newaxis, :], self.free_ends_coordinates.shape[1], axis=1))
-        self.needle_length_repeated = np.copy(np.repeat(self.needle_length[:, np.newaxis], self.free_ends_coordinates.shape[1], axis=1))
-
-    def calc_angle(self):
-        self.object_fixed_end_angle_to_nest = utils.calc_angle_matrix(self.object_nest_direction_repeated, self.object_center_repeated, self.fixed_ends_coordinates, ) + np.pi
-        # self.fixed_end_angle_to_nest = utils.calc_angle_matrix(self.object_center_repeated, self.fixed_ends_coordinates, self.nest_direction_repeated) + np.pi
-        self.fixed_end_angle_to_nest = utils.calc_angle_matrix(self.needle_tip_repeated, self.fixed_ends_coordinates, self.nest_direction_repeated) + np.pi
-        self.pulling_angle = utils.calc_pulling_angle_matrix(self.free_ends_coordinates, self.needle_tip_repeated, self.fixed_ends_coordinates)
         if not self.calib_mode:
             for count, set_idx in enumerate(self.sets_frames):
-                s, e = set_idx[0][0], set_idx[-1][1]
-                self.pulling_angle[s:e] -= np.nanmedian(np.where(~self.rest_bool[s:e], np.nan, self.pulling_angle[s:e]))
+                s, e = set_idx[0][0], set_idx[-1][1] + 1
+                self.spring_length[s:e] /= np.nanmedian(np.where(~self.rest_bool[s:e], np.nan, self.spring_length[s:e]), axis=0)
         else:
-            self.pulling_angle -= np.nanmedian(np.where(~self.rest_bool, np.nan, self.pulling_angle))
+            self.spring_length /= np.nanmedian(np.where(~self.rest_bool, np.nan, self.spring_length), axis=0)
+
+    def repeat_values(self):
+        self.nest_direction = np.stack((self.fixed_ends_coordinates[:, :, 0], self.fixed_ends_coordinates[:, :, 1] - 500), axis=2)
+        self.tip_nest_direction = np.repeat(np.stack((self.needle_tip_coordinates[:, np.newaxis, 0], self.needle_tip_coordinates[:, np.newaxis, 1] - 500), axis=2), self.n_springs, axis=1)
+        self.object_center_repeated = np.copy(np.repeat(self.object_center_coordinates[:, np.newaxis, :], self.n_springs, axis=1))
+        self.needle_tip_repeated = np.copy(np.repeat(self.needle_tip_coordinates[:, np.newaxis, :], self.n_springs, axis=1))
+        # self.object_center_coordinates = self.correct_object_center()
+        self.object_center_repeated = np.repeat(self.object_center_coordinates[:, np.newaxis, :], self.n_springs, axis=1)
+        self.object_nest_direction = np.stack((self.object_center_repeated[:, :, 0], self.object_center_repeated[:, :, 1] - 500), axis=2)
+
+    def calc_angle(self):
+        self.object_fixed_end_angle_to_nest = utils.calc_angle_matrix(self.object_nest_direction, self.object_center_repeated, self.fixed_ends_coordinates) + np.pi
+        self.fixed_end_angle_to_nest = utils.calc_angle_matrix(self.object_center_repeated, self.fixed_ends_coordinates, self.nest_direction) + np.pi
+        self.pulling_angle = utils.calc_pulling_angle_matrix(self.free_ends_coordinates, self.object_center_repeated, self.fixed_ends_coordinates)
+        if not self.calib_mode:
+            for count, set_idx in enumerate(self.sets_frames):
+                s, e = set_idx[0][0], set_idx[-1][1] + 1
+                self.pulling_angle[s:e] -= np.nanmedian(np.where(~self.rest_bool[s:e], np.nan, self.pulling_angle[s:e]), axis=0)
+        else:
+            self.pulling_angle -= np.nanmedian(np.where(~self.rest_bool, np.nan, self.pulling_angle), axis=0)

@@ -68,8 +68,8 @@ def convert_bool_to_binary(bool_array):
 
 
 def column_dilation(array):
-    zeors = np.zeros((array.shape[0],array.shape[1]*2))
-    zeors[:,list(range(0,zeors.shape[1],2))] = array
+    zeors = np.zeros((array.shape[0], array.shape[1]*2))
+    zeors[:, list(range(0, zeors.shape[1], 2))] = array
     return zeors
 
 
@@ -94,52 +94,69 @@ def difference(array, spacing=1):
 
 def calc_translation_velocity(coordinates, spacing=1):
     coordinates = coordinates.copy()
-    horizontal_component = difference(coordinates[:, 0], spacing=spacing)
-    vertical_component = difference(coordinates[:, 1], spacing=spacing)
+    horizontal_component = difference(coordinates[:, 0], spacing=spacing) / spacing
+    vertical_component = difference(coordinates[:, 1], spacing=spacing) / spacing
     movement_direction = np.arctan2(vertical_component, horizontal_component)
     movement_magnitude = np.sqrt(horizontal_component ** 2 + vertical_component ** 2)
     return movement_direction, movement_magnitude
 
 
-def calc_angular_velocity(angles,diff_spacing=1):
+def calc_angular_velocity(angles, diff_spacing=1):
     # calculate the angular velocity of the angles
     THERSHOLD = 5.5
     diff = difference(angles, spacing=diff_spacing)
-    diff[(diff>THERSHOLD)] = diff[diff > THERSHOLD]-2*np.pi
-    diff[(diff<-THERSHOLD)] = diff[diff <- THERSHOLD]+2*np.pi
+    diff[(diff > THERSHOLD)] = diff[diff > THERSHOLD]-2*np.pi
+    diff[(diff < -THERSHOLD)] = diff[diff < -THERSHOLD]+2*np.pi
     return diff
 
 
-def interpolate_data(array,undetected_bool,period=None):
+def interpolate_data(array, undetected_bool=None, period=None):
     array = copy.copy(array)
+    original_shape = array.shape
+    array = array.reshape(-1, 1) if len(array.shape) == 1 else array
+    undetected_bool = np.isnan(array) if undetected_bool is None else undetected_bool
     for col in range(array.shape[1]):
-        fp = array[:,col]
+        fp = array[:, col]
         xp = np.arange(len(fp))
-        cells_to_interpolate = undetected_bool[:,col]
+        cells_to_interpolate = undetected_bool[:, col]
         fp_nonan = fp[np.invert(cells_to_interpolate)]
         xp_nonan = xp[np.invert(cells_to_interpolate)]
         if period is not None:
-            array[:,col] = np.interp(xp, xp_nonan, fp_nonan, period=period)
-        else: array[:,col] = np.interp(xp, xp_nonan, fp_nonan)
+            array[:, col] = np.interp(xp, xp_nonan, fp_nonan, period=period)
+        else:
+            array[:, col] = np.interp(xp, xp_nonan, fp_nonan)
+    array = array.reshape(original_shape)
     return array
 
 
 def find_cells_to_interpolate(array, min_size=8):
     undetected_springs_bool = np.isnan(array)
-    undetected_springs_for_long_time = filter_continuity(convert_bool_to_binary(undetected_springs_bool),min_size=min_size)
+    undetected_springs_for_long_time = filter_continuity(undetected_springs_bool, min_size=min_size)
     cells_to_interpolate = copy.copy(undetected_springs_bool)
     cells_to_interpolate[undetected_springs_for_long_time] = False
     return cells_to_interpolate
 
 
-def filter_continuity(binary_array, min_size=0, max_size=np.inf):
+def filter_continuity_vector(bool_vector, min_size=0, max_size=np.inf):
+    # binary_array_missing = vector == 0
+    binary_vector = bool_vector.astype(int)
+    labeled, labels = label(binary_vector)
+    labels = np.arange(labels + 1)[1:]
+    labeled_summed = sum_labels(binary_vector, labeled, index=labels).astype(int)
+    labels_to_remove = labels[np.invert((labeled_summed > min_size) & (labeled_summed < max_size))]
+    labeled[np.isin(labeled, labels_to_remove)] = 0
+    return labeled >= 1
+
+
+def filter_continuity(bool_array, min_size=0, max_size=np.inf):
+    binary_array = bool_array.astype(int)
     binary_array_dilated = column_dilation(binary_array)
     labeled, labels = label(binary_array_dilated)
     labels = np.arange(labels+1)[1:]
-    labeled_summed = sum_labels(binary_array_dilated, labeled,index=labels).astype(int)
+    labeled_summed = sum_labels(binary_array_dilated, labeled, index=labels).astype(int)
     labels_to_remove = labels[np.invert((labeled_summed > min_size) & (labeled_summed < max_size))]
     labeled[np.isin(labeled, labels_to_remove)] = 0
-    labeled = labeled[:, list(range(0,labeled.shape[1], 2))]
+    labeled = labeled[:, list(range(0, labeled.shape[1], 2))]
     return labeled >= 1
 
 

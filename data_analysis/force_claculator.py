@@ -9,27 +9,15 @@ from data_analysis import utils
 from data_analysis.data_preparation import DataPreparation
 
 
-class ForceCalculator:
-    def __init__(self, video_dir, data_paths, output_path, calibration_model_path, n_springs=20):
-        self.video_dir = video_dir
+class ForceCalculator(DataPreparation):
+    def __init__(self, video_paths, data_paths, output_path, calibration_model_path, n_springs=20):
+        super().__init__(data_paths, video_paths, n_springs=n_springs)
+        self.video_dir = video_paths
         self.output_path = output_path
         self.data_paths = data_paths
-        analysis_data = DataPreparation(data_paths, video_dir, n_springs=n_springs)
         self.calibration_model = pickle.load(open(calibration_model_path, "rb"))
-        self.calc_spring_length(analysis_data)
-        self.calc_pulling_angle(analysis_data)
         self.calc_force()
-        self.save_data(analysis_data)
-
-    def calc_pulling_angle(self, data):
-        # self.pulling_angle = utils.calc_pulling_angle_matrix(data.fixed_ends_coordinates, data.object_center_repeated, data.free_ends_coordinates)
-        self.pulling_angle = utils.calc_pulling_angle_matrix(data.fixed_ends_coordinates, data.needle_tip_repeated, data.free_ends_coordinates)
-        for count, set_idx in enumerate(data.sets_frames):
-            s, e = set_idx[0][0], set_idx[-1][1]
-            self.pulling_angle[s:e] -= np.nanmedian(np.where(~data.rest_bool[s:e], np.nan, self.pulling_angle[s:e]))
-
-    def calc_spring_length(self, data):
-        self.spring_length = np.linalg.norm(data.free_ends_coordinates - data.fixed_ends_coordinates, axis=2)
+        # self.save_data()
 
     def calc_force(self):
         self.force_direction = np.full(self.pulling_angle.shape, np.nan, dtype=np.float64)
@@ -43,28 +31,28 @@ class ForceCalculator:
             self.force_magnitude[~exclude_idx, s] = forces_predicted[:, 1]
         self.tangential_force = np.sin(self.force_direction) * self.force_magnitude
 
-    def save_data(self, data):
-        for count, set_paths in enumerate(data.sets_video_paths):
+    def save_data(self):
+        for count, set_paths in enumerate(self.sets_video_paths):
             sub_dirs_names = [os.path.basename(os.path.normpath(path)) for path in set_paths]
             set_save_path = os.path.join(self.output_path, f"{sub_dirs_names[0]}-{sub_dirs_names[-1]}")
             os.makedirs(set_save_path, exist_ok=True)
-            start, end = data.sets_frames[count][0][0], data.sets_frames[count][-1][1]
-            np.savez_compressed(os.path.join(set_save_path, "needle_tip_coordinates.npz"), data.needle_tip_coordinates[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "object_center_coordinates.npz"), data.object_center_coordinates[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "fixed_ends_coordinates.npz"), data.fixed_ends_coordinates[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "free_ends_coordinates.npz"), data.free_ends_coordinates[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "perspective_squares_coordinates.npz"), data.perspective_squares_coordinates[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "N_ants_around_springs.npz"), data.N_ants_around_springs[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "size_ants_around_springs.npz"), data.size_ants_around_springs[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "ants_attached_labels.npz"), data.ants_attached_labels[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "fixed_end_angle_to_nest.npz"), data.fixed_end_angle_to_nest[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "object_fixed_end_angle_to_nest.npz"), data.object_fixed_end_angle_to_nest[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "force_direction.npz"), self.force_direction[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "force_magnitude.npz"), self.force_magnitude[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "tangential_force.npz"), self.tangential_force[start:end])
-            np.savez_compressed(os.path.join(set_save_path, "missing_info.npz"), np.isnan(data.free_ends_coordinates[start:end, :, 0]))
-        pickle.dump(data.sets_frames, open(os.path.join(self.output_path, "sets_frames.pkl"), "wb"))
-        pickle.dump(data.sets_video_paths, open(os.path.join(self.output_path, "sets_video_paths.pkl"), "wb"))
+            s, e = self.sets_frames[count][0][0], self.sets_frames[count][-1][1] + 1
+            np.savez_compressed(os.path.join(set_save_path, "needle_tip_coordinates.npz"), self.needle_tip_coordinates[s:e])
+            np.savez_compressed(os.path.join(set_save_path, "object_center_coordinates.npz"), self.object_center_coordinates[s:e])
+            np.savez_compressed(os.path.join(set_save_path, "fixed_ends_coordinates.npz"), self.fixed_ends_coordinates[s:e])
+            np.savez_compressed(os.path.join(set_save_path, "free_ends_coordinates.npz"), self.free_ends_coordinates[s:e])
+            np.savez_compressed(os.path.join(set_save_path, "perspective_squares_coordinates.npz"), self.perspective_squares_coordinates[s:e])
+            np.savez_compressed(os.path.join(set_save_path, "N_ants_around_springs.npz"), self.N_ants_around_springs[s:e])
+            np.savez_compressed(os.path.join(set_save_path, "size_ants_around_springs.npz"), self.size_ants_around_springs[s:e])
+            np.savez_compressed(os.path.join(set_save_path, "ants_attached_labels.npz"), self.ants_attached_labels[s:e])
+            np.savez_compressed(os.path.join(set_save_path, "fixed_end_angle_to_nest.npz"), self.fixed_end_angle_to_nest[s:e])
+            np.savez_compressed(os.path.join(set_save_path, "object_fixed_end_angle_to_nest.npz"), self.object_fixed_end_angle_to_nest[s:e])
+            np.savez_compressed(os.path.join(set_save_path, "force_direction.npz"), self.force_direction[s:e])
+            np.savez_compressed(os.path.join(set_save_path, "force_magnitude.npz"), self.force_magnitude[s:e])
+            np.savez_compressed(os.path.join(set_save_path, "tangential_force.npz"), self.tangential_force[s:e])
+            np.savez_compressed(os.path.join(set_save_path, "missing_info.npz"), np.isnan(self.free_ends_coordinates[s:e, :, :].any(axis=2)))
+        pickle.dump(self.sets_frames, open(os.path.join(self.output_path, "sets_frames.pkl"), "wb"))
+        pickle.dump(self.sets_video_paths, open(os.path.join(self.output_path, "sets_video_paths.pkl"), "wb"))
         print("Saved data to: ", self.output_path)
 
 

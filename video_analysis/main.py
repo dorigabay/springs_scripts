@@ -30,12 +30,12 @@ def main(video_path, parameters):
     snapshot_data = utils.create_snapshot_data(parameters=parameters)
     print("Started processing video: ", video_path)
     cap = cv2.VideoCapture(video_path)
-    cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["starting_frame"])
+    cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["STARTING_FRAME"])
     total_n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     while total_n_frames > snapshot_data["frame_count"]:
         _, frame = cap.read()
         if snapshot_data["skipped_frames"] % 25 == 0 and snapshot_data["skipped_frames"] != 0:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["starting_frame"] + snapshot_data["frame_count"] + 24)
+            cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["STARTING_FRAME"] + snapshot_data["frame_count"] + 24)
             for i in range(24):
                 perspective_squares.save_data(snapshot_data, parameters)
                 snapshot_data = calculator.save_data(snapshot_data, parameters)
@@ -47,7 +47,7 @@ def main(video_path, parameters):
                     springs = Springs(parameters, frame, snapshot_data)
                     ants = Ants(frame, springs, squares)
                     calculations = calculator.Calculation(parameters, snapshot_data, springs, ants)
-                    snapshot_data = utils.create_snapshot_data(snapshot_data=snapshot_data, calculations=calculations, squares=squares, springs=springs)
+                    snapshot_data = utils.create_snapshot_data(snapshot_data=snapshot_data, calculations=calculations, squares=squares, springs=springs, ants=ants)
                     snapshot_data = calculator.save_data(snapshot_data, parameters, calculations)
                     utils.present_analysis_result(frame, calculations, springs, ants, os.path.basename(video_path).split(".")[0])
                 except:
@@ -55,9 +55,9 @@ def main(video_path, parameters):
             except:
                 perspective_squares.save_data(snapshot_data, parameters)
                 snapshot_data = calculator.save_data(snapshot_data, parameters)
-        parameters["continue_from_last_snapshot"] = False
+        parameters["CONTINUE_FROM_LAST_SNAPSHOT"] = False
     cap.release()
-    utils.convert_ants_centers_to_mathlab(parameters["output_path"])
+    # utils.convert_ants_centers_to_mathlab(parameters["OUTPUT_PATH"])
     print("Finished processing video: ", video_path)
 
 
@@ -78,15 +78,13 @@ if __name__ == '__main__':
     print("-"*80)
     print("Finished processing all videos in directory: ", args["path"])
 
-# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\plus_0.2\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\plus_0.2\ --nCPU 5
-# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\calibration\plus_0.5\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\calibration\plus_0.5\ --nCPU 5
-# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\calibration\plus_0.3\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\calibration\plus_0.3\ --nCPU 5
-# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\calibration\plus_0.1\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\calibration\plus_0.1\ --nCPU 5 -cp
-# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\calibration\plus_0\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\calibration\plus_0\ --nCPU 5 -cp
 
-# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\calibration\plus_0.0\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\calibration\plus_0.0\correction\ --nCPU 1
-# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\plus_0.1\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\plus_0.1\ --nCPU 15
-# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.1\ --output_path Z:\Dor_Gabay\ThesisProject\data\dump\ -cp
-# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\plus_0.2\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\plus_0.2\ -cp
+# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\calibration\plus_0.1\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\calibration\plus_0.1\ -cp
+# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.1\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.1\ -cp
+# python video_analysis\main.py --path Y:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.1\ --output_path Y:\Dor_Gabay\Trash\_lior_test\ -cp
 
-# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\calibration\plus_0.1\ --output_path Z:\Dor_Gabay\ThesisProject\data\dump\ -cp
+# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.2\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.2\ -cp
+# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\calibration\plus_0.2\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\calibration\plus_0.2\ -cp
+# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\calibration\plus_0.2\ --output_path Z:\Dor_Gabay\ThesisProject\data\Trash\
+
+

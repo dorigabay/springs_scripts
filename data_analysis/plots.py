@@ -8,13 +8,15 @@ from scipy.signal import savgol_filter
 import copy
 import re
 
+
 def define_colors(labels_num=5):
     # set a color by RGB
+    # red, purple, blue, green, purple_brown
     red = np.array((239, 59, 46))/255
     purple = np.array((112, 64, 215))/255
-    blue = np.array((86,64,213))/255
+    blue = np.array((86, 64, 213))/255
     green = np.array((93, 191, 71))/255
-    purple_brown = np.array((153,86,107))/255
+    purple_brown = np.array((153, 86, 107))/255
     colors = [red, purple, blue, green, purple_brown]
     return colors[:labels_num+1]
 
@@ -50,24 +52,23 @@ def plot_angular_velocity_distribution(analysed, start=0, end=None, window_size=
 # plot_angular_velocity_distribution(analysed, start=0, end=None, window_size=50, title=video_name, output_dir=directory)
 
 
-def plot_ant_profiles(analysed, window_size=11, title="", output_dir=None, profile_size=200):
-    # output_dir = define_output_dir(output_dir)
-
+def plot_ant_profiles(analysed, output_dir, window_size=11, title="", profile_size=200):
+    os.makedirs(output_dir, exist_ok=True)
     #plot number of cases
     plt.clf()
     y = np.sum(analysed.single_ant_profiles, axis=0)
-    y = y[y > 50]
-    x = np.arange(0, y.shape[0], 1)/50
+    y = y[y > analysed.fps]
+    x = np.arange(0, y.shape[0], 1)/analysed.fps
     plt.plot(x, y, color="purple")
     plt.ylabel(f"number of profiles")
     plt.xlabel("seconds")
-    print("Saving figure to path: ", os.path.join(output_dir, f"number of profiles (movie {title}).png"))
-    plt.savefig(os.path.join(output_dir, f"number of profiles (movie {title}).png"))
+    print("Saving figure to path: ", os.path.join(output_dir, f"number of profiles.png"))
+    plt.savefig(os.path.join(output_dir, f"number of profiles.png"))
 
-    force_magnitude_copy = np.copy(analysed.profiled_force_magnitude)
+    force_magnitude_copy = np.abs(analysed.profiled_force_magnitude)
     tangential_force = np.abs(analysed.profiled_tangential_force)
-    # for y_ori, y_title in zip([force_magnitude_copy, tangential_force],["force magnitude", "tangential force"]):
-    for y_ori, y_title in zip([tangential_force],["tangential force"]):
+    for y_ori, y_title in zip([force_magnitude_copy, tangential_force], ["force magnitude", "tangential force"]):
+    # for y_ori, y_title in zip([tangential_force], ["tangential force"]):
         for attachment in ["first attachment", "all but first attachment", "all attachments"]:
             if attachment == "first attachment":
                 bool = np.copy(analysed.single_ant_profiles)
@@ -83,14 +84,14 @@ def plot_ant_profiles(analysed, window_size=11, title="", output_dir=None, profi
             bool[~bool[:, profile_size], :] = False
             bool[:, profile_size+1:] = False
             y[~bool] = np.nan
-            y[y==0] = np.nan
+            y[y == 0] = np.nan
             y_mean = np.nanmean(y, axis=0)
             y_SEM_upper = y_mean + np.nanstd(y, axis=0) / np.sqrt(np.sum(~np.isnan(y), axis=0))
             y_SEM_lower = y_mean - np.nanstd(y, axis=0) / np.sqrt(np.sum(~np.isnan(y), axis=0))
             y_not_nan = ~np.isnan(y_mean)
             y_mean,y_SEM_upper,y_SEM_lower = y_mean[y_not_nan],y_SEM_upper[y_not_nan],y_SEM_lower[y_not_nan]
-            x = np.arange(0, y_mean.shape[0], 1)/50
-            print(y_mean.shape, y_SEM_upper.shape, y_SEM_lower.shape, x.shape)
+            x = np.arange(0, y_mean.shape[0], 1)/analysed.fps
+            # print(y_mean.shape, y_SEM_upper.shape, y_SEM_lower.shape, x.shape)
             plt.clf()
             plt.plot(x, savgol_filter(y_mean, window_size, 3), color="purple")
             plt.fill_between(x, savgol_filter(y_SEM_lower, window_size, 3),
@@ -99,32 +100,35 @@ def plot_ant_profiles(analysed, window_size=11, title="", output_dir=None, profi
             plt.xlabel("seconds")
             plt.ylabel(f"{y_title} (mN)")
             plt.subplots_adjust(top=0.9, bottom=0.15, left=0.15, right=0.9, hspace=0.5)
-            print("Saving figure to path: ", os.path.join(output_dir, f"ant {y_title} profiles - {attachment} (movie {title}).png"))
-            plt.savefig(os.path.join(output_dir, f"ant {y_title} profiles - {attachment} (movie {title}).png"))
-# plot_ant_profiles(analysed, window_size=11, title=spring_type, output_dir=ant_profiles_output_dir,profile_size=400)
+            print("Saving figure to path: ", os.path.join(output_dir, f"ant {y_title} profiles - {attachment}.png"))
+            plt.savefig(os.path.join(output_dir, f"ant {y_title} profiles - {attachment}.png"))
+# plot_ant_profiles(self, output_dir=os.path.join(output_dir,"profiles"), window_size=11, profile_size=200)
 
 
-def draw_single_profiles(analysed, output_path, profile_min_length=200, exmaples_number=200):
-    occ = ((analysed.profiles[:, 3] - analysed.profiles[:,2]) > profile_min_length)\
-          * np.all(analysed.all_profiles_N_ants_around_springs[:, 0:profile_min_length] == 1, axis=1)\
-          * (analysed.all_profiles_information[:, 5] == 0)
-          # * (analysed.all_profiles_information[:, 4] == 1) \
-    print("sum(occ)", np.sum(occ))
-    profiles = np.arange(len(occ))[occ]
-    output_path = os.path.join(output_path, "single_studies")
+def draw_single_profiles(analysed, output_path, profile_min_length=200, examples_number=-1, start=0, end=None):
+    profiles_idx = analysed.ant_profiles[:, 2] >= start
+    profiles_idx *= analysed.ant_profiles[:, 3] < end if end is not None else np.ones_like(profiles_idx)
+    occasions = ((analysed.ant_profiles[:, 3] - analysed.ant_profiles[:, 2]) > profile_min_length) * ~np.any(analysed.profiled_check, axis=1)
+    occasions = occasions * profiles_idx
+    print("Number of found profiles: ", np.sum(occasions))
+    profiles = np.arange(len(occasions))[occasions]
     os.makedirs(output_path, exist_ok=True)
-    profiles = np.random.choice(profiles, size=exmaples_number, replace=False)
+    examples_number = np.sum(occasions) if examples_number == -1 else examples_number
+    # profiles = np.random.choice(profiles, size=examples_number, replace=False)
     for i in profiles:
-        angular_force = analysed.all_profiles_angular_force[i, :]
-        info = analysed.all_profiles_information[i, :]
-        x = np.arange(np.sum(~np.isnan(angular_force)))
-        y = angular_force[~np.isnan(angular_force)]
+        angular_force = analysed.profiled_tangential_force[i, :]
+        force_magnitude = analysed.profiled_force_magnitude[i, :]
+        info = analysed.ant_profiles[i, :]
+        x = np.arange(np.sum(~np.isnan(force_magnitude)))
+        y = force_magnitude[~np.isnan(force_magnitude)]
         plt.clf()
         plt.plot(x, y, color="purple")
         plt.xlim(0, profile_min_length)
-        plt.title(f"spring: {info[1]}, start: {info[2]}, end: {info[3]}, precedence: {info[4]}")
+        plt.title(f"spring: {info[1]}, start: {info[2]-start}, end: {info[3]-start}, precedence: {info[4]}")
         plt.savefig(os.path.join(output_path, f"profile_{i}.png"))
-
+# draw_single_profiles(self, os.path.join(self.output_path, "single_profiles_S5870005"), profile_min_length=200, start=self.sets_frames[-1][3][0], end=self.sets_frames[-1][3][1])
+# draw_single_profiles(self, os.path.join(self.output_path, "single_profiles_S5760011"), profile_min_length=200, examples_number=200, start_from=self.sets_frames[1][-1][0])
+# draw_single_profiles(self, os.path.join(self.output_path, "single_profiles"), profile_min_length=200, examples_number=200, start_from=self.sets_frames[1][-1][0])
 
 def angle_to_nest_bias(self):
     import matplotlib.pyplot as plt
@@ -181,7 +185,7 @@ def angle_to_nest_bias(self):
 #         plt.xlabel("number of frames")
 #         plt.ylabel("density")
 #         plt.subplots_adjust(top=0.9, bottom=0.15, left=0.15, right=0.9, hspace=0.5)
-#         print("Saving figure to path: ", os.path.join(output_dir, f"ant angular velocity profiles length distribution - {attachment} (movie {title}).png"))
+#         print("Saving figure to path: ", os.path.join(output_dir, f"ant angular velocity profiles length distribution - {attachment}.png"))
 #         plt.savefig(os.path.join(output_dir, f"ant angular velocity profiles length distribution - {attachment} (movie {title}).png"))
 # # plot_profiles_length_distrubution(analysed, title=spring_type, output_dir=output_dir)
 
@@ -292,6 +296,7 @@ def plot_query_information_to_attachment_length(analysed, start=0, end=None, win
             plt.savefig(os.path.join(output_dir, f"{x_name} to attachment time - {attachment} (spring {title}).png"))
 # plot_query_information_to_attachment_length(analysed, window_size=50, title=spring_type, output_dir=ant_profiles_output_dir)
 
+
 def plot_replacements_rate(analysed, start=0, end=None, window_size=10, title="", output_dir=None):
     if end is None:
         end = analysed.angular_velocity.shape[0]
@@ -362,6 +367,7 @@ def plot_agreement_with_the_group(analysed, start=0, end=None, window_size=1, ti
             plt.clf()
             plt.plot(x, y_mean, color="purple")
             plt.fill_between(x, y_SEM_lower, y_SEM_upper, alpha=0.5, color="orange")
+
 
 def plot_query_distribution_to_angular_velocity(analysed, start=0, end=None, window_size=1, title="", output_dir=None):
     if end is None:
@@ -468,46 +474,43 @@ def plot_query_distribution_to_angular_velocity(analysed, start=0, end=None, win
 # plot_query_distribution_to_angular_velocity(analysed, start=0, end=None, window_size=50, title=spring_type, output_dir=macro_scale_output_dir)
 
 
-def plot_overall_behavior(analysed, start=0, end=None, window_size=1, title="", output_dir=None):
+def plot_correlation(analysed, start=0, end=None, output_path=None):
+    # output_dir = define_output_dir(output_dir)
+    os.makedirs(output_path, exist_ok=True)
+    title = "angular velocity to tangential force correlation"
+    end = analysed.pulling_angle.shape[0] if end is None else end
+    red, purple, blue, green, purple_brown = define_colors()
     plt.clf()
-    if end is None:
-        end = analysed.pulling_angle.shape[0]
     fig, ax1 = plt.subplots()
-    velocity_color, _, pulling_angle_color, _, _ = define_colors()
-
-    x = np.linspace(start, end, end - start)
-    angular_velocity = analysed.angular_velocity[start:end]
-    angular_velocity = pd.Series(angular_velocity).rolling(window_size).median()
-    ax1.plot(x, angular_velocity, label="moving median",color=velocity_color)
-    ax1.set_xlabel("time (frames)")
-    ax1.set_ylabel("velocity (rad/ 10_frames)", color=velocity_color)
-    ax1.tick_params(axis="y", labelcolor=velocity_color)
-
-    # plot the mean pulling angles of the springs
-    fig.suptitle(f"angular_velocity (moving median) VS net_force (moving mean) (movie:{title})")
+    fig.suptitle(title)
+    time = np.linspace(start, end, end - start) / analysed.fps
+    # plot the angular velocity
+    angular_velocity = analysed.angular_velocity[start:end] * analysed.fps
+    ax1.plot(time, angular_velocity, color=red)
+    ax1.set_xlabel("time (sec)")
+    ax1.set_ylabel("angular velocity (rad/ sec)", color=red)
+    ax1.tick_params(axis="y", labelcolor=red)
+    # plot the net tangential force
     ax2 = ax1.twinx()
-    net_force = analysed.net_force[start:end]
-    # net_force = analysed.net_magnitude[start:end]
-    net_force = pd.Series(net_force).rolling(window_size).median()
-    # moving_averages = np.convolve(y, np.ones((window_size,)) / window_size, mode='valid')
-    ax2.plot(x, net_force, color=pulling_angle_color)
-    # ax2.plot(x[window_size - 1:], net_force_moving_median, color=pulling_angle_color)
-    ax2.set_ylabel("net_force (rad/ frame)", color=pulling_angle_color)
-    ax2.tick_params(axis="y", labelcolor=pulling_angle_color)
+    net_tangential_force = analysed.net_tangential_force[start:end]
+    ax2.plot(time, net_tangential_force, color=purple)
+    ax2.set_ylabel("net_tangential_force (mN)", color=purple)
+    ax2.tick_params(axis="y", labelcolor=purple)
 
-    # add a line at y=0
-    ax2.axhline(y=0, color="black", linestyle="--")
+    ticks1 = ax1.get_yaxis().get_majorticklocs()
+    ticks2 = ax2.get_yaxis().get_majorticklocs()
+    y_min = min(min(ticks1), min(ticks2))
+    y_max = max(max(ticks1), max(ticks2))
+    ax1.set_ylim(y_min, y_max)
+    ax2.set_ylim(y_min, y_max)
+
+    # draw the zero line
     ax1.axhline(y=0, color="black", linestyle="--")
-
-    # set the y axis to have y=0 at the same place for both plots
-    ax1.set_ylim(np.nanmax(angular_velocity) * -1.1, np.nanmax(angular_velocity) * 1.1)
-    # ax2.set_ylim(np.nanmax(analysed.net_force[start:end]) * -1.1, np.nanmax(analysed.net_force[start:end]) * 1.1)
-    ax2.set_ylim(-0.001, 0.001)
+    ax2.axhline(y=0, color="black", linestyle="--")
 
     fig.tight_layout()
-    #fig size should be 1920x1080
     fig.set_size_inches(19.2, 10.8)
-    output_dir = define_output_dir(output_dir)
-    print("Saving figure to path: ", os.path.join(output_dir, f"angular_velocity VS mean_springs_extension (movie {title}).png"))
-    plt.savefig(os.path.join(output_dir, f"{title}.png"))
+    plt.show()
+    print("Saving figure to path: ", os.path.join(output_path, title+".png"))
+    plt.savefig(os.path.join(output_path, title+".png"))
 

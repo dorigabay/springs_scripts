@@ -4,10 +4,6 @@ import numpy as np
 import utils
 
 
-COLOR_CLOSING = 5
-SQUARE_ON_BORDER_RATIO_THRESHOLD = 0.4
-
-
 class PerspectiveSquares:
     def __init__(self, parameters, image, previous_detections):
         self.parameters = parameters
@@ -21,33 +17,33 @@ class PerspectiveSquares:
                 self.coordinates_transformation(squares_properties, perspective_squares_crop_coordinates, boolean_masks_unconnected)
         except:
             self.perspective_squares_properties = np.full((4, 4), np.nan)
-            self.all_perspective_squares_mask = np.full(self.parameters["resolution"], False, dtype="bool")
+            self.all_perspective_squares_mask = np.full(self.parameters["RESOLUTION"], False, dtype="bool")
             for mask, coordinates in zip(boolean_masks_unconnected, perspective_squares_crop_coordinates):
                 self.all_perspective_squares_mask[coordinates[0]:coordinates[1], coordinates[2]:coordinates[3]] = mask
 
     def get_perspective_squares_masks(self, image):
         prepared_images, perspective_squares_crop_coordinates = self.prepare_images(image)
-        boolean_masks_connected, boolean_masks_unconnected = self.mask_perspective_squares(self.parameters["colors_spaces"]["p"], prepared_images)
+        boolean_masks_connected, boolean_masks_unconnected = self.mask_perspective_squares(self.parameters["COLOR_SPACES"]["p"], prepared_images)
         if self.are_squares_on_frame_border(boolean_masks_unconnected):
             prepared_images, perspective_squares_crop_coordinates = self.prepare_images(image)
-            boolean_masks_connected, boolean_masks_unconnected = self.mask_perspective_squares(self.parameters["colors_spaces"]["p"], prepared_images)
+            boolean_masks_connected, boolean_masks_unconnected = self.mask_perspective_squares(self.parameters["COLOR_SPACES"]["p"], prepared_images)
         return boolean_masks_connected, boolean_masks_unconnected, perspective_squares_crop_coordinates
 
     def are_squares_on_frame_border(self, squares_boolean_masks):
         on_frame_border = np.full((len(squares_boolean_masks), 4), 0, dtype="uint16")
         for key, square_mask in squares_boolean_masks.items():
             on_frame_border[key] = np.array([np.sum(square_mask[0, :]), np.sum(square_mask[-1, :]), np.sum(square_mask[:, 0]), np.sum(square_mask[:, -1])])
-        return np.any(on_frame_border/self.parameters["pcm"] > SQUARE_ON_BORDER_RATIO_THRESHOLD)
+        return np.any(on_frame_border/self.parameters["PCM"] > self.parameters["SQUARE_ON_BORDER_RATIO_THRESHOLD"])
 
     def prepare_images(self, image, box_margin_factor=5):
         if (self.previous_detections["skipped_frames"] >= 25) or self.previous_detections["frame_count"] == 0:
             corners_coordinates = np.array([[0, 0],
-                                            [0, self.parameters["resolution"][1]],
-                                            [self.parameters["resolution"][0], self.parameters["resolution"][1]],
-                                            [self.parameters["resolution"][0], 0]])
-            crop_coordinates = utils.create_box_coordinates(corners_coordinates, self.parameters["ocm"] * box_margin_factor)
+                                            [0, self.parameters["RESOLUTION"][1]],
+                                            [self.parameters["RESOLUTION"][0], self.parameters["RESOLUTION"][1]],
+                                            [self.parameters["RESOLUTION"][0], 0]])
+            crop_coordinates = utils.create_box_coordinates(corners_coordinates, self.parameters["OCM"] * box_margin_factor)
         else:
-            crop_coordinates = utils.create_box_coordinates(self.previous_detections["perspective_squares_coordinates"], self.parameters["ocm"])
+            crop_coordinates = utils.create_box_coordinates(self.previous_detections["perspective_squares_coordinates"], self.parameters["OCM"])
         prepared_images = {}
         for count in range(len(crop_coordinates)):
             cropped_image = utils.crop_frame(image, crop_coordinates[count])
@@ -73,7 +69,7 @@ class PerspectiveSquares:
                 biggest_blob = np.argmax(blobs_sizes[1:]) + 1
                 boolean_mask[labels != biggest_blob] = False
             boolean_masks_unconnected[count] = boolean_mask
-            boolean_mask = utils.connect_blobs(boolean_mask, COLOR_CLOSING)
+            boolean_mask = utils.connect_blobs(boolean_mask, self.parameters["PERSPECTIVE_SQUARES_COLOR_CLOSING"])
             boolean_masks_connected[count] = boolean_mask
         return boolean_masks_connected, boolean_masks_unconnected
 
@@ -101,7 +97,7 @@ class PerspectiveSquares:
         coordinates = squares_properties[:, 0:2]  # x, y
         addition = np.copy(crop_coordinates[:, [2, 0]])  # x, y
         squares_properties[:, 0:2] = (coordinates + addition)#.astype(np.uint16)
-        squares_mask_unconnected = np.full(self.parameters["resolution"], False, dtype="bool")
+        squares_mask_unconnected = np.full(self.parameters["RESOLUTION"], False, dtype="bool")
         for count, coordinates in enumerate(crop_coordinates):
             squares_mask_unconnected[coordinates[0]:coordinates[1], coordinates[2]:coordinates[3]] = boolean_masks_unconnected[count]
         return squares_properties, squares_mask_unconnected

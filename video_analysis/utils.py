@@ -1,58 +1,53 @@
 import cv2
 import numpy as np
 import os
-import scipy.io as sio
 import pickle
 import datetime
-from skimage.morphology import binary_dilation, binary_erosion, remove_small_objects
+from PIL import Image
+import scipy.io as sio
+import scipy.cluster as sclu
 from scipy.ndimage import maximum_filter, minimum_filter, label, binary_fill_holes
+from skimage.morphology import remove_small_objects, binary_closing, binary_opening, binary_dilation, binary_erosion
 import matplotlib.pyplot as plt
-
 
 COLOR_CLOSING = np.ones((3, 3))
 
 
-def find_circle(mask):
-    # image_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    # image_gray = cv2.GaussianBlur(mask, (9, 9), 2)
-    cv2.imshow('mask', mask)
-    cv2.waitKey(0)
-    circles = cv2.HoughCircles(
-        mask,  # Input image
-        cv2.HOUGH_GRADIENT,  # Detection method (Hough Gradient method)
-        dp=1,  # Inverse ratio of the accumulator resolution to the image resolution
-        minDist=20,  # Minimum distance between detected centers of the circles
-        param1=50,  # Upper threshold for the internal Canny edge detector
-        param2=30,  # Threshold for center detection
-        minRadius=10,  # Minimum radius of the detected circles
-        maxRadius=100  # Maximum radius of the detected circles
-    )
-
-    if circles is not None:
-        # Convert the circle coordinates to integer values
-        circles = np.uint16(np.around(circles))
-
-        # Draw the detected circles on the original image
-        for circle in circles[0, :]:
-            center = (circle[0], circle[1])  # Circle center
-            radius = circle[2]  # Circle radius
-
-            # Draw the circle outline
-            cv2.circle(mask, center, radius, (0, 255, 0), 2)
-
-        # Display the image with detected circles
-        cv2.imshow('Detected Circles', mask)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-    else:
-        print("No circles were detected.")
+def get_background_color(image):
+    # convert a frame to PIL image
+    im = Image.fromarray(image)
+    colors = im.getcolors(im.size[0] * im.size[1])
+    colors = sorted(colors, key=lambda x: x[0], reverse=True)
+    background_color = colors[0][1]
+    return background_color
 
 
-def get_farthest_point(point, contour, n_points=50, inverse=False):
+def most_common_hue(image):
+    """
+    Finds the most common hue in the frame, uses clustering method.
+    :return: The commmon hue in HSV
+    """
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    ar = np.asarray(image)
+    shape = image.shape
+    ar = ar.reshape(np.product(shape[:2]), shape[2]).astype(float)
+    NUM_CLUSTERS = 5
+    codes, dist = sclu.vq.kmeans(ar, NUM_CLUSTERS)
+    vecs, dist = sclu.vq.vq(ar, codes)  # assign codes
+    counts, bins = np.histogram(vecs, len(codes))  # count occurrences
+    index_max = np.argmax(counts)  # find most frequent
+    peak = codes[index_max].astype("int")
+    # print('most frequent color (background) is {})'.format(peak))
+    return peak
+
+
+def get_farthest_point(point, contour, percentile=70, inverse=False):
     contour = swap_columns(contour.copy())
     distances = np.sqrt(np.sum(np.square(contour-point), 1))
-    # take the average of the 50 farthest points
-    farthest_points = np.argsort(distances)[-n_points:] if not inverse else np.argsort(distances)[:n_points]
+    # take the average of the points above the 80 percentile
+    percentile = np.percentile(distances, percentile) if not inverse else np.percentile(distances, 100-percentile)
+    farthest_points = np.where(distances > percentile)[0] if not inverse else np.where(distances < percentile)[0]
+    # farthest_points = np.argsort(distances)[-n_points:] if not inverse else np.argsort(distances)[:n_points]
     farthest_point = np.mean(contour[farthest_points], 0)#.astype(int)
     return farthest_point, np.max(distances)
 
@@ -92,17 +87,31 @@ def close_blobs(mask, structure):
     return mask
 
 
-def clean_mask(mask, min_size, fill_holes=True, circle_center_remove=None, circle_radius_remove=None):
+def clean_mask(mask, min_size, opening_size=None, fill_holes=True, circle_center_remove=None, circle_radius_remove=None):
+    if fill_holes:
+        mask = binary_fill_holes(mask.astype(np.uint8))
+    if opening_size is not None:
+        mask = binary_opening(mask.astype(np.uint8), np.ones((opening_size, opening_size)))
     mask = mask.astype(bool)
     if not (circle_center_remove is None or circle_radius_remove is None):
         inner_circle_mask = create_circular_mask(mask.shape, center=circle_center_remove, radius=circle_radius_remove * 0.9)
         outer_circle_mask = create_circular_mask(mask.shape, center=circle_center_remove, radius=circle_radius_remove * 2.5)
         mask[inner_circle_mask] = False
         mask[np.invert(outer_circle_mask)] = False
-    if fill_holes:
-        mask = binary_fill_holes(mask.astype(np.uint8)).astype(bool)
     mask = remove_small_blobs(mask, min_size)
     return mask
+
+
+def mask_sharper(image, keep_mask, sobel_kernel_size, gradiant_threshold, opening_size, closing_size):
+    image_gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    sobel_x = cv2.Sobel(image_gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel_size)
+    sobel_y = cv2.Sobel(image_gray, cv2.CV_64F, 0, 1, ksize=sobel_kernel_size)
+    gradient_magnitude = np.sqrt(sobel_x ** 2 + sobel_y ** 2)
+    sobel_mask = (gradient_magnitude > gradiant_threshold).astype(int)
+    sobel_mask = sobel_mask * keep_mask
+    sobel_mask = binary_opening(sobel_mask, np.ones((opening_size, opening_size))).astype(int)
+    sobel_mask = binary_closing(sobel_mask, np.ones((closing_size, closing_size))).astype(int)
+    return sobel_mask.astype(bool)
 
 
 def extend_lines(matrix, extend_by=3):
@@ -110,8 +119,10 @@ def extend_lines(matrix, extend_by=3):
     points = np.transpose(indices)
     values = matrix[indices]
     extended_matrix = np.zeros_like(matrix)
+    line_lengths = {}
     for label in np.unique(values):
-        slope, intercept = fit_line(points[values == label])
+        slope, intercept, line_length = fit_line(points[values == label])
+        line_lengths[label] = line_length
         label_points = points[values == label]
         x1 = min(label_points[:, 1]) - extend_by
         x2 = max(label_points[:, 1]) + extend_by
@@ -121,9 +132,9 @@ def extend_lines(matrix, extend_by=3):
         y_bounded_x = y[(x >= 0) & (x < matrix.shape[1])]
         y_bounded_xy = y_bounded_x[(y_bounded_x >= 0) & (y_bounded_x < matrix.shape[0])]
         x_bounded_xy = x_bounded_x[(y_bounded_x >= 0) & (y_bounded_x < matrix.shape[0])]
-        extended_matrix[y_bounded_xy,x_bounded_xy] = label
-    extended_matrix[matrix!=0] = matrix[matrix!=0]
-    return extended_matrix
+        extended_matrix[y_bounded_xy, x_bounded_xy] = label
+    extended_matrix[matrix != 0] = matrix[matrix != 0]
+    return extended_matrix, line_lengths
 
 
 def fit_line(points):
@@ -135,7 +146,26 @@ def fit_line(points):
     denominator = np.sum((x - x_mean) ** 2)
     slope = numerator / denominator
     intercept = y_mean - slope * x_mean
-    return slope, intercept
+    line_length = np.sqrt((x[0] - x[-1]) ** 2 + (y[0] - y[-1]) ** 2)
+    return slope, intercept, line_length
+
+
+def mask_object_colors(image, parameters):
+    color_spaces = [x for x in parameters["COLOR_SPACES"].keys() if x != "p"]
+    color_masks = {x: None for x in color_spaces}
+    for color_name in color_spaces:
+        boolean_mask = np.full(image.shape[:-1], False, dtype="bool")
+        for hsv_space in parameters["COLOR_SPACES"][color_name]:
+            blurred = cv2.GaussianBlur(image, (5, 5), 0)
+            hsv_image = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+            mask1 = cv2.inRange(hsv_image, hsv_space[0], hsv_space[1]).astype(bool)
+            mask2 = cv2.inRange(hsv_image, hsv_space[2], hsv_space[3]).astype(bool)
+            boolean_mask[mask1+mask2] = True
+        color_masks[color_name] = boolean_mask
+    whole_object_mask = clean_mask(np.any(np.stack(list(color_masks.values()), axis=-1), axis=-1), parameters["MIN_SIZE_FOR_WHOLE_OBJECT"], fill_holes=False)
+    color_masks["r"] = mask_sharper(image, color_masks["r"], parameters["SOBEL_KERNEL_SIZE"],
+                                          parameters["GRADIANT_THRESHOLD"], parameters["SPRINGS_ENDS_OPENING"], parameters["SPRINGS_ENDS_CLOSING"])
+    return color_masks, whole_object_mask
 
 
 def create_color_mask(image, color_spaces):
@@ -150,19 +180,91 @@ def create_color_mask(image, color_spaces):
     return binary_mask
 
 
-# def mask_object_colors(parameters, image):
-#     binary_color_masks = {x: None for x in parameters["colors_spaces"]}
-#     blurred = cv2.GaussianBlur(image, (3, 3), 0)
-#     hsv_image = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
-#     for color in parameters["colors_spaces"]:
-#         binary_mask = np.zeros(image.shape[:-1], "int")
-#         for hsv_space in parameters["colors_spaces"][color]:
-#             mask1 = cv2.inRange(hsv_image, hsv_space[0], hsv_space[1])
-#             mask2 = cv2.inRange(hsv_image, hsv_space[2], hsv_space[3])
-#             binary_mask[(mask1 + mask2) != 0] = 1
-#         binary_mask = close_blobs(binary_mask, COLOR_CLOSING)
-#         binary_color_masks[color] = binary_mask
-#     return binary_color_masks
+def correct_by_boundry(hue, boundary):
+    """
+    HSV space has boundry (179,255,255). The hue value is periodic boundry, therefore this function retain the value to within the boundries.
+    :param hue: The color in HSV
+    :param boundary: in the case of HSV it is (179,255,255)
+    :return: The values after correction.
+    """
+    boundary = boundary + 1
+    final = np.zeros(3)
+    for i in range(3):
+        if hue[i] < 0:
+            if i == 0:
+                final[i] = boundary[i] + hue[i]
+            else:
+                final[i] = 0
+        elif hue[i] >= boundary[i]:
+            if i == 0:
+                final[i] = np.abs(boundary[i] - hue[i])
+            else:
+                final[i] = boundary[i]
+        else:
+            final[i] = hue[i]
+    return final
+
+
+def no_overlap_background_sv_space(background_color, element_color_detected, margin, boundary):
+    """
+    Choosing the HSV space is a delicate work, therefore setting a margin for the SV isn't enough and there is a need to
+     make sure there is no overlap between the background color and the HSV space of the object.
+    :param background_color: Obtained 'most_common_hue'
+    :param element_color_detected: The color of the element, chosen by the user.
+    :param element_color_by_name: The element color the user provide (either 'red' or 'white') since there are different treatments for each one.
+    :param margin: The margin to create the HSV space.
+    :param boundary: The boundries of the space, (in the case of HSV it is (179,255,255))
+    :return: return the HSV space (lower color, higher color).
+    """
+    background_margin = np.array([0, 30, 20])
+    lower_bg = correct_by_boundry(background_color - background_margin, boundary)
+    upper_bg = correct_by_boundry(background_color + background_margin, boundary)
+    lower_element = correct_by_boundry(element_color_detected - margin, boundary)
+    upper_element = correct_by_boundry(element_color_detected + margin, boundary)
+    for i in range(1, 3):
+        if i == 0 or i == 2:
+            continue
+        elif background_color[i] > element_color_detected[i]:
+            if upper_element[i] > lower_bg[i]:
+                upper_element[i] = lower_bg[i]
+        elif background_color[i] < element_color_detected[i]:
+            if lower_element[i] < upper_bg[i]:
+                lower_element[i] = upper_bg[i]
+    return lower_element, upper_element
+
+
+def create_color_space_from_points(frame, points, margin, boundary, white=False):
+    """
+    Gets the points of the element (chosen by the user), the margin and the boundary and creates the HSV space,
+    which will later be used to detect the object in the detection part.
+    :param frame:
+    :param white:
+    :param points:  The points of the object, chosen by the user.
+    :param margin: The margin around the color in the point, to create the space.
+    :param boundary: The boundary of the space, in the case of HSV it is: 179,255,255.
+    :return: Lower and upper colors of the space (there are two spaces, for cases where the space cotain 0 and below (hue is periodic))
+    """
+    image_hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    background_color = most_common_hue(frame)
+    points_hsv = []
+    for point in points:
+        points_hsv.append(image_hsv[point[0], point[1], :])
+    points_hsv = np.array(points_hsv)
+    spaces = []
+    for point_hsv in points_hsv:
+        lower, upper = no_overlap_background_sv_space(background_color, point_hsv, margin, boundary)
+        if white:
+            lower[0], upper[0] = 0, 179
+        lower1, upper1, lower2, upper2 = np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3)
+        for i in range(3):
+            if lower[i] < upper[i]:
+                lower1[i], lower2[i] = lower[i], lower[i]
+                upper1[i], upper2[i] = upper[i], upper[i]
+            elif lower[i] > upper[i]:
+                lower1[i], lower2[i] = lower[i], 0
+                upper1[i], upper2[i] = boundary[i], upper[i]
+        spaces.append([lower1.astype("int"), upper1.astype("int"), lower2.astype("int"), upper2.astype("int")])
+    return spaces
 
 
 def calc_angles(points_to_measure, object_center, tip_point):
@@ -267,8 +369,8 @@ def process_image(image, alpha=2.5, beta=0, gradiant_threshold=10, sobel_kernel_
 
 
 def save_data(arrays, names, snapshot_data, parameters):
-    output_path = parameters["output_path"]
-    continue_from_last = parameters["continue_from_last_snapshot"]
+    output_path = parameters["OUTPUT_PATH"]
+    continue_from_last = parameters["CONTINUE_FROM_LAST_SNAPSHOT"]
     os.makedirs(output_path, exist_ok=True)
     if snapshot_data["frame_count"]-1 == 0:
         for d, n in zip(arrays[:], names[:]):
@@ -310,7 +412,7 @@ def convert_ants_centers_to_mathlab(output_dir):
     os.system(execution_string)
 
 
-def present_analysis_result(frame, calculations, springs, ants, video_name=" ", reduction_factor=1, waitKey=1):
+def present_analysis_result(frame, calculations, springs, ants, video_name=" ", waitKey=1):
     image_to_illustrate = frame
     for point_red in springs.spring_ends_centers:
         image_to_illustrate = cv2.circle(image_to_illustrate, point_red.astype(int), 1, (0, 0, 255), 2)
@@ -331,7 +433,7 @@ def present_analysis_result(frame, calculations, springs, ants, video_name=" ", 
             point = (int(ant_center_x), int(ant_center_y))
             image_to_illustrate = cv2.putText(image_to_illustrate, str(int(label)-1), point, cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 1)
     image_to_illustrate = cv2.circle(image_to_illustrate, springs.object_center_coordinates.astype(int), 1, (0, 0, 0), 2)
-    image_to_illustrate = cv2.circle(image_to_illustrate, springs.tip_point.astype(int), 1, (0, 255, 0), 2)
+    image_to_illustrate = cv2.circle(image_to_illustrate, springs.needle_end.astype(int), 1, (0, 255, 0), 2)
     image_to_illustrate = white_balance_bgr(crop_frame(image_to_illustrate, springs.object_crop_coordinates))
     labeled_ants_cropped = crop_frame(ants.labeled_ants, springs.object_crop_coordinates)
     num_features = np.max(labeled_ants_cropped)+1
@@ -341,33 +443,32 @@ def present_analysis_result(frame, calculations, springs, ants, video_name=" ", 
     boolean = labeled_ants_cropped != 0
     boolean = np.repeat(boolean[:, :, np.newaxis], 3, axis=2)
     overlay_image[boolean] = (mapped[boolean] * 255).astype(np.uint8)
-    # plt.imshow(overlay_image.astype(np.uint8))
-    # plt.title(video_name)
-    # plt.show()
     if waitKey != -1:
         cv2.imshow(video_name, overlay_image)
         cv2.waitKey(waitKey)
-    return image_to_illustrate
 
 
-def create_snapshot_data(parameters=None, snapshot_data=None, calculations=None, squares=None, springs=None):
+def create_snapshot_data(parameters=None, snapshot_data=None, calculations=None, squares=None, springs=None, ants=None):
     if snapshot_data is None:
-        if parameters["continue_from_last_snapshot"] and len([f for f in os.listdir(parameters["output_path"]) if f.startswith("snap_data")]) != 0:
-            snaps = [f for f in os.listdir(parameters["output_path"]) if f.startswith("snap_data")]
-            creation_time = [os.path.getctime(os.path.join(parameters["output_path"], f)) for f in snaps]
-            snapshot_data = pickle.load(open(os.path.join(parameters["output_path"], snaps[np.argmax(creation_time)]), "rb"))
-            parameters["starting_frame"] = snapshot_data["frame_count"]
+        if parameters["CONTINUE_FROM_LAST_SNAPSHOT"] and len([f for f in os.listdir(parameters["OUTPUT_PATH"]) if f.startswith("snap_data")]) != 0:
+            snaps = [f for f in os.listdir(parameters["OUTPUT_PATH"]) if f.startswith("snap_data")]
+            creation_time = [os.path.getctime(os.path.join(parameters["OUTPUT_PATH"], f)) for f in snaps]
+            snapshot_data = pickle.load(open(os.path.join(parameters["OUTPUT_PATH"], snaps[np.argmax(creation_time)]), "rb"))
+            parameters["STARTING_FRAME"] = snapshot_data["frame_count"]
             snapshot_data["current_time"] = datetime.datetime.now().strftime("%d.%m.%Y-%H%M")
         else:
-            snapshot_data = {"object_center_coordinates": parameters["object_center_coordinates"][0],
+            snapshot_data = {"object_center_coordinates": parameters["OBJECT_CENTER_COORDINATES"][0],
                              "tip_point": None, "springs_angles_reference_order": None,
-                             "sum_needle_radius": 0, "analysed_frame_count": 0, "frame_count": 0,"skipped_frames": 0,
+                             "sum_needle_radius": 0, "analysed_frame_count": 0, "frame_count": 0, "skipped_frames": 0,
                              "current_time": datetime.datetime.now().strftime("%d.%m.%Y-%H%M"),
-                             "perspective_squares_coordinates": parameters["perspective_squares_coordinates"]}
+                             "perspective_squares_coordinates": parameters["PERSPECTIVE_SQUARES_COORDINATES"],
+                             "sum_ant_size": 0, "sum_num_ants": 0}
     else:
         snapshot_data["object_center_coordinates"] = springs.object_center_coordinates[[1, 0]]
-        snapshot_data["tip_point"] = springs.tip_point
+        snapshot_data["tip_point"] = springs.needle_end
         snapshot_data["sum_needle_radius"] += int(springs.object_needle_radius)
+        snapshot_data["sum_ant_size"] += ants.sum_ant_size
+        snapshot_data["sum_num_ants"] += ants.sum_num_ants
         snapshot_data["springs_angles_reference_order"] = calculations.springs_angles_reference_order
         snapshot_data["perspective_squares_coordinates"] = swap_columns(squares.perspective_squares_properties[:, 0:2])
     return snapshot_data
@@ -378,10 +479,10 @@ def load_parameters(video_path, args):
         video_analysis_parameters = pickle.load(open(os.path.join(args["path"], "video_analysis_parameters.pickle"), 'rb'))[os.path.normpath(video_path)]
     except:
         raise ValueError("Video parameters for video: ", video_path, " not found. Please run the script with the flag --collect_parameters (-cp)")
-    video_analysis_parameters["starting_frame"] = args["starting_frame"] if args["starting_frame"] is not None else video_analysis_parameters["starting_frame"]
-    video_analysis_parameters["continue_from_last_snapshot"] = args["continue_from_last_snapshot"]
+    video_analysis_parameters["STARTING_FRAME"] = args["starting_frame"] if args["starting_frame"] is not None else video_analysis_parameters["STARTING_FRAME"]
+    video_analysis_parameters["CONTINUE_FROM_LAST_SNAPSHOT"] = args["continue_from_last_snapshot"]
     sub_dirs = os.path.normpath(video_path).split(args["path"])[1].split(".MP4")[0].split("\\")
-    video_analysis_parameters["output_path"] = os.path.join(args["path"], "analysis_output", *sub_dirs)\
+    video_analysis_parameters["OUTPUT_PATH"] = os.path.join(args["path"], "analysis_output", *sub_dirs)\
         if args["output_path"] is None else os.path.join(args["output_path"], *sub_dirs)
     return video_analysis_parameters
 
@@ -409,26 +510,10 @@ def insist_input_type(input_type, input_ask, str_list=None):
         return float(input_value)
 
 
-# def cut_access_data(video_n_frames, parameters):
-#     print("Cutting access data", parameters["output_path"])
-#     import numpy as np
-#     data_names = ["perspective_squares_coordinates_x", "perspective_squares_coordinates_y", "perspective_squares_rectangle_similarity", "perspective_squares_squareness",
-#                   "N_ants_around_springs", "size_ants_around_springs", "fixed_ends_coordinates_x", "fixed_ends_coordinates_y", "free_ends_coordinates_x",
-#                   "free_ends_coordinates_y", "needle_part_coordinates_x", "needle_part_coordinates_y",
-#                   "ants_centers_x", "ants_centers_y", "ants_attached_labels", "ants_attached_forgotten_labels"]
-#     for data_name in data_names:
-#         file = np.loadtxt(os.path.join(parameters["output_path"], data_name+".csv"), delimiter=",")
-#         np.savetxt(os.path.join(parameters["output_path"], data_name+".csv"), file[:video_n_frames], delimiter=",")
-
-
 def calc_angle_matrix(a, b, c):
     """
     Calculate the angle between vectors a->b and b->c.
     a, b, and c are all 3D arrays of the same shape, where last dimension is the x, y coordinates.
-    :param a:
-    :param b:
-    :param c:
-    :return:
     """
     ba = a - b
     bc = c - b
@@ -470,3 +555,6 @@ def apply_projective_transform(coordinates, projective_transformation_matrices):
     transformed_coordinates[np.isnan(coordinates)] = np.nan
     transformed_coordinates = transformed_coordinates.reshape(original_shape)
     return transformed_coordinates
+
+
+
