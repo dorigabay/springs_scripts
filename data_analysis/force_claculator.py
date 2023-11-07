@@ -1,11 +1,7 @@
 import os
 import pickle
 import numpy as np
-from sklearn.pipeline import make_pipeline
-from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import PolynomialFeatures
 # local imports:
-from data_analysis import utils
 from data_analysis.data_preparation import DataPreparation
 
 
@@ -17,7 +13,7 @@ class ForceCalculator(DataPreparation):
         self.data_paths = data_paths
         self.calibration_model = pickle.load(open(calibration_model_path, "rb"))
         self.calc_force()
-        # self.save_data()
+        self.save_data()
 
     def calc_force(self):
         self.force_direction = np.full(self.pulling_angle.shape, np.nan, dtype=np.float64)
@@ -50,7 +46,7 @@ class ForceCalculator(DataPreparation):
             np.savez_compressed(os.path.join(set_save_path, "force_direction.npz"), self.force_direction[s:e])
             np.savez_compressed(os.path.join(set_save_path, "force_magnitude.npz"), self.force_magnitude[s:e])
             np.savez_compressed(os.path.join(set_save_path, "tangential_force.npz"), self.tangential_force[s:e])
-            np.savez_compressed(os.path.join(set_save_path, "missing_info.npz"), np.isnan(self.free_ends_coordinates[s:e, :, :].any(axis=2)))
+            np.savez_compressed(os.path.join(set_save_path, "missing_info.npz"), self.missing_info[s:e])
         pickle.dump(self.sets_frames, open(os.path.join(self.output_path, "sets_frames.pkl"), "wb"))
         pickle.dump(self.sets_video_paths, open(os.path.join(self.output_path, "sets_video_paths.pkl"), "wb"))
         print("Saved data to: ", self.output_path)
@@ -58,64 +54,11 @@ class ForceCalculator(DataPreparation):
 
 if __name__ == "__main__":
     spring_type = "plus_0.1"
-    video_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\1-videos\\summer_2023\\calibration\\{spring_type}\\"
-    data_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\calibration\\{spring_type}\\"
-    data_paths = [root for root, dirs, files in os.walk(data_dir) if not dirs]
-    data_paths = data_paths[:1]
-    output_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\calibration\\{spring_type}\\"
-    calibration_model_path = os.path.join("Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\calibration\\", spring_type, "calibration_model.pkl")
-    self = ForceCalculator(video_dir, data_paths, output_path, calibration_model_path, n_springs=1)
-
-
-
-    # def create_bias_correction_models(self, data):
-    #     y_length = np.linalg.norm(data.free_ends_coordinates - data.fixed_ends_coordinates, axis=2).flatten()
-    #     y_angle = utils.calc_pulling_angle_matrix(data.fixed_ends_coordinates, data.object_center_repeated, data.free_ends_coordinates).flatten()
-    #     angles_to_nest = np.expand_dims(data.fixed_end_angle_to_nest, axis=2)
-    #     position_from_center = data.object_center_coordinates-data.video_resolution/2
-    #     position_from_center = np.expand_dims(position_from_center, axis=1).repeat(20, axis=1)
-    #     position_from_center_x = position_from_center[:, :, 0]
-    #     position_from_center_y = position_from_center[:, :, 1]
-    #     X = np.vstack((np.sin(angles_to_nest).flatten(), np.cos(angles_to_nest).flatten(), position_from_center_x.flatten(),  position_from_center_y.flatten())).T
-    #     # X = np.concatenate((np.sin(angles_to_nest), np.cos(angles_to_nest), position_from_center), axis=2).flatten()
-    #     idx = data.rest_bool.flatten()
-    #     not_nan_idx = ~(np.isnan(y_angle) + np.isnan(X).any(axis=1)) * idx
-    #     X_fit = X[not_nan_idx]
-    #     y_length_fit = y_length[not_nan_idx].reshape(-1, 1)
-    #     y_angle_fit = y_angle[not_nan_idx].reshape(-1, 1)
-    #     self.model_length = make_pipeline(PolynomialFeatures(degree=1), LinearRegression())
-    #     self.model_angle = make_pipeline(PolynomialFeatures(degree=1), LinearRegression())
-    #     self.model_length.fit(X_fit, y_length_fit)
-    #     self.model_angle.fit(X_fit, y_angle_fit)
-
-    # def create_bias_correction_models(self, data):
-    #     y_length = np.linalg.norm(data.free_ends_coordinates - data.fixed_ends_coordinates, axis=2)
-    #     y_angle = utils.calc_pulling_angle_matrix(data.fixed_ends_coordinates, data.object_center_repeated, data.free_ends_coordinates)
-    #     angles_to_nest = np.expand_dims(data.fixed_end_angle_to_nest, axis=2)
-    #     X = np.concatenate((np.sin(angles_to_nest), np.cos(angles_to_nest)), axis=2)
-    #     # not_nan_idx = ~(np.isnan(y_angle).flatten() + np.isnan(X).any(axis=1).flatten() + np.isnan(y_length).flatten())
-    #     self.model_length = []
-    #     self.model_angle = []
-    #     for col in range(y_length.shape[1]):
-    #         not_nan_idx = ~(np.isnan(y_angle[:, col]) + np.isnan(X[:, col]).any(axis=1) + np.isnan(y_length[:, col]))
-    #         X_fit = X[not_nan_idx, col, :]
-    #         y_length_fit = y_length[not_nan_idx, col:col+1]
-    #         y_angle_fit = y_angle[not_nan_idx, col:col+1]
-    #         model_length = make_pipeline(PolynomialFeatures(degree=1), LinearRegression())
-    #         model_angle = make_pipeline(PolynomialFeatures(degree=1), LinearRegression())
-    #         self.model_angle.append(model_angle.fit(X_fit, y_angle_fit))
-    #         self.model_length.append(model_length.fit(X_fit, y_length_fit))
-
-    # def norm_values(self, explained, data, model):
-    #     angles_to_nest = np.expand_dims(data.fixed_end_angle_to_nest, axis=2)
-    #     position_from_center = data.object_center_coordinates-data.video_resolution/2
-    #     position_from_center = np.expand_dims(position_from_center, axis=1).repeat(20, axis=1)
-    #     X = np.concatenate((np.sin(angles_to_nest), np.cos(angles_to_nest), position_from_center), axis=2)
-    #     # X = np.concatenate((np.sin(angles_to_nest), np.cos(angles_to_nest)), axis=2)
-    #     idx = data.rest_bool
-    #     not_nan_idx = ~(np.isnan(explained) + np.isnan(X).any(axis=2)) * idx
-    #     prediction_matrix = np.zeros(explained.shape)
-    #     for col in range(explained.shape[1]):
-    #         X_fit = X[not_nan_idx[:, col], col, :]
-    #         prediction_matrix[not_nan_idx[:, col], col] = model.predict(X_fit).flatten()
-    #     return prediction_matrix
+    video_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\1-videos\\summer_2023\\experiment\\{spring_type}\\"
+    video_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\experiment\\{spring_type}_final\\"
+    data_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\experiment\\{spring_type}_final\\"
+    calibration_output_path = "Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\calibration\\"
+    calibration_model_path = os.path.join(calibration_output_path, spring_type, "calibration_model.pkl")
+    video_analysis_paths = [root for root, dirs, files in os.walk(video_analysis_dir) if not dirs]
+    video_analysis_paths = video_analysis_paths[:1]
+    self = ForceCalculator(video_dir, video_analysis_paths, data_analysis_dir, calibration_model_path)

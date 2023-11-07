@@ -56,7 +56,7 @@ def plot_ant_profiles(analysed, output_dir, window_size=11, title="", profile_si
     os.makedirs(output_dir, exist_ok=True)
     #plot number of cases
     plt.clf()
-    y = np.sum(analysed.single_ant_profiles, axis=0)
+    y = np.sum(analysed.attaching_single_ant_profiles, axis=0)
     y = y[y > analysed.fps]
     x = np.arange(0, y.shape[0], 1)/analysed.fps
     plt.plot(x, y, color="purple")
@@ -64,68 +64,79 @@ def plot_ant_profiles(analysed, output_dir, window_size=11, title="", profile_si
     plt.xlabel("seconds")
     print("Saving figure to path: ", os.path.join(output_dir, f"number of profiles.png"))
     plt.savefig(os.path.join(output_dir, f"number of profiles.png"))
-
-    force_magnitude_copy = np.abs(analysed.profiled_force_magnitude)
+    # plot profiles of force magnitude and tangential force
+    force_magnitude = np.abs(analysed.profiled_force_magnitude)
     tangential_force = np.abs(analysed.profiled_tangential_force)
-    for y_ori, y_title in zip([force_magnitude_copy, tangential_force], ["force magnitude", "tangential force"]):
-    # for y_ori, y_title in zip([tangential_force], ["tangential force"]):
-        for attachment in ["first attachment", "all but first attachment", "all attachments"]:
-            if attachment == "first attachment":
-                bool = np.copy(analysed.single_ant_profiles)
-                bool[analysed.profiles_precedence != 1, :] = False
-                y = np.copy(y_ori)
-            elif attachment == "all but first attachment":
-                bool = np.copy(analysed.single_ant_profiles)
-                bool[analysed.profiles_precedence == 1, :] = False
-                y = np.copy(y_ori)
+    for y_ori, y_title in zip([force_magnitude, tangential_force], ["force magnitude", "tangential force"]):
+        for precedence in ["first attachment", "all but first attachment", "all attachments"]:
+            if precedence == "first attachment":
+                attaching_bool = np.copy(analysed.attaching_single_ant_profiles)
+                detaching_bool = np.copy(analysed.detaching_single_ant_profiles)
+                attaching_bool[analysed.ant_profiles[:, 4] != 1, :] = False
+                detaching_bool[analysed.ant_profiles[:, 4] != 1, :] = False
+            elif precedence == "all but first attachment":
+                attaching_bool = np.copy(analysed.attaching_single_ant_profiles)
+                detaching_bool = np.copy(analysed.detaching_single_ant_profiles)
+                attaching_bool[analysed.ant_profiles[:, 4] == 1, :] = False
+                detaching_bool[analysed.ant_profiles[:, 4] == 1, :] = False
             else:
-                bool = np.copy(analysed.single_ant_profiles)
-                y = np.copy(y_ori)
-            bool[~bool[:, profile_size], :] = False
-            bool[:, profile_size+1:] = False
-            y[~bool] = np.nan
-            y[y == 0] = np.nan
-            y_mean = np.nanmean(y, axis=0)
-            y_SEM_upper = y_mean + np.nanstd(y, axis=0) / np.sqrt(np.sum(~np.isnan(y), axis=0))
-            y_SEM_lower = y_mean - np.nanstd(y, axis=0) / np.sqrt(np.sum(~np.isnan(y), axis=0))
-            y_not_nan = ~np.isnan(y_mean)
-            y_mean,y_SEM_upper,y_SEM_lower = y_mean[y_not_nan],y_SEM_upper[y_not_nan],y_SEM_lower[y_not_nan]
-            x = np.arange(0, y_mean.shape[0], 1)/analysed.fps
-            # print(y_mean.shape, y_SEM_upper.shape, y_SEM_lower.shape, x.shape)
-            plt.clf()
-            plt.plot(x, savgol_filter(y_mean, window_size, 3), color="purple")
-            plt.fill_between(x, savgol_filter(y_SEM_lower, window_size, 3),
-                             savgol_filter(y_SEM_upper, window_size, 3), alpha=0.5, color="orange")
-            plt.title(f"ant {y_title} profiles")
-            plt.xlabel("seconds")
-            plt.ylabel(f"{y_title} (mN)")
-            plt.subplots_adjust(top=0.9, bottom=0.15, left=0.15, right=0.9, hspace=0.5)
-            print("Saving figure to path: ", os.path.join(output_dir, f"ant {y_title} profiles - {attachment}.png"))
-            plt.savefig(os.path.join(output_dir, f"ant {y_title} profiles - {attachment}.png"))
+                attaching_bool = np.copy(analysed.attaching_single_ant_profiles)
+                detaching_bool = np.copy(analysed.detaching_single_ant_profiles)
+            attaching_bool[~attaching_bool[:, profile_size], :] = False
+            detaching_bool[~detaching_bool[:, -profile_size-1], :] = False
+            attaching_bool[:, profile_size+1:] = False
+            detaching_bool[:, :-profile_size] = False
+            attaching_y = np.copy(y_ori)
+            detaching_y = np.copy(y_ori)[analysed.reverse_argsort]
+            attaching_y[~attaching_bool] = np.nan
+            detaching_y[~detaching_bool] = np.nan
+            for y, name in zip([attaching_y, detaching_y], ["attaching", "detaching"]):
+                y_mean = np.nanmean(y, axis=0)
+                y_SEM_upper = y_mean + np.nanstd(y, axis=0) / np.sqrt(np.sum(~np.isnan(y), axis=0))
+                y_SEM_lower = y_mean - np.nanstd(y, axis=0) / np.sqrt(np.sum(~np.isnan(y), axis=0))
+                y_not_nan = ~np.isnan(y_mean)
+                y_mean,y_SEM_upper,y_SEM_lower = y_mean[y_not_nan],y_SEM_upper[y_not_nan],y_SEM_lower[y_not_nan]
+                x = np.arange(0, y_mean.shape[0], 1)/analysed.fps
+                plt.clf()
+                plt.plot(x, savgol_filter(y_mean, window_size, 3), color="purple")
+                plt.fill_between(x, savgol_filter(y_SEM_lower, window_size, 3), savgol_filter(y_SEM_upper, window_size, 3), alpha=0.5, color="orange")
+                plt.title(f"ant {y_title} profiles")
+                plt.xlabel("seconds")
+                plt.ylabel(f"{y_title} (mN)")
+                plt.subplots_adjust(top=0.9, bottom=0.15, left=0.15, right=0.9, hspace=0.5)
+                print("Saving figure to path: ", os.path.join(output_dir, f"{name} ant {y_title} profiles - {precedence}.png"))
+                plt.savefig(os.path.join(output_dir, f"{name} ant {y_title} profiles - {precedence}.png"))
 # plot_ant_profiles(self, output_dir=os.path.join(output_dir,"profiles"), window_size=11, profile_size=200)
 
 
 def draw_single_profiles(analysed, output_path, profile_min_length=200, examples_number=-1, start=0, end=None):
     profiles_idx = analysed.ant_profiles[:, 2] >= start
     profiles_idx *= analysed.ant_profiles[:, 3] < end if end is not None else np.ones_like(profiles_idx)
-    occasions = ((analysed.ant_profiles[:, 3] - analysed.ant_profiles[:, 2]) > profile_min_length) * ~np.any(analysed.profiled_check, axis=1)
+    occasions = np.sum(analysed.attaching_single_ant_profiles, axis=1) >= 200
+    # occasions = np.sum(analysed.detaching_single_ant_profiles, axis=1) >= 200
     occasions = occasions * profiles_idx
     print("Number of found profiles: ", np.sum(occasions))
     profiles = np.arange(len(occasions))[occasions]
     os.makedirs(output_path, exist_ok=True)
-    examples_number = np.sum(occasions) if examples_number == -1 else examples_number
+    # examples_number = np.sum(occasions) if examples_number == -1 else examples_number
     # profiles = np.random.choice(profiles, size=examples_number, replace=False)
+    force_magnitude = analysed.profiled_force_magnitude
+    # force_magnitude = analysed.profiled_force_magnitude[analysed.reverse_argsort]
     for i in profiles:
-        angular_force = analysed.profiled_tangential_force[i, :]
-        force_magnitude = analysed.profiled_force_magnitude[i, :]
+        # angular_force = analysed.profiled_tangential_force[i, :]
+        # force_magnitude = analysed.profiled_force_magnitude[i, :profile_min_length]
+        force_magnitude_i = force_magnitude[i, analysed.attaching_single_ant_profiles[i]][:profile_min_length]
+        # force_magnitude_i = force_magnitude[i, analysed.detaching_single_ant_profiles[i]][-profile_min_length:]
         info = analysed.ant_profiles[i, :]
-        x = np.arange(np.sum(~np.isnan(force_magnitude)))
-        y = force_magnitude[~np.isnan(force_magnitude)]
+        x = np.arange(np.sum(~np.isnan(force_magnitude_i)))
+        y = force_magnitude_i[~np.isnan(force_magnitude_i)]
         plt.clf()
         plt.plot(x, y, color="purple")
-        plt.xlim(0, profile_min_length)
+        # plt.xlim(0, profile_min_length)
         plt.title(f"spring: {info[1]}, start: {info[2]-start}, end: {info[3]-start}, precedence: {info[4]}")
         plt.savefig(os.path.join(output_path, f"profile_{i}.png"))
+# draw_single_profiles(self, os.path.join(self.output_path, "detaching_single_profiles_S5760003"), profile_min_length=200,
+#                      examples_number=200, start=self.sets_frames[0][0][0], end=self.sets_frames[0][0][1])
 # draw_single_profiles(self, os.path.join(self.output_path, "single_profiles_S5870005"), profile_min_length=200, start=self.sets_frames[-1][3][0], end=self.sets_frames[-1][3][1])
 # draw_single_profiles(self, os.path.join(self.output_path, "single_profiles_S5760011"), profile_min_length=200, examples_number=200, start_from=self.sets_frames[1][-1][0])
 # draw_single_profiles(self, os.path.join(self.output_path, "single_profiles"), profile_min_length=200, examples_number=200, start_from=self.sets_frames[1][-1][0])
@@ -159,7 +170,7 @@ def angle_to_nest_bias(self):
 # def plot_profiles_length_distrubution(analysed, window_size=1, title="", output_dir=None):
 #     for attachment in ["first attachment", "all but first attachment"]:
 #         if attachment == "first attachment":
-#             bool = np.copy(analysed.single_ant_profiles)
+#             bool = np.copy(analysed.attaching_single_ant_profiles)
 #             bool[analysed.all_profiles_precedence != 1, :] = False
 #         else:
 #             bool = np.copy(analysed.single_ant_profiles)

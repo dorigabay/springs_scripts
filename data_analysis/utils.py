@@ -215,11 +215,13 @@ def apply_projective_transform(coordinates, projective_transformation_matrices):
 def wait_for_existance(path, file_name):
     existing_attempts = 0
     while not os.path.exists(os.path.join(path, file_name)):
-        print(f"\rWaiting for external program to finish... (waited for {existing_attempts * 10} seconds already)")
+        print(f"\rWaiting for external program to finish... (waited for {existing_attempts * 10} seconds already)", end="")
         time.sleep(10)
         existing_attempts += 1
         if existing_attempts > 10080:  # 3 hours
             raise ValueError("matlab is stuck, please check")
+    if os.path.exists(os.path.join(path, file_name)) and existing_attempts > 0:
+        time.sleep(300)
 
 
 def project_plane_perspective(coordinates, params):

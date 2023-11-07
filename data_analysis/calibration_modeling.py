@@ -24,7 +24,7 @@ class CalibrationModeling(DataPreparation):
         super().__init__(data_paths, video_path, n_springs=1)
         self.zero_weight_dir = data_paths[np.where(np.array(self.weights) == 0)[0][0]]
         self.concat_calib_data()
-        self.plot()
+        # self.plot()
         self.create_calibration_model()
 
     def load_weights(self, weights=None):
@@ -43,10 +43,10 @@ class CalibrationModeling(DataPreparation):
         self.calib_data[self.calib_data[:, 2] < 0, 0] *= -1
         self.calib_data[self.calib_data[:, 2] < 0, 2] *= -1
         self.calib_data[self.calib_data[:, 0] < 0, :] = np.nan
-        self.calib_data = self.remove_bin_outliers(self.calib_data, self.video_n_frames, bins=300, percentile=5, max_angle_value=np.pi*(13/24))
+        self.calib_data = self.remove_bin_outliers(self.calib_data, self.video_n_frames, bins=200, percentile=10, max_angle_value=np.pi*(13/24))
         self.calib_data = self.calib_data[~np.isnan(self.calib_data).any(axis=1)]
         self.calib_data = np.concatenate((self.calib_data, self.calib_data), axis=0)
-        self.calib_data[0:self.calib_data.shape[0]//2, [0, 2]] *= -1
+        # self.calib_data[0:self.calib_data.shape[0]//2, [0, 2]] *= -1
 
     def remove_bin_outliers(self, data, frames_per_weight, bins=200, percentile=5, max_angle_value=np.pi*(13/24)):
         # max_angle_value = np.nanpercentile(data[~(data[:, 3] == 0), 2], 90)

@@ -26,10 +26,9 @@ class DataPreparation:
         self.rearrange_perspective_squares_order()
         self.rearrange_springs_order()
         self.create_video_sets()
-        self.rearrange_springs_order_per_frame()
         self.n_ants_processing()
         self.correct_perspectives(QUALITY_THRESHOLD)
-        # self.correct_object_center()
+        self.correct_object_center()
         self.calc_distances()
         self.repeat_values()
         self.calc_angle()
@@ -57,6 +56,7 @@ class DataPreparation:
         cap = cv2.VideoCapture(glob.glob(os.path.join(self.videos_path, "**", "*.MP4"), recursive=True)[0])
         self.video_resolution = np.array((int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))))
         cap.release()
+        self.missing_info = np.isnan(self.free_ends_coordinates).any(axis=2)
 
     def rearrange_springs_order(self, threshold=10):
         self.video_continuity_score = np.zeros(len(self.video_n_frames))
@@ -94,28 +94,28 @@ class DataPreparation:
                 self.sets_frames.append([[frame_count, frame_count + self.video_n_frames[count] - 1]])
                 self.sets_video_paths.append([self.data_paths[count]])
 
-    def rearrange_springs_order_per_frame(self, threshold=10):
-        import itertools
-        springs_order = np.arange(self.n_springs)
-        for set_idx in self.sets_frames:
-            s, e = set_idx[0][0], set_idx[-1][1] + 1
-            for frame in range(s + 1, e):
-                print(f"\rframe {frame}", end="")
-                distances = np.linalg.norm(self.fixed_ends_coordinates[frame, :] - self.fixed_ends_coordinates[frame-1, :], axis=1)
-                mismatched_springs = distances > threshold
-                if sum(mismatched_springs) >= 2:
-                    mismatched_springs = springs_order[mismatched_springs+np.isnan(distances)]
-                    print(f"distances: {distances}")
-                    permutations = list(itertools.permutations(mismatched_springs))
-                    for permutation in permutations:
-                        permutation = list(permutation)
-                        print(permutation)
-                        distances = np.linalg.norm(self.fixed_ends_coordinates[frame, permutation] - self.fixed_ends_coordinates[frame-1, mismatched_springs], axis=1)
-                        if np.sum(distances > threshold) < 2:
-                            self.N_ants_around_springs[frame, mismatched_springs] = self.N_ants_around_springs[frame, permutation]
-                            self.size_ants_around_springs[frame, mismatched_springs] = self.size_ants_around_springs[frame, permutation]
-                            self.fixed_ends_coordinates[frame, mismatched_springs] = self.fixed_ends_coordinates[frame, permutation]
-                            self.free_ends_coordinates[frame, mismatched_springs] = self.free_ends_coordinates[frame, permutation]
+    # def rearrange_springs_order_per_frame(self, threshold=10):
+    #     import itertools
+    #     springs_order = np.arange(self.n_springs)
+    #     for set_idx in self.sets_frames:
+    #         s, e = set_idx[0][0], set_idx[-1][1] + 1
+    #         for frame in range(s + 1, e):
+    #             print(f"\rframe {frame}", end="")
+    #             distances = np.linalg.norm(self.fixed_ends_coordinates[frame, :] - self.fixed_ends_coordinates[frame-1, :], axis=1)
+    #             mismatched_springs = distances > threshold
+    #             if sum(mismatched_springs) >= 2:
+    #                 mismatched_springs = springs_order[mismatched_springs+np.isnan(distances)]
+    #                 print(f"distances: {distances}")
+    #                 permutations = list(itertools.permutations(mismatched_springs))
+    #                 for permutation in permutations:
+    #                     permutation = list(permutation)
+    #                     print(permutation)
+    #                     distances = np.linalg.norm(self.fixed_ends_coordinates[frame, permutation] - self.fixed_ends_coordinates[frame-1, mismatched_springs], axis=1)
+    #                     if np.sum(distances > threshold) < 2:
+    #                         self.N_ants_around_springs[frame, mismatched_springs] = self.N_ants_around_springs[frame, permutation]
+    #                         self.size_ants_around_springs[frame, mismatched_springs] = self.size_ants_around_springs[frame, permutation]
+    #                         self.fixed_ends_coordinates[frame, mismatched_springs] = self.fixed_ends_coordinates[frame, permutation]
+    #                         self.free_ends_coordinates[frame, mismatched_springs] = self.free_ends_coordinates[frame, permutation]
 
     def create_missing_perspective_squares(self, quality_threshold):
         real_squares = self.perspective_squares_quality < quality_threshold
@@ -163,25 +163,16 @@ class DataPreparation:
             correct_needle_tip_repeated = utils.project_plane_perspective(needle_tip_repeated, needle_tip_params)
             spring_length = np.linalg.norm(correct_fixed_end_coordinates - reference_coordinates, axis=2)
             spring_length_needle = np.linalg.norm(correct_needle_tip_repeated - reference_coordinates, axis=2)
-            # pulling_angle = utils.calc_pulling_angle_matrix(correct_fixed_end_coordinates, correct_needle_tip_repeated, reference_coordinates)
             length_score = np.mean(np.nanstd(spring_length, axis=0) / np.nanmean(spring_length, axis=0))
             length_score_needle = np.mean(np.nanstd(spring_length_needle, axis=0) / np.nanmean(spring_length_needle, axis=0))
-            # angle_score = np.mean(np.nanstd(pulling_angle, axis=0) / np.nanmean(pulling_angle, axis=0))
             mean_score = np.mean([length_score, length_score_needle])
             return mean_score
-
         needle_tip_repeated = np.copy(np.repeat(needle_tip_coordinates[:, np.newaxis, :], reference_coordinates.shape[1], axis=1))
         if np.sum(self.rest_bool) > 0:
             fixed_end_coordinates[~self.rest_bool] = np.nan
             needle_tip_repeated[~self.rest_bool] = np.nan
         x0 = np.array([0.0025, 0.0025, 3840/2, 2160/2])
-        res = minimize(loss_func, x0=x0)#, method='nelder-mead', options={'xatol': 1e-8, 'disp': True})
-        # frame_grid = np.meshgrid(np.arange(self.video_resolution[0], step=100), np.arange(self.video_resolution[1], step=100))
-        # plt.scatter(frame_grid[0], frame_grid[1], alpha=0.0001)
-        # plt.scatter(res.x[1], res.x[2], c='r')
-        # plt.scatter(self.object_center_coordinates[0, 0], self.object_center_coordinates[0, 1], c='g')
-        # plt.gca().invert_yaxis()
-        # plt.show()
+        res = minimize(loss_func, x0=x0)
         print("params: ", res.x, "loss: ", res.fun)
         return res.x
 
@@ -189,20 +180,26 @@ class DataPreparation:
         if not self.calib_mode:
             for count, set_idx in enumerate(self.sets_frames):
                 start, end = set_idx[0][0], set_idx[-1][1]
-                undetected_springs_for_long_time = utils.filter_continuity(utils.convert_bool_to_binary(np.isnan(self.fixed_ends_coordinates[start:end, :, 0])), min_size=8)
-                self.N_ants_around_springs[start:end, :] = np.round(
-                    utils.interpolate_data(self.N_ants_around_springs[start:end, :], utils.find_cells_to_interpolate(self.N_ants_around_springs[start:end, :])))
-                self.N_ants_around_springs[start:end, :][
-                    np.isnan(self.N_ants_around_springs[start:end, :])] = 0
+                # undetected_springs_for_long_time = utils.filter_continuity(self.missing_info[start:end, :].astype(int), min_size=8)
+                interpolation_boolean = utils.filter_continuity(self.missing_info[start:end, :].astype(int), max_size=8)
+                self.N_ants_around_springs[start:end, :] = np.round(utils.interpolate_data(self.N_ants_around_springs[start:end, :], interpolation_boolean))
+                # self.N_ants_around_springs[start:end, :][np.isnan(self.N_ants_around_springs[start:end, :])] = 0
                 self.N_ants_around_springs[start:end, :] = utils.smooth_columns(self.N_ants_around_springs[start:end, :])
-                self.N_ants_around_springs[start:end, :][undetected_springs_for_long_time] = np.nan
-                all_small_attaches = np.zeros(self.N_ants_around_springs[start:end, :].shape)
-                for n in np.unique(self.N_ants_around_springs[start:end, :])[1:]:
-                    if not np.isnan(n):
-                        short_attaches = utils.filter_continuity(self.N_ants_around_springs[start:end, :] == n, max_size=30)
-                        all_small_attaches[short_attaches] = 1
-                self.N_ants_around_springs[start:end, :] = \
-                    np.round(utils.interpolate_data(self.N_ants_around_springs[start:end, :], all_small_attaches.astype(bool)))
+                # self.N_ants_around_springs[start:end, :][undetected_springs_for_long_time] = np.nan
+                # all_small_attaches = np.zeros(self.N_ants_around_springs[start:end, :].shape)
+                for n in reversed(range(1, int(np.nanmax(self.N_ants_around_springs[start:end, :]))+1)):
+                    short_attaches = utils.filter_continuity(self.N_ants_around_springs[start:end, :] == n, max_size=25)
+                    self.N_ants_around_springs[start:end, :] = np.round(utils.interpolate_data(self.N_ants_around_springs[start:end, :], short_attaches))
+                    # all_small_attaches[short_attaches] = 1
+
+                path = "Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\experiment\\plus_0.1_final\\13.8\\S5760003"
+                N_ants_around_springs = np.loadtxt(os.path.join(path, "N_ants_around_springs.csv"), delimiter=",")
+                interpolation_boolean = utils.filter_continuity(self.missing_info, max_size=8)
+                N_ants_around_springs = np.round(utils.interpolate_data(N_ants_around_springs, interpolation_boolean))
+                N_ants_around_springs = utils.smooth_columns(N_ants_around_springs)
+                for n in reversed(range(1, int(np.nanmax(N_ants_around_springs)) + 1)):
+                    short_attaches = utils.filter_continuity(N_ants_around_springs == n, max_size=25)
+                    N_ants_around_springs = np.round(utils.interpolate_data(N_ants_around_springs, short_attaches))
             self.rest_bool = self.N_ants_around_springs == 0
         else:
             self.rest_bool = np.full((self.N_ants_around_springs.shape[0], 1), False)
@@ -216,9 +213,10 @@ class DataPreparation:
         if not self.calib_mode:
             object_center_coordinates_approximated = np.full(self.object_center_coordinates.shape, np.nan)
             for count, points in enumerate(self.fixed_ends_coordinates):
+                print(f"\r{count}", end="")
                 x0 = np.array([np.nanmedian(points[:, 0]), np.nanmedian(points[:, 1])])
                 res = minimize(loss, x0=x0)#, method='nelder-mead', options={'xatol': 1e-8, 'disp': True})
-                print(f"\r{count}", end="")
+                # print(f"\r{count}", end="")
                 object_center_coordinates_approximated[count, :] = res.x
             self.object_center_coordinates = object_center_coordinates_approximated
 
@@ -236,7 +234,6 @@ class DataPreparation:
         self.tip_nest_direction = np.repeat(np.stack((self.needle_tip_coordinates[:, np.newaxis, 0], self.needle_tip_coordinates[:, np.newaxis, 1] - 500), axis=2), self.n_springs, axis=1)
         self.object_center_repeated = np.copy(np.repeat(self.object_center_coordinates[:, np.newaxis, :], self.n_springs, axis=1))
         self.needle_tip_repeated = np.copy(np.repeat(self.needle_tip_coordinates[:, np.newaxis, :], self.n_springs, axis=1))
-        # self.object_center_coordinates = self.correct_object_center()
         self.object_center_repeated = np.repeat(self.object_center_coordinates[:, np.newaxis, :], self.n_springs, axis=1)
         self.object_nest_direction = np.stack((self.object_center_repeated[:, :, 0], self.object_center_repeated[:, :, 1] - 500), axis=2)
 

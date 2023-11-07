@@ -71,16 +71,22 @@ if __name__ == '__main__':
     video_parameters = [utils.load_parameters(video_path, args) for video_path in videos]
     print("Number of processors exist:", cpu_count())
     print("Number of processors asked for this task:", str(args["nCPU"]))
-    pool = Pool(args["nCPU"])
-    pool.starmap(main, zip(videos, video_parameters))
-    pool.close()
-    pool.join()
+    # pool = Pool(args["nCPU"])
+    # pool.starmap(main, zip(videos, video_parameters))
+    # pool.close()
+    # pool.join()
     print("-"*80)
     print("Finished processing all videos in directory: ", args["path"])
 
 
 # python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\calibration\plus_0.1\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\calibration\plus_0.1\ -cp
-# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.1\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.1\ -cp
+# python video_analysis\main.py --path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.2\ --output_path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.2\ -cp
+# python video_analysis\main.py --path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.1\ --output_path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.1\ -cp
+# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.1\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.1_final_final\ -con
+
+# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.2\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.2\ -cp
+# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.3\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.3\ -cp
+# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.5\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.5\ -cp
 # python video_analysis\main.py --path Y:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.1\ --output_path Y:\Dor_Gabay\Trash\_lior_test\ -cp
 
 # python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.2\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.2\ -cp

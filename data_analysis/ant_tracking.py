@@ -2,11 +2,8 @@ import os
 import numpy as np
 import pickle
 import scipy.io as sio
-from scipy.ndimage import binary_closing
 import subprocess
 from scipy.ndimage import label
-from multiprocessing import Pool
-from itertools import repeat
 # local imports:
 from data_analysis import utils
 
@@ -19,12 +16,9 @@ class AntTracking:
         self.set_frames = set_frames
         self.sub_dirs_names = [os.path.basename(os.path.split(os.path.normpath(path))[-1]) for path in data_paths]
         self.output_path = os.path.join(output_path, f"{self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]}")
-        # print(f"Tracking ants for {self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]}")
         self.first_tracking_calculation()
         self.correct_tracked_ants()
         self.assign_ants_to_springs()
-        # self.remove_artificial_cases()
-        # self.connect_occasions()
         self.create_ant_profiles()
         print(f"\rFinished tracking ants for {self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]}")
 
@@ -53,11 +47,11 @@ class AntTracking:
 
     def correct_tracked_ants(self):
         """
-        This function removes all new labels that were create inside the frame, and not on the boundries (10% of the frame)
+        This function removes all new labels that were create inside the frame, and not on the boundaries (10% of the frame)
         """
         if self.restart or not os.path.exists(os.path.join(self.output_path, "tracking_data_corrected.mat")):
             utils.wait_for_existance(self.output_path, "tracking_data.mat")
-            print(f"Correcting tracked ants (Stage 3/7)... ({self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]})")
+            print(f"\nCorrecting tracked ants (Stage 3/7)... ({self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]})")
             tracked_ants = sio.loadmat(os.path.join(self.output_path, "tracking_data.mat"))["tracked_blobs_matrix"]
             num_of_frames = tracked_ants.shape[2]
 
@@ -72,12 +66,14 @@ class AntTracking:
             disappeared_labels_partners = []
             disappeared_labels_partners_relative_distance = []
             disappeared_labels_partners_idx = []
-            for frame in range(1,num_of_frames-1):
+            for frame in range(1, num_of_frames-1):
                 print("\r frame: ", frame, end="")
-                if frame+20>=num_of_frames:
+                if frame+20 >= num_of_frames:
                     break
-                if frame >= 11: min_frame = frame - 10
-                else: min_frame = 1
+                if frame >= 11:
+                    min_frame = frame - 10
+                else:
+                    min_frame = 1
                 max_frame = frame + 15000
                 labels_in_window = set(tracked_ants[:,2,min_frame:frame+20].flatten())
                 labels_scanned_for_appearing = set(tracked_ants[:,2,min_frame-1].flatten())
@@ -145,7 +141,7 @@ class AntTracking:
             return False
 
     def assign_ants_to_springs(self):
-        if self.restart or not os.path.exists(os.path.join(self.output_path, "ants_assigned_to_springs_1.npz")):
+        if self.restart or not os.path.exists(os.path.join(self.output_path, "ants_assigned_to_springs.npz")):
             utils.wait_for_existance(self.output_path, "tracking_data_corrected.mat")
             print(f"\nAssigning ants to springs (Stage 4/7)... ({self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]})")
             tracked_ants = sio.loadmat(os.path.join(self.output_path, "tracking_data_corrected.mat"))["tracked_blobs_matrix"].astype(np.uint32)
@@ -160,13 +156,12 @@ class AntTracking:
                 springs = ants_attached_labels[i, boolean].astype(int)
                 ants_assigned_to_springs[i, labels-1] = springs
             ants_assigned_to_springs = self.interpolate_assigned_ants(ants_assigned_to_springs, num_of_frames)
-            np.savez_compressed(os.path.join(self.output_path, "ants_assigned_to_springs_1.npz"), ants_assigned_to_springs)
+            np.savez_compressed(os.path.join(self.output_path, "ants_assigned_to_springs.npz"), ants_assigned_to_springs)
 
-    def interpolate_assigned_ants(self, ants_assigned_to_springs, num_of_frames, max_gap=15):
+    def interpolate_assigned_ants(self, ants_assigned_to_springs, num_of_frames):
         arranged_frames = np.arange(num_of_frames)
         not_empty_columns = np.where(np.sum(ants_assigned_to_springs, axis=0) != 0)[0]
         for ant in not_empty_columns:
-            # array = ants_assigned_to_springs[6800:7423, 1636]
             vector = ants_assigned_to_springs[:, ant]
             zeros = vector == 0
             small_chunks = utils.filter_continuity_vector(zeros, max_size=5)
@@ -192,95 +187,26 @@ class AntTracking:
             ants_assigned_to_springs[:, ant] = vector
         return ants_assigned_to_springs
 
-    def remove_artificial_cases(self):
-        if self.restart or not os.path.exists(os.path.join(self.output_path, "ants_assigned_to_springs_2.npz")):
-            print(f"\nRemoving artificial ants pulling cases (Stage 5/7)... ({self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]})")
-            ants_assigned_to_springs = np.load(os.path.join(self.output_path, "ants_assigned_to_springs_1.npz"))["arr_0"]
-            N_ants_around_springs = np.load(os.path.join(self.output_path, "N_ants_around_springs.npz"))["arr_0"].astype(np.uint8)
-            unreal_ants_attachments = np.full(N_ants_around_springs.shape, np.nan)
-            switch_attachments = np.full(N_ants_around_springs.shape, np.nan)
-            unreal_detachments = np.full(N_ants_around_springs.shape, np.nan)
-            for ant in range(ants_assigned_to_springs.shape[1]):
-                attachment = ants_assigned_to_springs[:, ant]
-                if not np.all(attachment == 0):
-                    first_attachment = np.where(attachment != 0)[0][0]
-                    for count, spring in enumerate(np.unique(attachment)[1:]):
-                        frames = np.where(attachment == spring)[0]
-                        sum_assign = np.sum(ants_assigned_to_springs[frames[0]:frames[-1]+3,:] == spring, axis=1)
-                        real_sum = N_ants_around_springs[frames[0]:frames[-1]+3,int(spring-1)]
-                        if frames[0] == first_attachment and np.all(sum_assign[0:2] != real_sum[0:2]):
-                            unreal_ants_attachments[frames, int(spring-1)] = ant
-                        elif np.all(sum_assign[0:2] != real_sum[0:2]):
-                            switch_attachments[frames, int(spring-1)] = ant
-                        else:
-                            if np.all(sum_assign[-1] != real_sum[-1]):
-                                unreal_detachments[frames[-1], int(spring-1)] = ant
-            for frame in range(ants_assigned_to_springs.shape[0]):
-                detach_ants = np.unique(unreal_detachments[frame, :])
-                for detach_ant in detach_ants[~np.isnan(detach_ants)]:
-                    spring = np.where(unreal_detachments[frame, :] == detach_ant)[0][0]
-                    assign_ant = unreal_ants_attachments[frame, spring]
-                    if not np.isnan(assign_ant):
-                        ants_assigned_to_springs[unreal_ants_attachments[:, spring] == assign_ant, int(detach_ant)] = spring+1
-                        ants_assigned_to_springs[unreal_ants_attachments[:, spring] == assign_ant, int(assign_ant)] = 0
-                switch_ants = np.unique(switch_attachments[frame, :])
-                for switch_ant in switch_ants[~np.isnan(switch_ants)]:
-                    spring = np.where(switch_attachments[frame, :] == switch_ant)[0][0]
-                    switch_from_spring = np.where(switch_attachments[frame-1, :] == switch_ant)[0]
-                    switch_from_spring = switch_from_spring[switch_from_spring != spring]
-                    if len(switch_from_spring) > 0:
-                        switch_frames = np.where(switch_attachments[:, spring] == switch_ant)[0]
-                        ants_assigned_to_springs[switch_frames, int(switch_ant)] = switch_from_spring[0]
-            ants_assigned_to_springs = ants_assigned_to_springs[:, :-1]
-            np.savez_compressed(os.path.join(self.output_path, "ants_assigned_to_springs_2.npz"), ants_assigned_to_springs)
-            # return ants_assigned_to_springs
-
-    def connect_occasions(self):
-        if self.restart or not os.path.exists(os.path.join(self.output_path, "ants_assigned_to_springs_3.npz")):
-            print(f"\nConnecting occasions of the same ant (Stage 6/7)... ({self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]})")
-            missing_info = np.load(os.path.join(self.output_path, "missing_info.npz"))["arr_0"]
-            ants_assigned_to_springs = np.load(os.path.join(self.output_path, "ants_assigned_to_springs_2.npz"))["arr_0"]
-            last_value = ants_assigned_to_springs[0, :]
-            last_time_value = np.full(last_value.shape, np.nan)
-            last_time_value[last_value != 0] = 0
-            for frame in range(1, ants_assigned_to_springs.shape[0]):
-                print("\r Frame: ", frame, end="")
-                current_info = ants_assigned_to_springs[frame, :]
-                current_springs = np.unique(current_info[current_info != 0])
-                springs_nan = current_springs[np.isnan(missing_info[frame-1, current_springs-1])]
-                ants_to_connect = np.where(np.isin(last_value, springs_nan))[0]
-                for ant in ants_to_connect.astype(int):
-                    last_frame_with_value = last_time_value[ant].astype(int)
-                    ants_assigned_to_springs[last_frame_with_value:frame, ant] = current_info[ant]
-                last_value[current_info != 0] = current_info[current_info != 0]
-                last_time_value[current_info != 0] = frame
-            np.savez_compressed(os.path.join(self.output_path, "ants_assigned_to_springs_3.npz"), ants_assigned_to_springs)
 
     def create_ant_profiles(self):
-        import pandas as pd
+        """Columns order:
+            ant | spring | start | end | precedence"""
         print(f"\nCreating ants profiles (Stage 7/7)... ({self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]})")
-        # ants_assigned_to_springs = np.load(os.path.join(self.output_path, "ants_assigned_to_springs_fixed.npz"))["arr_0"][:, :-1].astype(np.uint8)
-        ants_assigned_to_springs = np.load(os.path.join(self.output_path, "ants_assigned_to_springs_1.npz"))["arr_0"][:, :-1].astype(np.uint8)
-        # missing_info = np.load(os.path.join(self.output_path, "missing_info.npz"))["arr_0"]
-        self.profiles = np.full(5, np.nan)  # ant, spring, start, end, precedence, sudden_appearance
+        ants_assigned_to_springs = np.load(os.path.join(self.output_path, "ants_assigned_to_springs.npz"))["arr_0"][:, :-1].astype(np.uint8)
+        self.profiles = np.full(5, np.nan)  # ant, spring, start, end, precedence
         for ant in range(ants_assigned_to_springs.shape[1]):
             print("\r Ant number: ", ant, end="")
             attachment = ants_assigned_to_springs[:, ant]
             events_springs = np.split(attachment, np.arange(len(attachment[1:]))[np.diff(attachment) != 0] + 1)
-            events_frames = np.split(np.arange(len(attachment)),
-                                     np.arange(len(attachment[1:]))[np.diff(attachment) != 0] + 1)
+            events_frames = np.split(np.arange(len(attachment)), np.arange(len(attachment[1:]))[np.diff(attachment) != 0] + 1)
             precedence = 0
             for event in range(len(events_springs)):
                 if events_springs[event][0] != 0 and len(events_springs[event]) > 1:
                     precedence += 1
                     start, end = events_frames[event][0] + self.set_frames[0], events_frames[event][-1] + self.set_frames[0]
-                    # sudden_appearance = np.any(missing_info[start-3:start, events_springs[event][0] - 1]).astype(np.uint8)
                     self.profiles = np.vstack((self.profiles, np.array([ant + 1, events_springs[event][0], start, end, precedence])))
         self.profiles = self.profiles[1:, :]
         np.savez_compressed(os.path.join(self.output_path, "ant_profiles.npz"), self.profiles)
-        # self.profiles = pd.DataFrame(self.profiles[1:, :])
-        # self.profiles.columns = ["ant", "spring", "start", "end", "precedence", "sudden_appearance"]
-        # self.profiles.to_pickle(os.path.join(self.output_path, "ant_profiles.pkl"))
 
 
 if __name__ == "__main__":
@@ -289,11 +215,74 @@ if __name__ == "__main__":
     output_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\experiment\\{spring_type}\\"
     sets_video_paths = pickle.load(open(os.path.join(data_analysis_dir, "sets_video_paths.pkl"), "rb"))
     sets_frames = [(video_set[0][0], video_set[-1][1]) for video_set in pickle.load(open(os.path.join(data_analysis_dir, "sets_frames.pkl"), "rb"))]
-    AntTracking(sets_video_paths[0], output_path, sets_frames[0], (2160, 3840), False)
+    AntTracking(sets_video_paths[0], output_path, sets_frames[0], (2160, 3840), True)
 
 
 
 
+# def remove_artificial_cases(self):
+#     if self.restart or not os.path.exists(os.path.join(self.output_path, "ants_assigned_to_springs_2.npz")):
+#         print(f"\nRemoving artificial ants pulling cases (Stage 5/7)... ({self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]})")
+#         ants_assigned_to_springs = np.load(os.path.join(self.output_path, "ants_assigned_to_springs_1.npz"))["arr_0"]
+#         N_ants_around_springs = np.load(os.path.join(self.output_path, "N_ants_around_springs.npz"))["arr_0"].astype(np.uint8)
+#         unreal_ants_attachments = np.full(N_ants_around_springs.shape, np.nan)
+#         switch_attachments = np.full(N_ants_around_springs.shape, np.nan)
+#         unreal_detachments = np.full(N_ants_around_springs.shape, np.nan)
+#         for ant in range(ants_assigned_to_springs.shape[1]):
+#             attachment = ants_assigned_to_springs[:, ant]
+#             if not np.all(attachment == 0):
+#                 first_attachment = np.where(attachment != 0)[0][0]
+#                 for count, spring in enumerate(np.unique(attachment)[1:]):
+#                     frames = np.where(attachment == spring)[0]
+#                     sum_assign = np.sum(ants_assigned_to_springs[frames[0]:frames[-1]+3,:] == spring, axis=1)
+#                     real_sum = N_ants_around_springs[frames[0]:frames[-1]+3,int(spring-1)]
+#                     if frames[0] == first_attachment and np.all(sum_assign[0:2] != real_sum[0:2]):
+#                         unreal_ants_attachments[frames, int(spring-1)] = ant
+#                     elif np.all(sum_assign[0:2] != real_sum[0:2]):
+#                         switch_attachments[frames, int(spring-1)] = ant
+#                     else:
+#                         if np.all(sum_assign[-1] != real_sum[-1]):
+#                             unreal_detachments[frames[-1], int(spring-1)] = ant
+#         for frame in range(ants_assigned_to_springs.shape[0]):
+#             detach_ants = np.unique(unreal_detachments[frame, :])
+#             for detach_ant in detach_ants[~np.isnan(detach_ants)]:
+#                 spring = np.where(unreal_detachments[frame, :] == detach_ant)[0][0]
+#                 assign_ant = unreal_ants_attachments[frame, spring]
+#                 if not np.isnan(assign_ant):
+#                     ants_assigned_to_springs[unreal_ants_attachments[:, spring] == assign_ant, int(detach_ant)] = spring+1
+#                     ants_assigned_to_springs[unreal_ants_attachments[:, spring] == assign_ant, int(assign_ant)] = 0
+#             switch_ants = np.unique(switch_attachments[frame, :])
+#             for switch_ant in switch_ants[~np.isnan(switch_ants)]:
+#                 spring = np.where(switch_attachments[frame, :] == switch_ant)[0][0]
+#                 switch_from_spring = np.where(switch_attachments[frame-1, :] == switch_ant)[0]
+#                 switch_from_spring = switch_from_spring[switch_from_spring != spring]
+#                 if len(switch_from_spring) > 0:
+#                     switch_frames = np.where(switch_attachments[:, spring] == switch_ant)[0]
+#                     ants_assigned_to_springs[switch_frames, int(switch_ant)] = switch_from_spring[0]
+#         ants_assigned_to_springs = ants_assigned_to_springs[:, :-1]
+#         np.savez_compressed(os.path.join(self.output_path, "ants_assigned_to_springs_2.npz"), ants_assigned_to_springs)
+#         # return ants_assigned_to_springs
+#
+# def connect_occasions(self):
+#     if self.restart or not os.path.exists(os.path.join(self.output_path, "ants_assigned_to_springs_3.npz")):
+#         print(f"\nConnecting occasions of the same ant (Stage 6/7)... ({self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]})")
+#         missing_info = np.load(os.path.join(self.output_path, "missing_info.npz"))["arr_0"]
+#         ants_assigned_to_springs = np.load(os.path.join(self.output_path, "ants_assigned_to_springs_2.npz"))["arr_0"]
+#         last_value = ants_assigned_to_springs[0, :]
+#         last_time_value = np.full(last_value.shape, np.nan)
+#         last_time_value[last_value != 0] = 0
+#         for frame in range(1, ants_assigned_to_springs.shape[0]):
+#             print("\r Frame: ", frame, end="")
+#             current_info = ants_assigned_to_springs[frame, :]
+#             current_springs = np.unique(current_info[current_info != 0])
+#             springs_nan = current_springs[np.isnan(missing_info[frame-1, current_springs-1])]
+#             ants_to_connect = np.where(np.isin(last_value, springs_nan))[0]
+#             for ant in ants_to_connect.astype(int):
+#                 last_frame_with_value = last_time_value[ant].astype(int)
+#                 ants_assigned_to_springs[last_frame_with_value:frame, ant] = current_info[ant]
+#             last_value[current_info != 0] = current_info[current_info != 0]
+#             last_time_value[current_info != 0] = frame
+#         np.savez_compressed(os.path.join(self.output_path, "ants_assigned_to_springs_3.npz"), ants_assigned_to_springs)
 
 # def profile_ants_behavior(profiles):
 #     for count, query_data in enumerate(

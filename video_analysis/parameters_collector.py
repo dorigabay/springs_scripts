@@ -13,7 +13,7 @@ from perspective_squares import PerspectiveSquares
 NEUTRALIZE_COLOUR_ALPHA = 2.5
 MAX_ANTS_NUMBER = 200
 ANTS_SOBEL_KERNEL_SIZE = 3
-ANTS_GRADIANT_THRESHOLD = 200
+ANTS_GRADIANT_THRESHOLD = 240
 ANTS_CLOSING_KERNEL = np.ones((2, 2))
 ANTS_MIN_SIZE = 40
 ANTS_MAX_SIZE = 400
@@ -106,28 +106,28 @@ class CollectParameters:
         new_parameters["HSV_SPACE_BOUNDARY"] = np.array([179, 255, 255])
         new_parameters["ANTS_NEUTRALIZE_COLOUR_ALPHA"] = 2
         new_parameters["ANTS_NEUTRALIZE_COLOUR_BETA"] = 10
-        new_parameters["NEUTRALIZE_COLOUR_ALPHA"] = NEUTRALIZE_COLOUR_ALPHA# if parameters is None else parameters["NEUTRALIZE_COLOUR_ALPHA"]
-        new_parameters["MAX_ANTS_NUMBER"] = MAX_ANTS_NUMBER# if parameters is None else parameters["MAX_ANTS_NUMBER"]
-        new_parameters["ANTS_SOBEL_KERNEL_SIZE"] = ANTS_SOBEL_KERNEL_SIZE# if parameters is None else parameters["ANTS_SOBEL_KERNEL_SIZE"]
+        new_parameters["NEUTRALIZE_COLOUR_ALPHA"] = NEUTRALIZE_COLOUR_ALPHA if parameters is None else parameters["NEUTRALIZE_COLOUR_ALPHA"]
+        new_parameters["MAX_ANTS_NUMBER"] = MAX_ANTS_NUMBER if parameters is None else parameters["MAX_ANTS_NUMBER"]
+        new_parameters["ANTS_SOBEL_KERNEL_SIZE"] = ANTS_SOBEL_KERNEL_SIZE if parameters is None else parameters["ANTS_SOBEL_KERNEL_SIZE"]
         new_parameters["ANTS_GRADIANT_THRESHOLD"] = ANTS_GRADIANT_THRESHOLD# if parameters is None else parameters["ANTS_GRADIANT_THRESHOLD"]
-        new_parameters["ANTS_CLOSING_KERNEL"] = ANTS_CLOSING_KERNEL# if parameters is None else parameters["ANTS_CLOSING_KERNEL"]
-        new_parameters["ANTS_MIN_SIZE"] = ANTS_MIN_SIZE# if parameters is None else parameters["ANTS_MIN_SIZE"]
-        new_parameters["ANTS_MAX_SIZE"] = ANTS_MAX_SIZE# if parameters is None else parameters["ANTS_MAX_SIZE"]
-        new_parameters["ANTS_MAX_LINE_LENGTH"] = ANTS_MAX_LINE_LENGTH# if parameters is None else parameters["ANTS_MAX_LINE_LENGTH"]
-        new_parameters["ANTS_OBJECT_DILATION_SIZE"] = ANTS_OBJECT_DILATION_SIZE# if parameters is None else parameters["ANTS_OBJECT_DILATION_SIZE"]
-        new_parameters["ANTS_SPRINGS_OVERLAP_SIZE"] = ANTS_SPRINGS_OVERLAP_SIZE# if parameters is None else parameters["ANTS_SPRINGS_OVERLAP_SIZE"]
+        new_parameters["ANTS_CLOSING_KERNEL"] = ANTS_CLOSING_KERNEL if parameters is None else parameters["ANTS_CLOSING_KERNEL"]
+        new_parameters["ANTS_MIN_SIZE"] = ANTS_MIN_SIZE if parameters is None else parameters["ANTS_MIN_SIZE"]
+        new_parameters["ANTS_MAX_SIZE"] = ANTS_MAX_SIZE if parameters is None else parameters["ANTS_MAX_SIZE"]
+        new_parameters["ANTS_MAX_LINE_LENGTH"] = ANTS_MAX_LINE_LENGTH if parameters is None else parameters["ANTS_MAX_LINE_LENGTH"]
+        new_parameters["ANTS_OBJECT_DILATION_SIZE"] = ANTS_OBJECT_DILATION_SIZE if parameters is None else parameters["ANTS_OBJECT_DILATION_SIZE"]
+        new_parameters["ANTS_SPRINGS_OVERLAP_SIZE"] = ANTS_SPRINGS_OVERLAP_SIZE if parameters is None else parameters["ANTS_SPRINGS_OVERLAP_SIZE"]
         # if False:
         if utils.insist_input_type("yes_no", "Would you like to re-collect image processing parameters?"):
-            new_parameters["NEUTRALIZE_COLOUR_ALPHA"] = utils.insist_input_type("float", f"What is the neutralize colour alpha? (default is {NEUTRALIZE_COLOUR_ALPHA}): ")
-            new_parameters["MAX_ANTS_NUMBER"] = utils.insist_input_type("int", f"What is the max ants number expected to be tracked? (default is {MAX_ANTS_NUMBER}): ")
-            new_parameters["ANTS_SOBEL_KERNEL_SIZE"] = utils.insist_input_type("int", f"What is the ants sobel kernel size? (default is {ANTS_SOBEL_KERNEL_SIZE}): ")
+            # new_parameters["NEUTRALIZE_COLOUR_ALPHA"] = utils.insist_input_type("float", f"What is the neutralize colour alpha? (default is {NEUTRALIZE_COLOUR_ALPHA}): ")
+            # new_parameters["MAX_ANTS_NUMBER"] = utils.insist_input_type("int", f"What is the max ants number expected to be tracked? (default is {MAX_ANTS_NUMBER}): ")
+            # new_parameters["ANTS_SOBEL_KERNEL_SIZE"] = utils.insist_input_type("int", f"What is the ants sobel kernel size? (default is {ANTS_SOBEL_KERNEL_SIZE}): ")
             new_parameters["ANTS_GRADIANT_THRESHOLD"] = utils.insist_input_type("int", f"What is the ants gradiant threshold? (default is {ANTS_GRADIANT_THRESHOLD}): ")
-            new_parameters["ANTS_CLOSING_KERNEL"] = np.ones([utils.insist_input_type("int", f"What is the ants closing kernel size? (default is {ANTS_CLOSING_KERNEL.shape[0]}): ")] * 2)
-            new_parameters["ANTS_MIN_SIZE"] = utils.insist_input_type("int", f"What is the ants min size? (default is {ANTS_MIN_SIZE}): ")
-            new_parameters["ANTS_MAX_SIZE"] = utils.insist_input_type("int", f"What is the ants max size? (default is {ANTS_MAX_SIZE}): ")
-            new_parameters["ANTS_MAX_LINE_LENGTH"] = utils.insist_input_type("int", f"What is the ants max line length? (default is {ANTS_MAX_LINE_LENGTH}): ")
-            new_parameters["ANTS_OBJECT_DILATION_SIZE"] = utils.insist_input_type("int", f"What is the ants object dilation size? (default is {ANTS_OBJECT_DILATION_SIZE}): ")
-            new_parameters["ANTS_SPRINGS_OVERLAP_SIZE"] = utils.insist_input_type("int", f"What is the ants springs overlap size? (default is {ANTS_SPRINGS_OVERLAP_SIZE}): ")
+            # new_parameters["ANTS_CLOSING_KERNEL"] = np.ones([utils.insist_input_type("int", f"What is the ants closing kernel size? (default is {ANTS_CLOSING_KERNEL.shape[0]}): ")] * 2)
+            # new_parameters["ANTS_MIN_SIZE"] = utils.insist_input_type("int", f"What is the ants min size? (default is {ANTS_MIN_SIZE}): ")
+            # new_parameters["ANTS_MAX_SIZE"] = utils.insist_input_type("int", f"What is the ants max size? (default is {ANTS_MAX_SIZE}): ")
+            # new_parameters["ANTS_MAX_LINE_LENGTH"] = utils.insist_input_type("int", f"What is the ants max line length? (default is {ANTS_MAX_LINE_LENGTH}): ")
+            # new_parameters["ANTS_OBJECT_DILATION_SIZE"] = utils.insist_input_type("int", f"What is the ants object dilation size? (default is {ANTS_OBJECT_DILATION_SIZE}): ")
+            # new_parameters["ANTS_SPRINGS_OVERLAP_SIZE"] = utils.insist_input_type("int", f"What is the ants springs overlap size? (default is {ANTS_SPRINGS_OVERLAP_SIZE}): ")
         return new_parameters
 
     def collect_crop_coordinates(self, image, parameters):
@@ -195,17 +195,17 @@ class CollectParameters:
 
     def analysis_example(self, image, parameters):
         if self.show_analysis_example:
-            # try:
-            image = image.copy()
-            parameters["CONTINUE_FROM_LAST_SNAPSHOT"] = False
-            snapshot_data = utils.create_snapshot_data(parameters)
-            snapshot_data["frame_count"] = 1
-            squares = PerspectiveSquares(parameters, image, snapshot_data)
-            springs = Springs(parameters, image, snapshot_data)
-            ants = Ants(image, springs, squares)
-            calculations = Calculation(parameters, snapshot_data, springs, ants)
-            utils.present_analysis_result(image, calculations, springs, ants, waitKey=0)
-            # except:
-            #     print("Error in analysis_example. Could not show example")
+            try:
+                image = image.copy()
+                parameters["CONTINUE_FROM_LAST_SNAPSHOT"] = False
+                snapshot_data = utils.create_snapshot_data(parameters)
+                snapshot_data["frame_count"] = 1
+                squares = PerspectiveSquares(parameters, image, snapshot_data)
+                springs = Springs(parameters, image, snapshot_data)
+                ants = Ants(image, springs, squares)
+                calculations = Calculation(parameters, snapshot_data, springs, ants)
+                utils.present_analysis_result(image, calculations, springs, ants, waitKey=0)
+            except:
+                print("Error in analysis_example. Could not show example")
 
 

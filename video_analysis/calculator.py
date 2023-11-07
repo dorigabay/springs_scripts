@@ -14,7 +14,6 @@ class Calculation:
         self.springs = springs
         self.make_ants_centers()
         self.springs_angles_ordered = self.order_spring_angles()
-        # self.springs_angles_ordered = self.match_springs(self.springs_angles_reference_order)
         self.N_ants_around_springs, self.size_ants_around_springs = self.occupied_springs(self.springs_angles_ordered)
         self.fixed_ends_coordinates_x, self.fixed_ends_coordinates_y, self.free_ends_coordinates_x, \
             self.free_ends_coordinates_y, self.needle_part_coordinates_x, self.needle_part_coordinates_y =\
@@ -37,24 +36,6 @@ class Calculation:
                   f"\nChange the MAX_ANTS_NUMBER parameter.")
 
     def order_spring_angles(self):
-        # #TODO: make the 3rd line in this function to be functional (if np.sum(np.abs(linspace_angles-self.previous_detections[2]))==0:)
-        # linspace_angles = np.linspace(-np.pi, np.pi - np.pi / self.parameters["N_SPRINGS"], self.parameters["N_SPRINGS"]).reshape(1, self.parameters["N_SPRINGS"])
-        # if self.previous_detections["springs_angles_reference_order"] is not None:
-        #     if np.sum(np.abs(linspace_angles - self.previous_detections["springs_angles_reference_order"])) == 0:
-        #         if len(self.springs.bundles_labels) == self.parameters["N_SPRINGS"]:
-        #             self.springs_angles_reference_order = np.sort(self.springs.bundles_labels).reshape(1, self.parameters["N_SPRINGS"])
-        #         else:
-        #             self.springs_angles_reference_order = self.previous_detections["springs_angles_reference_order"]
-        #     else:
-        #         self.springs_angles_reference_order = self.previous_detections["springs_angles_reference_order"]
-        # elif len(self.springs.bundles_labels) == self.parameters["N_SPRINGS"]:
-        #     self.springs_angles_reference_order = np.sort(self.springs.bundles_labels).reshape(1, self.parameters["N_SPRINGS"])
-        # else:
-        #     self.springs_angles_reference_order = linspace_angles
-        #     min_index = np.argmin(np.abs(np.array(self.springs.bundles_labels)))
-        #     diff = np.abs(np.array(self.springs.bundles_labels)[min_index])
-        #     self.springs_angles_reference_order -= diff
-        # if self.previous_detections["springs_angles_reference_order"] is None:
         angles = np.sort(np.array(self.springs.bundles_labels))
         new_values = []
         while True:
@@ -76,6 +57,23 @@ class Calculation:
         idx = np.where(np.isin(angles, new_values))
         angles[idx] = np.nan
         return angles
+        # linspace_angles = np.linspace(-np.pi, np.pi - np.pi / self.parameters["N_SPRINGS"], self.parameters["N_SPRINGS"]).reshape(1, self.parameters["N_SPRINGS"])
+        # if self.previous_detections["springs_angles_reference_order"] is not None:
+        #     if np.sum(np.abs(linspace_angles - self.previous_detections["springs_angles_reference_order"])) == 0:
+        #         if len(self.springs.bundles_labels) == self.parameters["N_SPRINGS"]:
+        #             self.springs_angles_reference_order = np.sort(self.springs.bundles_labels).reshape(1, self.parameters["N_SPRINGS"])
+        #         else:
+        #             self.springs_angles_reference_order = self.previous_detections["springs_angles_reference_order"]
+        #     else:
+        #         self.springs_angles_reference_order = self.previous_detections["springs_angles_reference_order"]
+        # elif len(self.springs.bundles_labels) == self.parameters["N_SPRINGS"]:
+        #     self.springs_angles_reference_order = np.sort(self.springs.bundles_labels).reshape(1, self.parameters["N_SPRINGS"])
+        # else:
+        #     self.springs_angles_reference_order = linspace_angles
+        #     min_index = np.argmin(np.abs(np.array(self.springs.bundles_labels)))
+        #     diff = np.abs(np.array(self.springs.bundles_labels)[min_index])
+        #     self.springs_angles_reference_order -= diff
+        # if self.previous_detections["springs_angles_reference_order"] is None:
 
     # def match_springs(self, springs_angles_reference_order):
     #     subtraction_combinations = np.cos(springs_angles_reference_order[0][:, np.newaxis] - self.springs.bundles_labels)

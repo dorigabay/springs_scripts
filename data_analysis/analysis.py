@@ -18,7 +18,7 @@ class Analyser:
         self.paths = [os.path.join(self.dir_path, sub_dir) for sub_dir in os.listdir(self.dir_path) if os.path.isdir(os.path.join(self.dir_path, sub_dir))]
         self.load_data()
         self.calculations()
-        self.test_correlation()
+        # self.test_correlation()
         # self.create_plots()
 
     def load_data(self):
@@ -40,6 +40,8 @@ class Analyser:
 
     def calculations(self, window_size=10):
         # translational force:
+        self.force_direction = utils.interpolate_data(self.force_direction)
+        self.force_magnitude = utils.interpolate_data(self.force_magnitude)
         horizontal_component = self.force_magnitude * np.cos(self.force_direction + self.fixed_end_angle_to_nest)
         horizontal_component = utils.interpolate_data(horizontal_component)
         vertical_component = self.force_magnitude * np.sin(self.force_direction + self.fixed_end_angle_to_nest)
@@ -67,41 +69,58 @@ class Analyser:
         self.profile_ants_behavior()
         self.ants_profiling_analysis()
 
-    def profile_ants_behavior(self):
-        def profiler_check():
-            profiled_check = np.full((self.ant_profiles.shape[0], 2), False)
-            for profile in range(len(self.ant_profiles)):
-                spring = int(self.ant_profiles[profile, 1])
-                start = int(self.ant_profiles[profile, 2])
-                end = int(self.ant_profiles[profile, 3])
-                sudden_appearance = np.any(self.missing_info[start-3:start, spring-1])
-                ants_before = np.any(self.N_ants_around_springs[start-3:start, spring-1] != 0)
-                profiled_check[profile, 0] = sudden_appearance
-                profiled_check[profile, 1] = ants_before
-            return profiled_check
-        def profiler(data):
-            profiled_data = np.full((self.ant_profiles.shape[0], self.longest_profile), np.nan)
-            for profile in range(len(self.ant_profiles)):
-                spring = int(self.ant_profiles[profile, 1])
-                start = int(self.ant_profiles[profile, 2])
-                end = int(self.ant_profiles[profile, 3])
-                if not end - start + 1 > self.longest_profile:
-                    if len(data.shape) == 1:
-                        profiled_data[profile, 0:end - start + 1] = data[start:end + 1]
-                    elif len(data.shape) == 2:
-                        profiled_data[profile, 0:end - start + 1] = data[start:end + 1, int(spring - 1)]
-            return profiled_data
+    def profiler(self, data):
+        profiled_data = np.full((self.ant_profiles.shape[0], self.longest_profile), np.nan)
+        for profile in range(len(self.ant_profiles)):
+            spring = int(self.ant_profiles[profile, 1])
+            start = int(self.ant_profiles[profile, 2])
+            end = int(self.ant_profiles[profile, 3])
+            if not end - start + 1 > self.longest_profile:
+                if len(data.shape) == 1:
+                    profiled_data[profile, 0:end - start + 1] = data[start:end + 1]
+                elif len(data.shape) == 2:
+                    profiled_data[profile, 0:end - start + 1] = data[start:end + 1, int(spring - 1)]
+        return profiled_data
 
-        self.profiled_check = profiler_check()
+    def profiler_check(self):
+        profiled_check = np.full((self.ant_profiles.shape[0], 3), False)
+        for profile in range(len(self.ant_profiles)):
+            spring = int(self.ant_profiles[profile, 1])
+            start = int(self.ant_profiles[profile, 2])
+            end = int(self.ant_profiles[profile, 3])
+            sudden_appearance = np.any(self.missing_info[start-3:start, spring-1])
+            not_single_ant = not self.N_ants_around_springs[start, spring-1] == 1
+            ants_before = np.any(self.N_ants_around_springs[start-3:start, spring-1] != 0)
+            sudden_disappearance = np.any(self.missing_info[end+1:end+4, spring-1])
+            ants_after = np.any(self.N_ants_around_springs[end+1:end+4, spring-1] != 0)
+            profiled_check[profile, 0] = sudden_appearance
+            profiled_check[profile, 1] = not_single_ant
+            profiled_check[profile, 2] = ants_before
+            profiled_check[profile, 3] = sudden_disappearance
+            profiled_check[profile, 4] = ants_after
+        return profiled_check
+
+    def profile_ants_behavior(self):
+        self.profiled_check = self.profiler_check()
         self.longest_profile = np.max(self.ant_profiles[:, 3] - self.ant_profiles[:, 2]).astype(int)
         self.longest_profile = 12000 if self.longest_profile > 12000 else self.longest_profile
-        self.profiled_N_ants_around_springs = profiler(self.N_ants_around_springs)
-        self.profiled_N_ants_around_springs_sum = profiler(self.total_n_ants)
-        self.profiled_fixed_end_angle_to_nest = profiler(self.fixed_end_angle_to_nest)
-        self.profiled_force_direction = profiler(self.force_direction)
-        self.profiled_force_magnitude = profiler(self.force_magnitude)
-        self.profiled_angular_velocity = profiler(self.angular_velocity)
-        self.profiled_tangential_force = profiler(self.tangential_force)
+        self.profiled_N_ants_around_springs = self.profiler(self.N_ants_around_springs)
+        self.profiled_N_ants_around_springs[self.profiled_N_ants_around_springs == 0] = 1
+        # FIXME: profiled_N_ants_around_springs_sum needs to according to profiled_N_ants_around_springs
+        self.profiled_N_ants_around_springs_sum = self.profiler(self.total_n_ants)
+        self.profiled_fixed_end_angle_to_nest = self.profiler(self.fixed_end_angle_to_nest)
+        self.profiled_force_direction = self.profiler(self.force_direction)
+        self.profiled_force_magnitude = self.profiler(self.force_magnitude)
+        self.profiled_angular_velocity = self.profiler(self.angular_velocity)
+        self.profiled_tangential_force = self.profiler(self.tangential_force)
+        reverse_arg_sort_columns = np.full(self.profiled_N_ants_around_springs.shape, 0)
+        nans = np.isnan(self.profiled_N_ants_around_springs)
+        nans_sum = np.sum(nans, axis=1)
+        for row in range(self.profiled_N_ants_around_springs.shape[0]):
+            reverse_arg_sort_columns[row, nans_sum[row]:] = np.where(~nans[row])[0]
+            reverse_arg_sort_columns[row, :nans_sum[row]] = np.where(nans[row])[0]
+        reverse_arg_sort_rows = np.repeat(np.expand_dims(np.arange(self.profiled_N_ants_around_springs.shape[0]), axis=1), self.profiled_N_ants_around_springs.shape[1], axis=1)
+        self.reverse_argsort = (reverse_arg_sort_rows, reverse_arg_sort_columns)
 
     def find_direction_change(self):
         direction_change = []
@@ -119,7 +138,7 @@ class Analyser:
         return np.array(direction_change)
 
     def calc_ant_replacement_rate(self):
-        n_changes = np.nansum(np.abs(np.diff(self.N_ants_around_springs,axis=0)), axis=1)
+        n_changes = np.nansum(np.abs(np.diff(self.N_ants_around_springs, axis=0)), axis=1)
         sum_of_changes = np.diff(np.nansum(self.N_ants_around_springs, axis=1))
         cancelling_number = (n_changes - np.abs(sum_of_changes))/2
         added_ants = np.copy(cancelling_number)
@@ -137,14 +156,17 @@ class Analyser:
         On top of that, it chooses only profiles that had information before attachment,
         to avoid bias of suddenly appearing springs.
         """
-        self.single_ant_profiles = np.full((len(self.profiles_precedence), self.longest_profile), False)
+        self.attaching_single_ant_profiles = np.full((len(self.profiles_precedence), self.longest_profile), False)
+        self.detaching_single_ant_profiles = np.full((len(self.profiles_precedence), self.longest_profile), False)
         arranged = np.arange(self.longest_profile)
+        reversed_profiled_N_ants_around_springs = self.profiled_N_ants_around_springs[self.reverse_argsort]
         for profile in range(len(self.profiles_precedence)):
-            if not np.any(self.profiled_check[profile, :]):
+            if not np.any(self.profiled_check[profile, :3]):
                 first_n_ants_change = arranged[:-1][np.diff(self.profiled_N_ants_around_springs[profile, :]) != 0][0]
-                self.single_ant_profiles[profile, 0:first_n_ants_change+1] = True
-            # if self.profiled_N_ants_around_springs[profile, 0] == 1:
-            #     if self.ant_profiles[profile, 5] == 0:
+                self.attaching_single_ant_profiles[profile, 0:first_n_ants_change+1] = True
+            if not np.any(self.profiled_check[profile, -2:]) and reversed_profiled_N_ants_around_springs[profile, -1] == 1:
+                last_n_ants_change = arranged[1:][np.diff(reversed_profiled_N_ants_around_springs[profile, :]) != 0][-1]
+                self.detaching_single_ant_profiles[profile, last_n_ants_change:] = True
 
     def test_correlation(self, sets_idx=(0, -1)):
         first_set_idx, last_set_idx = (sets_idx, sets_idx) if isinstance(sets_idx, int) else sets_idx
@@ -162,8 +184,11 @@ class Analyser:
         # plots.plot_correlation(self, start=s, end=e, output_path=os.path.join(self.output_path, "correlation"))
 
     def create_plots(self):
-        plots.plot_ant_profiles(self, output_dir=os.path.join(self.output_path, "profiles"), window_size=11, profile_size=200)
-        plots.draw_single_profiles(self, os.path.join(self.output_path, "single_profiles_S5760011"), profile_min_length=200, examples_number=200, start=self.sets_frames[1][-1][0], end=self.sets_frames[1][-1][1])
+        # plots.plot_ant_profiles(self, output_dir=os.path.join(self.output_path, "profiles"), window_size=11, profile_size=200)
+        # plots.draw_single_profiles(self, os.path.join(self.output_path, "detaching_single_profiles_S5760003"), profile_min_length=200, examples_number=200,
+        plots.draw_single_profiles(self, os.path.join(self.output_path, "attaching_single_profiles_S5760003"), profile_min_length=200, examples_number=200,
+                                   start=self.sets_frames[0][0][0], end=self.sets_frames[0][0][1])
+        # plots.draw_single_profiles(self, os.path.join(self.output_path, "single_profiles_S5760003_1"), profile_min_length=200, examples_number=200, start=self.sets_frames[0][0][0], end=self.sets_frames[0][0][1])
 
     def save_analysis_data(self, spring_type):
         output_path = os.path.join("Z:\\Dor_Gabay\\ThesisProject\\results\\", "analysis_data", spring_type)
@@ -176,8 +201,8 @@ class Analyser:
 
 if __name__ == "__main__":
     spring_type = "plus_0.1"
-    # data_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\calibration\\{spring_type}\\"
-    data_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\experiment\\{spring_type}\\"
-    output_dir = f"Z:\\Dor_Gabay\\ThesisProject\\results\\summer_2023\\{spring_type}\\"
+    # data_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\experiment\\{spring_type}\\"
+    data_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\experiment\\{spring_type}_final\\"
+    output_dir = f"Z:\\Dor_Gabay\\ThesisProject\\results\\summer_2023\\{spring_type}_final\\"
     self = Analyser(data_analysis_dir, output_dir, spring_type)
 

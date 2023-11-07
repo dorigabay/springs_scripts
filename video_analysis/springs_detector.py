@@ -209,6 +209,6 @@ class Springs:
         self.spring_ends_centers = spring_ends_centers + [x_addition, y_addition]  # used only for visualization
         self.object_center_coordinates = self.object_center_coordinates + [x_addition, y_addition]
         self.needle_end = self.needle_end + [x_addition, y_addition]
-        self.whole_object_mask = np.full(image.shape[:2], False, dtype=np.bool)
+        self.whole_object_mask = np.full(image.shape[:2], False, dtype=bool)
         self.whole_object_mask[self.object_crop_coordinates[0]:self.object_crop_coordinates[1],
                                self.object_crop_coordinates[2]:self.object_crop_coordinates[3]] = whole_object_mask > 0
