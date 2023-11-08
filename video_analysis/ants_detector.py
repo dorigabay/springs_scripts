@@ -66,27 +66,30 @@ class Ants:
             label_image = image[upper_left[0]:lower_right[0], upper_left[1]:lower_right[1]]
             label_mask = label_mask[upper_left[0]:lower_right[0], upper_left[1]:lower_right[1]]
             label_image[~label_mask] = 255
-            hsv = cv2.cvtColor(label_image, cv2.COLOR_BGR2HSV)
-            color_mask = cv2.inRange(hsv,  np.array([0, 10, 0]), np.array([179, 255, 180])) > 0
-            if labels_sizes[outlier_label] < mean_ant_size:
-                labeled_image[labeled_image == outlier_label] = 0
-                sub_labels_labeled, _ = label(color_mask)
-            elif labels_sizes[outlier_label] > mean_ant_size:
-                label_image[~color_mask] = 255
+            if not label_image.size == 0:
                 # cv2.imshow("label_image", label_image)
                 # cv2.waitKey(0)
-                distance = distance_transform_edt(color_mask)
-                coordinates = peak_local_max(distance, footprint=np.ones((30, 30)), labels=color_mask)
-                mask = np.zeros(distance.shape, dtype=bool)
-                mask[coordinates.T[0], coordinates.T[1]] = True
-                markers, _ = label(mask)
-                sub_labels_labeled = watershed(-distance, markers, mask=color_mask)
-            sub_labels_sizes = np.bincount(sub_labels_labeled.ravel())
-            watershed_strange_sizes_labels = np.where((sub_labels_sizes > mean_ant_size * 1.5)+(sub_labels_sizes < mean_ant_size * 0.3))[0]
-            sub_labels_labeled[np.isin(sub_labels_labeled, watershed_strange_sizes_labels)] = 0
-            sub_labels_labeled[sub_labels_labeled > 0] += np.max(labeled_image)
-            labeled_image[labeled_image == outlier_label] = 0
-            labeled_image[upper_left[0]:lower_right[0], upper_left[1]:lower_right[1]][sub_labels_labeled > 0] = sub_labels_labeled[sub_labels_labeled > 0]
+                hsv = cv2.cvtColor(label_image, cv2.COLOR_BGR2HSV)
+                color_mask = cv2.inRange(hsv,  np.array([0, 10, 0]), np.array([179, 255, 180])) > 0
+                if labels_sizes[outlier_label] < mean_ant_size:
+                    labeled_image[labeled_image == outlier_label] = 0
+                    sub_labels_labeled, _ = label(color_mask)
+                elif labels_sizes[outlier_label] > mean_ant_size:
+                    label_image[~color_mask] = 255
+                    # cv2.imshow("label_image", label_image)
+                    # cv2.waitKey(0)
+                    distance = distance_transform_edt(color_mask)
+                    coordinates = peak_local_max(distance, footprint=np.ones((30, 30)), labels=color_mask)
+                    mask = np.zeros(distance.shape, dtype=bool)
+                    mask[coordinates.T[0], coordinates.T[1]] = True
+                    markers, _ = label(mask)
+                    sub_labels_labeled = watershed(-distance, markers, mask=color_mask)
+                sub_labels_sizes = np.bincount(sub_labels_labeled.ravel())
+                watershed_strange_sizes_labels = np.where((sub_labels_sizes > mean_ant_size * 1.5)+(sub_labels_sizes < mean_ant_size * 0.3))[0]
+                sub_labels_labeled[np.isin(sub_labels_labeled, watershed_strange_sizes_labels)] = 0
+                sub_labels_labeled[sub_labels_labeled > 0] += np.max(labeled_image)
+                labeled_image[labeled_image == outlier_label] = 0
+                labeled_image[upper_left[0]:lower_right[0], upper_left[1]:lower_right[1]][sub_labels_labeled > 0] = sub_labels_labeled[sub_labels_labeled > 0]
         unique_elements, indices = np.unique(labeled_image, return_inverse=True)
         labeled_image = indices.reshape(labeled_image.shape)
         num_labels = np.max(labeled_image)

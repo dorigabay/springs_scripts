@@ -450,13 +450,16 @@ def present_analysis_result(frame, calculations, springs, ants, video_name=" ", 
 
 def create_snapshot_data(parameters=None, snapshot_data=None, calculations=None, squares=None, springs=None, ants=None):
     if snapshot_data is None:
-        if parameters["CONTINUE_FROM_LAST_SNAPSHOT"] and len([f for f in os.listdir(parameters["OUTPUT_PATH"]) if f.startswith("snap_data")]) != 0:
+        if parameters["CONTINUE_FROM_LAST_SNAPSHOT"]\
+                and os.path.exists(parameters["OUTPUT_PATH"])\
+                and len([f for f in os.listdir(parameters["OUTPUT_PATH"]) if f.startswith("snap_data")]) != 0:
             snaps = [f for f in os.listdir(parameters["OUTPUT_PATH"]) if f.startswith("snap_data")]
             creation_time = [os.path.getctime(os.path.join(parameters["OUTPUT_PATH"], f)) for f in snaps]
             snapshot_data = pickle.load(open(os.path.join(parameters["OUTPUT_PATH"], snaps[np.argmax(creation_time)]), "rb"))
             parameters["STARTING_FRAME"] = snapshot_data["frame_count"]
             snapshot_data["current_time"] = datetime.datetime.now().strftime("%d.%m.%Y-%H%M")
         else:
+            parameters["CONTINUE_FROM_LAST_SNAPSHOT"] = False
             snapshot_data = {"object_center_coordinates": parameters["OBJECT_CENTER_COORDINATES"][0],
                              "tip_point": None, "springs_angles_reference_order": None,
                              "sum_needle_radius": 0, "analysed_frame_count": 0, "frame_count": 0, "skipped_frames": 0,

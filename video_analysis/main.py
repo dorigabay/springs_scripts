@@ -71,10 +71,10 @@ if __name__ == '__main__':
     video_parameters = [utils.load_parameters(video_path, args) for video_path in videos]
     print("Number of processors exist:", cpu_count())
     print("Number of processors asked for this task:", str(args["nCPU"]))
-    # pool = Pool(args["nCPU"])
-    # pool.starmap(main, zip(videos, video_parameters))
-    # pool.close()
-    # pool.join()
+    pool = Pool(args["nCPU"])
+    pool.starmap(main, zip(videos, video_parameters))
+    pool.close()
+    pool.join()
     print("-"*80)
     print("Finished processing all videos in directory: ", args["path"])
 

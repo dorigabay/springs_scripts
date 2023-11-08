@@ -18,6 +18,7 @@ class Analyser:
         self.paths = [os.path.join(self.dir_path, sub_dir) for sub_dir in os.listdir(self.dir_path) if os.path.isdir(os.path.join(self.dir_path, sub_dir))]
         self.load_data()
         self.calculations()
+        self.find_direction_changes()
         # self.test_correlation()
         # self.create_plots()
 
@@ -83,7 +84,7 @@ class Analyser:
         return profiled_data
 
     def profiler_check(self):
-        profiled_check = np.full((self.ant_profiles.shape[0], 3), False)
+        profiled_check = np.full((self.ant_profiles.shape[0], 5), False)
         for profile in range(len(self.ant_profiles)):
             spring = int(self.ant_profiles[profile, 1])
             start = int(self.ant_profiles[profile, 2])
@@ -122,19 +123,41 @@ class Analyser:
         reverse_arg_sort_rows = np.repeat(np.expand_dims(np.arange(self.profiled_N_ants_around_springs.shape[0]), axis=1), self.profiled_N_ants_around_springs.shape[1], axis=1)
         self.reverse_argsort = (reverse_arg_sort_rows, reverse_arg_sort_columns)
 
-    def find_direction_change(self):
+    def find_direction_changes(self):
         direction_change = []
         for set_idx in self.sets_frames:
-            set_fixed_end_angle = self.fixed_end_angle_to_nest[set_idx[0]:set_idx[1]]
-            set_angular_velocity = np.nanmedian(utils.calc_angular_velocity(set_fixed_end_angle, diff_spacing=20)/20, axis=1)
-            rolling_median = pd.Series(set_angular_velocity).interpolate(method='linear')
-            rolling_median = rolling_median.rolling(window=3000, min_periods=1).median()
-            rolling_sum = pd.Series(np.abs(set_angular_velocity)).interpolate(method='linear')
-            rolling_sum = rolling_sum.rolling(window=3000, min_periods=1).sum()
-            object_moves = rolling_sum > 1
-            sign_change = np.append(np.diff(np.sign(rolling_median)), 0)
-            sign_change_idx = np.arange(len(set_angular_velocity))[(sign_change != 0) * object_moves]
-            direction_change.append(sign_change_idx+set_idx[0])
+            s, e = set_idx[0][0], set_idx[-1][1]
+            import matplotlib.pyplot as plt
+            angular_velocity = utils.calc_angular_velocity(self.fixed_end_angle_to_nest, diff_spacing=80) / 80
+            angular_velocity = np.where(np.isnan(angular_velocity).all(axis=1), np.nan, np.nanmedian(angular_velocity, axis=1))
+            angular_velocity = np.array(pd.Series(angular_velocity).rolling(window=30, center=True).median())
+            angular_velocity = utils.interpolate_data(angular_velocity)
+            upper = np.nanpercentile(angular_velocity, 70)
+            lower = np.nanpercentile(angular_velocity, 30)
+            angular_velocity[(angular_velocity < upper) * (angular_velocity > lower)] = 0
+            plt.plot(np.arange(len(angular_velocity)), np.sign(angular_velocity))
+            plt.show()
+            # translational_velocity = np.sin(self.momentum_direction) * self.momentum_magnitude
+            self.momentum_direction, self.momentum_magnitude = utils.calc_translation_velocity(self.object_center_coordinates, spacing=10)
+            self.momentum_magnitude = np.array(pd.Series(self.momentum_magnitude).rolling(window=20, center=True).median())
+            momentum_magnitude = self.momentum_magnitude.copy()
+            upper = np.nanpercentile(momentum_magnitude, 95)
+            # lower = np.nanpercentile(translational_velocity, 1.5)
+            momentum_magnitude[momentum_magnitude < upper] = 0
+            plt.plot(np.arange(len(momentum_magnitude)), np.sign(momentum_magnitude))
+            plt.show()
+
+            # set_fixed_end_angle = self.fixed_end_angle_to_nest[s:e]
+            # set_angular_velocity = np.nanmedian(utils.calc_angular_velocity(set_fixed_end_angle, diff_spacing=20)/20, axis=1)
+            # rolling_median = pd.Series(set_angular_velocity).interpolate(method='linear')
+            # rolling_median = rolling_median.rolling(window=3000, min_periods=1).median()
+            # rolling_sum = pd.Series(np.abs(set_angular_velocity)).interpolate(method='linear')
+            # rolling_sum = rolling_sum.rolling(window=3000, min_periods=1).sum()
+            # object_moves = rolling_sum > 1
+            # sign_change = np.append(np.diff(np.sign(rolling_median)), 0)
+            # sign_change_idx = np.arange(len(set_angular_velocity))[(sign_change != 0) * object_moves]
+            # direction_change.append(sign_change_idx+s)
+        # print(direction_change)
         return np.array(direction_change)
 
     def calc_ant_replacement_rate(self):
