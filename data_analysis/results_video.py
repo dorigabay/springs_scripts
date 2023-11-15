@@ -9,7 +9,7 @@ from data_analysis.analysis import Analyser
 
 def create_video(class_object):
     os.makedirs(class_object.output_path, exist_ok=True)
-    save_path = os.path.join(class_object.output_path, f"results_video_{os.path.split(class_object.video_path)[-1].split('.')[0]}_ants.MP4")
+    save_path = os.path.join(class_object.output_path, f"results_video_{os.path.split(class_object.video_path)[-1].split('.')[0]}_correct.MP4")
     print("saving video to: ", save_path)
     for frame_num in range(class_object.frames_num):
         print("\rframe: ", frame_num, end="")
@@ -112,7 +112,9 @@ class ResultsVideo:
         self.net_tangential_force = data.net_tangential_force[set_s:set_e][start:end]
         self.angular_velocity = data.angular_velocity[set_s:set_e][start:end]
         self.ants_assigned_to_springs = np.load(os.path.join(data_analysis_sub_path, "ants_assigned_to_springs.npz"))['arr_0'][start:end]
+        # self.ants_assigned_to_springs = np.load(os.path.join(data_analysis_sub_path, "ants_assigned_to_springs_uncorrected.npz"))['arr_0'][start:end]
         tracked_ants = sio.loadmat(os.path.join(data_analysis_sub_path, "tracking_data_corrected.mat"))["tracked_blobs_matrix"].astype(np.uint32)
+        # tracked_ants = sio.loadmat(os.path.join(data_analysis_sub_path, "tracking_data.mat"))["tracked_blobs_matrix"].astype(np.uint32)
         unique_elements, indices = np.unique(tracked_ants[:, 2, :], return_inverse=True)
         tracked_ants[:, 2, :] = indices.reshape(tracked_ants[:, 2, :].shape)
         self.tracked_ants = tracked_ants[:, :, start:end]
@@ -177,9 +179,9 @@ if __name__ == "__main__":
     calib_or_experiment = "experiment"
     num_of_springs = 20 if calib_or_experiment == "experiment" else 1
     video_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\1-videos\\summer_2023\\{calib_or_experiment}\\{spring_type}\\"
-    video_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\{calib_or_experiment}\\{spring_type}_final\\"
-    data_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\{calib_or_experiment}\\{spring_type}_final\\"
-    results_output_dir = f"Z:\\Dor_Gabay\\ThesisProject\\results\\summer_2023\\{spring_type}_final\\"
+    video_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\{calib_or_experiment}\\{spring_type}_final_final\\"
+    data_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\{calib_or_experiment}\\{spring_type}_final_final\\"
+    results_output_dir = f"Z:\\Dor_Gabay\\ThesisProject\\results\\summer_2023\\{spring_type}_final_final\\"
     video_path = os.path.normpath(glob.glob(os.path.join(video_dir, "**", "*.MP4"), recursive=True)[video_idx])
     self = ResultsVideo(video_path, video_analysis_dir, data_analysis_dir, results_output_dir, spring_type, n_frames_to_save=10000, reduction_factor=1, n_springs=num_of_springs, arrangement=arrangement)
 

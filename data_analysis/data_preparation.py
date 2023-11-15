@@ -150,7 +150,7 @@ class DataPreparation:
             needle_tip_repeated[~self.rest_bool] = np.nan
         x0 = np.array([0.0025, 0.0025, 3840/2, 2160/2])
         res = minimize(loss_func, x0=x0)
-        print("params: ", res.x, "loss: ", res.fun)
+        # print("params: ", res.x, "loss: ", res.fun)
         return res.x
 
     def n_ants_processing(self):
@@ -158,23 +158,14 @@ class DataPreparation:
             for count, set_idx in enumerate(self.sets_frames):
                 start, end = set_idx[0][0], set_idx[-1][1]
                 interpolation_boolean = utils.filter_continuity(self.missing_info[start:end, :].astype(int), max_size=8)
-                self.N_ants_around_springs[start:end, :] = np.round(utils.interpolate_data(self.N_ants_around_springs[start:end, :], interpolation_boolean))
+                self.N_ants_around_springs[start:end, :] = np.round(utils.interpolate_data_columns(self.N_ants_around_springs[start:end, :], interpolation_boolean))
                 nans = np.isnan(self.N_ants_around_springs[start:end, :])
                 self.N_ants_around_springs[start:end, :][nans] = 0
                 self.N_ants_around_springs[start:end, :] = utils.smooth_columns(self.N_ants_around_springs[start:end, :])
                 self.N_ants_around_springs[start:end, :][nans] = np.nan
                 for n in reversed(range(1, int(np.nanmax(self.N_ants_around_springs[start:end, :]))+1)):
                     short_attaches = utils.filter_continuity(self.N_ants_around_springs[start:end, :] == n, max_size=25)
-                    self.N_ants_around_springs[start:end, :] = np.round(utils.interpolate_data(self.N_ants_around_springs[start:end, :], short_attaches))
-
-                # path = "Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\experiment\\plus_0.1_final\\13.8\\S5760003"
-                # N_ants_around_springs = np.loadtxt(os.path.join(path, "N_ants_around_springs.csv"), delimiter=",")
-                # interpolation_boolean = utils.filter_continuity(self.missing_info, max_size=8)
-                # N_ants_around_springs = np.round(utils.interpolate_data(N_ants_around_springs, interpolation_boolean))
-                # N_ants_around_springs = utils.smooth_columns(N_ants_around_springs)
-                # for n in reversed(range(1, int(np.nanmax(N_ants_around_springs)) + 1)):
-                #     short_attaches = utils.filter_continuity(N_ants_around_springs == n, max_size=25)
-                #     N_ants_around_springs = np.round(utils.interpolate_data(N_ants_around_springs, short_attaches))
+                    self.N_ants_around_springs[start:end, :] = np.round(utils.interpolate_data_columns(self.N_ants_around_springs[start:end, :], short_attaches))
             self.rest_bool = self.N_ants_around_springs == 0
         else:
             self.rest_bool = np.full((self.N_ants_around_springs.shape[0], 1), False)
@@ -188,10 +179,9 @@ class DataPreparation:
         if not self.calib_mode:
             object_center_coordinates_approximated = np.full(self.object_center_coordinates.shape, np.nan)
             for count, points in enumerate(self.fixed_ends_coordinates):
-                print(f"\r{count}", end="")
+                # print(f"\r{count}", end="")
                 x0 = np.array([np.nanmedian(points[:, 0]), np.nanmedian(points[:, 1])])
                 res = minimize(loss, x0=x0)#, method='nelder-mead', options={'xatol': 1e-8, 'disp': True})
-                # print(f"\r{count}", end="")
                 object_center_coordinates_approximated[count, :] = res.x
             self.object_center_coordinates = object_center_coordinates_approximated
 

@@ -195,7 +195,7 @@ class CollectParameters:
 
     def analysis_example(self, image, parameters):
         if self.show_analysis_example:
-            try:
+            # try:
                 image = image.copy()
                 parameters["CONTINUE_FROM_LAST_SNAPSHOT"] = False
                 snapshot_data = utils.create_snapshot_data(parameters)
@@ -205,7 +205,7 @@ class CollectParameters:
                 ants = Ants(image, springs, squares)
                 calculations = Calculation(parameters, snapshot_data, springs, ants)
                 utils.present_analysis_result(image, calculations, springs, ants, waitKey=0)
-            except:
-                print("Error in analysis_example. Could not show example")
+            # except:
+            #     print("Error in analysis_example. Could not show example")
 
 

@@ -95,7 +95,7 @@ def clean_mask(mask, min_size, opening_size=None, fill_holes=True, circle_center
     mask = mask.astype(bool)
     if not (circle_center_remove is None or circle_radius_remove is None):
         inner_circle_mask = create_circular_mask(mask.shape, center=circle_center_remove, radius=circle_radius_remove * 0.9)
-        outer_circle_mask = create_circular_mask(mask.shape, center=circle_center_remove, radius=circle_radius_remove * 2.5)
+        outer_circle_mask = create_circular_mask(mask.shape, center=circle_center_remove, radius=circle_radius_remove * 3.5)
         mask[inner_circle_mask] = False
         mask[np.invert(outer_circle_mask)] = False
     mask = remove_small_blobs(mask, min_size)
@@ -163,6 +163,8 @@ def mask_object_colors(image, parameters):
             boolean_mask[mask1+mask2] = True
         color_masks[color_name] = boolean_mask
     whole_object_mask = clean_mask(np.any(np.stack(list(color_masks.values()), axis=-1), axis=-1), parameters["MIN_SIZE_FOR_WHOLE_OBJECT"], fill_holes=False)
+    # cv2.imshow("color_masks r", color_masks["r"].astype("uint8")*255)
+    # cv2.waitKey(0)
     color_masks["r"] = mask_sharper(image, color_masks["r"], parameters["SOBEL_KERNEL_SIZE"],
                                           parameters["GRADIANT_THRESHOLD"], parameters["SPRINGS_ENDS_OPENING"], parameters["SPRINGS_ENDS_CLOSING"])
     return color_masks, whole_object_mask
@@ -479,6 +481,8 @@ def create_snapshot_data(parameters=None, snapshot_data=None, calculations=None,
 
 def load_parameters(video_path, args):
     try:
+        print(video_path)
+        print(pickle.load(open(os.path.join(args["path"], "video_analysis_parameters.pickle"), 'rb')).keys())
         video_analysis_parameters = pickle.load(open(os.path.join(args["path"], "video_analysis_parameters.pickle"), 'rb'))[os.path.normpath(video_path)]
     except:
         raise ValueError("Video parameters for video: ", video_path, " not found. Please run the script with the flag --collect_parameters (-cp)")

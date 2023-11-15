@@ -3,6 +3,7 @@ import pickle
 import numpy as np
 import pandas as pd
 import matplotlib
+from scipy.ndimage import label
 matplotlib.use('TkAgg')
 # local packages:
 from data_analysis import utils
@@ -18,7 +19,7 @@ class Analyser:
         self.paths = [os.path.join(self.dir_path, sub_dir) for sub_dir in os.listdir(self.dir_path) if os.path.isdir(os.path.join(self.dir_path, sub_dir))]
         self.load_data()
         self.calculations()
-        self.find_direction_changes()
+
         # self.test_correlation()
         # self.create_plots()
 
@@ -41,34 +42,74 @@ class Analyser:
 
     def calculations(self, window_size=10):
         # translational force:
-        self.force_direction = utils.interpolate_data(self.force_direction)
-        self.force_magnitude = utils.interpolate_data(self.force_magnitude)
+        self.force_direction = utils.interpolate_data_columns(self.force_direction)
+        self.force_magnitude = utils.interpolate_data_columns(self.force_magnitude)
         horizontal_component = self.force_magnitude * np.cos(self.force_direction + self.fixed_end_angle_to_nest)
-        horizontal_component = utils.interpolate_data(horizontal_component)
+        horizontal_component = utils.interpolate_data_columns(horizontal_component)
         vertical_component = self.force_magnitude * np.sin(self.force_direction + self.fixed_end_angle_to_nest)
-        vertical_component = utils.interpolate_data(vertical_component)
+        vertical_component = utils.interpolate_data_columns(vertical_component)
         self.net_force_direction = np.arctan2(np.nansum(vertical_component, axis=1), np.nansum(horizontal_component, axis=1))
         self.net_force_magnitude = np.sqrt(np.nansum(horizontal_component, axis=1) ** 2 + np.nansum(vertical_component, axis=1) ** 2)
         self.net_force_direction = np.array(pd.Series(self.net_force_direction).rolling(window=window_size, center=True).median())
         self.net_force_magnitude = np.array(pd.Series(self.net_force_magnitude).rolling(window=window_size, center=True).median())
         # tangential force:
-        self.tangential_force = utils.interpolate_data(np.sin(self.force_direction) * self.force_magnitude)
+        self.tangential_force = utils.interpolate_data_columns(np.sin(self.force_direction) * self.force_magnitude)
         self.net_tangential_force = np.where(np.isnan(self.tangential_force).all(axis=1), np.nan, np.nansum(self.tangential_force, axis=1))
         self.net_tangential_force = np.array(pd.Series(self.net_tangential_force).rolling(window=window_size, center=True).median())
         # angular velocity:
         self.angular_velocity = utils.calc_angular_velocity(self.fixed_end_angle_to_nest, diff_spacing=window_size) / window_size
-        self.angular_velocity = utils.interpolate_data(self.angular_velocity)
+        self.angular_velocity = utils.interpolate_data_columns(self.angular_velocity)
         self.angular_velocity = np.where(np.isnan(self.angular_velocity).all(axis=1), np.nan, np.nanmedian(self.angular_velocity, axis=1))
         self.angular_velocity = np.array(pd.Series(self.angular_velocity).rolling(window=window_size, center=True).median())
         self.angular_velocity = np.round(self.angular_velocity, 4) * -1
         # translational velocity:
         self.momentum_direction, self.momentum_magnitude = utils.calc_translation_velocity(self.object_center_coordinates, spacing=window_size)
-        self.momentum_direction = np.round(utils.interpolate_data(self.momentum_direction), 4)
-        self.momentum_magnitude = np.round(utils.interpolate_data(self.momentum_magnitude), 4)
+        self.momentum_direction = np.round(utils.interpolate_data_columns(self.momentum_direction), 4)
+        self.momentum_magnitude = np.round(utils.interpolate_data_columns(self.momentum_magnitude), 4)
         # ants:
         self.total_n_ants = np.where(np.isnan(self.N_ants_around_springs).all(axis=1), np.nan, np.nansum(self.N_ants_around_springs, axis=1))
+        # angular direction change:
+        self.discrete_angular_velocity = self.discretize_angular_velocity()
         self.profile_ants_behavior()
         self.ants_profiling_analysis()
+
+    def discretize_angular_velocity(self):
+        angular_velocity = utils.calc_angular_velocity(self.fixed_end_angle_to_nest, diff_spacing=10) / 10
+        angular_velocity = np.where(np.isnan(angular_velocity).all(axis=1), np.nan, np.nanmedian(angular_velocity, axis=1))
+        outlier_threshold = np.nanpercentile(np.abs(angular_velocity), 99)
+        angular_velocity[np.abs(angular_velocity) > outlier_threshold] = np.nan
+        discrete_velocity_vectors = []
+        for count, set_idx in enumerate(self.sets_frames):
+            s, e = set_idx[0][0], set_idx[-1][1]+1
+            set_angular_velocity = angular_velocity[s:e]
+            set_angular_velocity = utils.interpolate_data_columns(set_angular_velocity)
+            threshold_stop = np.nanpercentile(np.abs(set_angular_velocity), 10)
+            stop = np.abs(set_angular_velocity) < threshold_stop
+            threshold_very_slow = np.nanpercentile(np.abs(set_angular_velocity), 25)
+            very_slow = np.all([threshold_stop <= np.abs(set_angular_velocity), np.abs(set_angular_velocity) < threshold_very_slow], axis=0)
+            threshold_slow = np.nanpercentile(np.abs(set_angular_velocity), 50)
+            slow = np.all([threshold_very_slow <= np.abs(set_angular_velocity), np.abs(set_angular_velocity) < threshold_slow], axis=0)
+            threshold_medium = np.nanpercentile(np.abs(set_angular_velocity), 75)
+            medium = np.all([threshold_slow <= np.abs(set_angular_velocity), np.abs(set_angular_velocity) < threshold_medium], axis=0)
+            fast = np.abs(set_angular_velocity) >= threshold_medium
+            signed_angular_velocity = set_angular_velocity.copy()
+            signed_angular_velocity[stop] = 0
+            signed_angular_velocity[very_slow] = np.sign(signed_angular_velocity[very_slow]) * 0.25
+            signed_angular_velocity[slow] = np.sign(signed_angular_velocity[slow]) * 0.5
+            signed_angular_velocity[medium] = np.sign(signed_angular_velocity[medium]) * 0.75
+            signed_angular_velocity[fast] = np.sign(signed_angular_velocity[fast]) * 1
+            for i in [1, 0.75, 0.5, 0.25]:
+                small_parts = utils.filter_continuity_vector(np.abs(signed_angular_velocity) == i, max_size=10)
+                signed_angular_velocity = utils.interpolate_data_columns(signed_angular_velocity, small_parts)
+            small_parts = utils.filter_continuity_vector(~np.isin(np.abs(signed_angular_velocity), [1, 0.75, 0.5, 0.25, 0]), max_size=10)
+            signed_angular_velocity = utils.interpolate_data_columns(signed_angular_velocity, small_parts)
+            discrete_velocity_vectors.append(signed_angular_velocity)
+            # if count == 0:
+            #     import matplotlib.pyplot as plt
+            #     plt.plot(np.arange(len(set_angular_velocity)), signed_angular_velocity)
+            #     plt.show()
+        discrete_velocity = np.concatenate(discrete_velocity_vectors)
+        return discrete_velocity * -1
 
     def profiler(self, data):
         profiled_data = np.full((self.ant_profiles.shape[0], self.longest_profile), np.nan)
@@ -107,13 +148,14 @@ class Analyser:
         self.longest_profile = 12000 if self.longest_profile > 12000 else self.longest_profile
         self.profiled_N_ants_around_springs = self.profiler(self.N_ants_around_springs)
         self.profiled_N_ants_around_springs[self.profiled_N_ants_around_springs == 0] = 1
-        # FIXME: profiled_N_ants_around_springs_sum needs to according to profiled_N_ants_around_springs
         self.profiled_N_ants_around_springs_sum = self.profiler(self.total_n_ants)
         self.profiled_fixed_end_angle_to_nest = self.profiler(self.fixed_end_angle_to_nest)
         self.profiled_force_direction = self.profiler(self.force_direction)
         self.profiled_force_magnitude = self.profiler(self.force_magnitude)
         self.profiled_angular_velocity = self.profiler(self.angular_velocity)
         self.profiled_tangential_force = self.profiler(self.tangential_force)
+        self.profiled_net_tangential_force = self.profiler(self.net_tangential_force)
+        self.profiled_discrete_angular_velocity = self.profiler(self.discrete_angular_velocity)
         reverse_arg_sort_columns = np.full(self.profiled_N_ants_around_springs.shape, 0)
         nans = np.isnan(self.profiled_N_ants_around_springs)
         nans_sum = np.sum(nans, axis=1)
@@ -122,43 +164,6 @@ class Analyser:
             reverse_arg_sort_columns[row, :nans_sum[row]] = np.where(nans[row])[0]
         reverse_arg_sort_rows = np.repeat(np.expand_dims(np.arange(self.profiled_N_ants_around_springs.shape[0]), axis=1), self.profiled_N_ants_around_springs.shape[1], axis=1)
         self.reverse_argsort = (reverse_arg_sort_rows, reverse_arg_sort_columns)
-
-    def find_direction_changes(self):
-        direction_change = []
-        for set_idx in self.sets_frames:
-            s, e = set_idx[0][0], set_idx[-1][1]
-            import matplotlib.pyplot as plt
-            angular_velocity = utils.calc_angular_velocity(self.fixed_end_angle_to_nest, diff_spacing=80) / 80
-            angular_velocity = np.where(np.isnan(angular_velocity).all(axis=1), np.nan, np.nanmedian(angular_velocity, axis=1))
-            angular_velocity = np.array(pd.Series(angular_velocity).rolling(window=30, center=True).median())
-            angular_velocity = utils.interpolate_data(angular_velocity)
-            upper = np.nanpercentile(angular_velocity, 70)
-            lower = np.nanpercentile(angular_velocity, 30)
-            angular_velocity[(angular_velocity < upper) * (angular_velocity > lower)] = 0
-            plt.plot(np.arange(len(angular_velocity)), np.sign(angular_velocity))
-            plt.show()
-            # translational_velocity = np.sin(self.momentum_direction) * self.momentum_magnitude
-            self.momentum_direction, self.momentum_magnitude = utils.calc_translation_velocity(self.object_center_coordinates, spacing=10)
-            self.momentum_magnitude = np.array(pd.Series(self.momentum_magnitude).rolling(window=20, center=True).median())
-            momentum_magnitude = self.momentum_magnitude.copy()
-            upper = np.nanpercentile(momentum_magnitude, 95)
-            # lower = np.nanpercentile(translational_velocity, 1.5)
-            momentum_magnitude[momentum_magnitude < upper] = 0
-            plt.plot(np.arange(len(momentum_magnitude)), np.sign(momentum_magnitude))
-            plt.show()
-
-            # set_fixed_end_angle = self.fixed_end_angle_to_nest[s:e]
-            # set_angular_velocity = np.nanmedian(utils.calc_angular_velocity(set_fixed_end_angle, diff_spacing=20)/20, axis=1)
-            # rolling_median = pd.Series(set_angular_velocity).interpolate(method='linear')
-            # rolling_median = rolling_median.rolling(window=3000, min_periods=1).median()
-            # rolling_sum = pd.Series(np.abs(set_angular_velocity)).interpolate(method='linear')
-            # rolling_sum = rolling_sum.rolling(window=3000, min_periods=1).sum()
-            # object_moves = rolling_sum > 1
-            # sign_change = np.append(np.diff(np.sign(rolling_median)), 0)
-            # sign_change_idx = np.arange(len(set_angular_velocity))[(sign_change != 0) * object_moves]
-            # direction_change.append(sign_change_idx+s)
-        # print(direction_change)
-        return np.array(direction_change)
 
     def calc_ant_replacement_rate(self):
         n_changes = np.nansum(np.abs(np.diff(self.N_ants_around_springs, axis=0)), axis=1)
@@ -191,6 +196,9 @@ class Analyser:
                 last_n_ants_change = arranged[1:][np.diff(reversed_profiled_N_ants_around_springs[profile, :]) != 0][-1]
                 self.detaching_single_ant_profiles[profile, last_n_ants_change:] = True
 
+        self.middle_events = utils.filter_continuity((self.profiled_N_ants_around_springs == 1).transpose(), min_size=200).transpose()
+
+
     def test_correlation(self, sets_idx=(0, -1)):
         first_set_idx, last_set_idx = (sets_idx, sets_idx) if isinstance(sets_idx, int) else sets_idx
         start, end = self.sets_frames[first_set_idx][0][0], self.sets_frames[last_set_idx][-1][1]
@@ -208,10 +216,9 @@ class Analyser:
 
     def create_plots(self):
         # plots.plot_ant_profiles(self, output_dir=os.path.join(self.output_path, "profiles"), window_size=11, profile_size=200)
-        # plots.draw_single_profiles(self, os.path.join(self.output_path, "detaching_single_profiles_S5760003"), profile_min_length=200, examples_number=200,
-        plots.draw_single_profiles(self, os.path.join(self.output_path, "attaching_single_profiles_S5760003"), profile_min_length=200, examples_number=200,
-                                   start=self.sets_frames[0][0][0], end=self.sets_frames[0][0][1])
-        # plots.draw_single_profiles(self, os.path.join(self.output_path, "single_profiles_S5760003_1"), profile_min_length=200, examples_number=200, start=self.sets_frames[0][0][0], end=self.sets_frames[0][0][1])
+        # plots.draw_single_profiles(self, os.path.join(self.output_path, "single_profiles_S5760003"), profile_min_length=200,
+        #                            start=self.sets_frames[0][0][0], end=self.sets_frames[0][0][1])
+        plots.plot_alignment(self, os.path.join(self.output_path, "alignment"), profile_size=200)
 
     def save_analysis_data(self, spring_type):
         output_path = os.path.join("Z:\\Dor_Gabay\\ThesisProject\\results\\", "analysis_data", spring_type)
@@ -224,8 +231,9 @@ class Analyser:
 
 if __name__ == "__main__":
     spring_type = "plus_0.1"
-    # data_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\experiment\\{spring_type}\\"
-    data_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\experiment\\{spring_type}_final\\"
-    output_dir = f"Z:\\Dor_Gabay\\ThesisProject\\results\\summer_2023\\{spring_type}_final\\"
+    data_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\experiment\\{spring_type}\\"
+    # data_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\experiment\\{spring_type}_final_final\\"
+    output_dir = f"Z:\\Dor_Gabay\\ThesisProject\\results\\summer_2023\\{spring_type}\\"
+    # output_dir = f"Z:\\Dor_Gabay\\ThesisProject\\results\\summer_2023\\{spring_type}_final_final\\"
     self = Analyser(data_analysis_dir, output_dir, spring_type)
 

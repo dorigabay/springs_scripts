@@ -40,10 +40,16 @@ class Springs:
     def get_springs_properties(self, image_cropped):
         color_masks, whole_object_mask = utils.mask_object_colors(image_cropped, self.parameters)
         self.object_center_coordinates, self.needle_end, self.object_needle_radius, self.object_needle_area_size = self.detect_object_needle(color_masks["g"])
+        # cv2.imshow("color_masks b]", color_masks["r"].astype("uint8") * 255)
+        # cv2.waitKey(0)
         spring_ends_mask = utils.clean_mask(color_masks["r"], self.parameters["MIN_SPRING_ENDS_SIZE"],
                                             circle_center_remove=self.object_center_coordinates, circle_radius_remove=self.object_needle_radius)
+        # cv2.imshow("spring_ends_mask", spring_ends_mask.astype("uint8") * 255)
+        # cv2.waitKey(0)
         spring_middle_part_mask = utils.clean_mask(color_masks["b"], self.parameters["MIN_SPRING_MIDDLE_PART_SIZE"], self.parameters["SPRINGS_MIDDLE_PART_OPENING"],
                                                    circle_center_remove=self.object_center_coordinates, circle_radius_remove=self.object_needle_radius)
+        # cv2.imshow("spring_middle_part_mask", spring_middle_part_mask.astype("uint8") * 255)
+        # cv2.waitKey(0)
         spring_middle_part_labeled, spring_ends_labeled, self.fixed_ends_labeled, self.free_ends_labeled, spring_middle_part_centers, spring_ends_centers = \
             self.get_spring_parts(self.object_center_coordinates, spring_middle_part_mask, spring_ends_mask)
         self.bundles_labeled, bundles_labels = self.create_bundles(spring_middle_part_mask, spring_ends_mask, self.fixed_ends_labeled)
@@ -75,6 +81,7 @@ class Springs:
         # use the previous detection for the center, or the edge:
         needle_mask_full_contour = find_contours(needle_mask_full)[0]
         farthest_point, needle_radius = utils.get_farthest_point(object_center, needle_mask_full_contour, percentile=80)
+        # print("needle_radius", needle_radius)
         if self.previous_detections["tip_point"] is not None:
             mean_radius = self.previous_detections["sum_needle_radius"] / self.previous_detections["analysed_frame_count"]
             if np.abs(needle_radius - mean_radius) / mean_radius > self.parameters["NEEDLE_RADIUS_TOLERANCE"]:
@@ -86,6 +93,11 @@ class Springs:
                     if np.abs(needle_radius - mean_radius) / mean_radius > self.parameters["NEEDLE_RADIUS_TOLERANCE"]:
                         raise ValueError("There is a problem in the needle part detection")
         needle_area_size = np.sum(needle_mask_full)
+        # image = needle_mask.astype("uint8") * 255
+        # cv2.circle(image, tuple(object_center.astype("int")), 1, (0, 255, 0), 2)
+        # cv2.circle(image, tuple(farthest_point.astype("int")), 1, (0, 255, 0), 2)
+        # cv2.imshow("needle_mask", image)
+        # cv2.waitKey(0)
         return object_center, farthest_point, needle_radius, needle_area_size
 
     def screen_small_labels(self, labeled, threshold=0.5):
@@ -97,12 +109,25 @@ class Springs:
 
     def get_spring_parts(self, object_center, spring_middle_part_mask, spring_ends_mask):
         spring_middle_part_labeled, spring_middle_part_num_features = label(spring_middle_part_mask, self.parameters["LABELING_BINARY_STRUCTURE"])
+        # cv2.imshow("spring_middle_part_labeled", spring_middle_part_labeled.astype(bool).astype("uint8") * 255)
+        # cv2.waitKey(0)
         spring_middle_part_labeled, spring_middle_part_num_features = self.screen_small_labels(spring_middle_part_labeled)
         spring_middle_part_centers = np.array(center_of_mass(spring_middle_part_labeled, labels=spring_middle_part_labeled, index=range(1, spring_middle_part_num_features + 1)))
         spring_middle_part_centers = utils.swap_columns(spring_middle_part_centers)
+
+        # image = spring_ends_mask.astype("uint8") * 255
+        # # image = spring_middle_part_labeled.astype(bool).astype("uint8") * 255
+        # cv2.imshow("image", image)
+        # cv2.waitKey(0)
+        # image = cv2.circle(image, (int(object_center[0]), int(object_center[1])), 5, 150, -1)
+        # cv2.imshow("image", image)
+        # cv2.waitKey(0)
+
         spring_middle_part_radii = np.sqrt(np.sum(np.square(spring_middle_part_centers - object_center), axis=1))
 
         spring_ends_labeled, spring_ends_num_features = label(spring_ends_mask, self.parameters["LABELING_BINARY_STRUCTURE"])
+        # cv2.imshow("spring_ends_labeled", spring_ends_labeled.astype(bool).astype("uint8") * 255)
+        # cv2.waitKey(0)
         spring_ends_centers = np.array(center_of_mass(spring_ends_labeled, labels=spring_ends_labeled, index=range(1, spring_ends_num_features + 1)))
         spring_ends_centers = utils.swap_columns(spring_ends_centers)
         spring_ends_radii = np.sqrt(np.sum(np.square(spring_ends_centers - object_center), axis=1))

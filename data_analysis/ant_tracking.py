@@ -34,14 +34,14 @@ class AntTracking:
             if self.restart:
                 print(f"removing old tracking data from {self.output_path}")
                 os.system(f"del {self.output_path}\\ants_centers.mat")
-            print(f"\rSaving ants centers data (Stage 1/7)... ({self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]})")
+            print(f"\rSaving ants centers data (Stage 1/5)... ({self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]})")
             sio.savemat(os.path.join(self.output_path, "ants_centers.mat"), {"ants_centers": ants_centers_mat})
         if self.restart or not os.path.exists(os.path.join(self.output_path, "tracking_data.mat")):
             matlab_script_path = "Z:\\Dor_Gabay\\ThesisProject\\scripts\\munkres_tracker\\"
             os.chdir(matlab_script_path)
             os.system("PATH=$PATH:'C:\Program Files\MATLAB\R2022a\bin'")
             execution_string = f"matlab -r ""ants_tracking('" + self.output_path + "\\')"""
-            print(f"\rRunning matlab script for ants tracking (Stage 2/7)... ({self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]})")
+            print(f"\rRunning matlab script for ants tracking (Stage 2/5)... ({self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]})")
             run_output = subprocess.run(execution_string, shell=True, capture_output=True)
             print(run_output.stdout.decode("utf-8"))
 
@@ -51,7 +51,7 @@ class AntTracking:
         """
         if self.restart or not os.path.exists(os.path.join(self.output_path, "tracking_data_corrected.mat")):
             utils.wait_for_existance(self.output_path, "tracking_data.mat")
-            print(f"\nCorrecting tracked ants (Stage 3/7)... ({self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]})")
+            print(f"\nCorrecting tracked ants (Stage 3/5)... ({self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]})")
             tracked_ants = sio.loadmat(os.path.join(self.output_path, "tracking_data.mat"))["tracked_blobs_matrix"]
             num_of_frames = tracked_ants.shape[2]
 
@@ -130,7 +130,7 @@ class AntTracking:
                 if occurrences < 20:
                     idx = np.where(tracked_ants[:, 2, :] == unique_label)
                     tracked_ants[idx[0], 2, idx[1]] = 0
-            print(f"\nSaving corrected tracking data (Stage 3/7)... ({self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]})")
+            print(f"\nSaving corrected tracking data (Stage 3/5)... ({self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]})")
             sio.savemat(os.path.join(self.output_path, "tracking_data_corrected.mat"), {"tracked_blobs_matrix": tracked_ants})
 
     def test_if_on_boundaries(self, coordinates):
@@ -142,12 +142,15 @@ class AntTracking:
 
     def assign_ants_to_springs(self):
         if self.restart or not os.path.exists(os.path.join(self.output_path, "ants_assigned_to_springs.npz")):
-            utils.wait_for_existance(self.output_path, "tracking_data_corrected.mat")
-            print(f"\nAssigning ants to springs (Stage 4/7)... ({self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]})")
+            # utils.wait_for_existance(self.output_path, "tracking_data_corrected.mat")
+            print(f"\nAssigning ants to springs (Stage 4/5)... ({self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]})")
             tracked_ants = sio.loadmat(os.path.join(self.output_path, "tracking_data_corrected.mat"))["tracked_blobs_matrix"].astype(np.uint32)
+            # tracked_ants = sio.loadmat(os.path.join(self.output_path, "tracking_data.mat"))["tracked_blobs_matrix"].astype(np.uint32)
             unique_elements, indices = np.unique(tracked_ants[:, 2, :], return_inverse=True)
             tracked_ants[:, 2, :] = indices.reshape(tracked_ants[:, 2, :].shape)
             ants_attached_labels = np.load(os.path.join(self.output_path, "ants_attached_labels.npz"))["arr_0"]
+            if tracked_ants.shape[0] > ants_attached_labels.shape[1]:
+                ants_attached_labels = np.concatenate((ants_attached_labels, np.zeros((ants_attached_labels.shape[0], tracked_ants.shape[0] - ants_attached_labels.shape[1])).astype(np.uint8)), axis=1)
             num_of_frames = ants_attached_labels.shape[0]
             ants_assigned_to_springs = np.zeros((num_of_frames, len(unique_elements)-1)).astype(np.uint8)
             for i in range(num_of_frames):
@@ -191,31 +194,32 @@ class AntTracking:
     def create_ant_profiles(self):
         """Columns order:
             ant | spring | start | end | precedence"""
-        print(f"\nCreating ants profiles (Stage 7/7)... ({self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]})")
-        ants_assigned_to_springs = np.load(os.path.join(self.output_path, "ants_assigned_to_springs.npz"))["arr_0"][:, :-1].astype(np.uint8)
-        self.profiles = np.full(5, np.nan)  # ant, spring, start, end, precedence
-        for ant in range(ants_assigned_to_springs.shape[1]):
-            print("\r Ant number: ", ant, end="")
-            attachment = ants_assigned_to_springs[:, ant]
-            events_springs = np.split(attachment, np.arange(len(attachment[1:]))[np.diff(attachment) != 0] + 1)
-            events_frames = np.split(np.arange(len(attachment)), np.arange(len(attachment[1:]))[np.diff(attachment) != 0] + 1)
-            precedence = 0
-            for event in range(len(events_springs)):
-                if events_springs[event][0] != 0 and len(events_springs[event]) > 1:
-                    precedence += 1
-                    start, end = events_frames[event][0] + self.set_frames[0], events_frames[event][-1] + self.set_frames[0]
-                    self.profiles = np.vstack((self.profiles, np.array([ant + 1, events_springs[event][0], start, end, precedence])))
-        self.profiles = self.profiles[1:, :]
-        np.savez_compressed(os.path.join(self.output_path, "ant_profiles.npz"), self.profiles)
+        if self.restart or not os.path.exists(os.path.join(self.output_path, "ant_profiles.npz")):
+            print(f"\nCreating ants profiles (Stage 5/5)... ({self.sub_dirs_names[0]}-{self.sub_dirs_names[-1]})")
+            ants_assigned_to_springs = np.load(os.path.join(self.output_path, "ants_assigned_to_springs.npz"))["arr_0"][:, :-1].astype(np.uint8)
+            self.profiles = np.full(5, np.nan)  # ant, spring, start, end, precedence
+            for ant in range(ants_assigned_to_springs.shape[1]):
+                print("\r Ant number: ", ant, end="")
+                attachment = ants_assigned_to_springs[:, ant]
+                events_springs = np.split(attachment, np.arange(len(attachment[1:]))[np.diff(attachment) != 0] + 1)
+                events_frames = np.split(np.arange(len(attachment)), np.arange(len(attachment[1:]))[np.diff(attachment) != 0] + 1)
+                precedence = 0
+                for event in range(len(events_springs)):
+                    if events_springs[event][0] != 0 and len(events_springs[event]) > 1:
+                        precedence += 1
+                        start, end = events_frames[event][0] + self.set_frames[0], events_frames[event][-1] + self.set_frames[0]
+                        self.profiles = np.vstack((self.profiles, np.array([ant + 1, events_springs[event][0], start, end, precedence])))
+            self.profiles = self.profiles[1:, :]
+            np.savez_compressed(os.path.join(self.output_path, "ant_profiles.npz"), self.profiles)
 
 
 if __name__ == "__main__":
     spring_type = "plus_0.1"
-    data_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\experiment\\{spring_type}\\"
-    output_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\experiment\\{spring_type}\\"
+    data_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\experiment\\{spring_type}_final_final\\"
+    output_path = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\experiment\\{spring_type}_final_final\\"
     sets_video_paths = pickle.load(open(os.path.join(data_analysis_dir, "sets_video_paths.pkl"), "rb"))
     sets_frames = [(video_set[0][0], video_set[-1][1]) for video_set in pickle.load(open(os.path.join(data_analysis_dir, "sets_frames.pkl"), "rb"))]
-    AntTracking(sets_video_paths[0], output_path, sets_frames[0], (2160, 3840), True)
+    AntTracking(sets_video_paths[0], output_path, sets_frames[0], (2160, 3840), False)
 
 
 

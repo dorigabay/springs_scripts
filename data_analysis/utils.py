@@ -68,14 +68,15 @@ def convert_bool_to_binary(bool_array):
 
 
 def column_dilation(array):
-    zeors = np.zeros((array.shape[0], array.shape[1]*2))
-    zeors[:, list(range(0, zeors.shape[1], 2))] = array
-    return zeors
+    zeros = np.zeros((array.shape[0], array.shape[1]*2))
+    zeros[:, list(range(0, zeros.shape[1], 2))] = array
+    return zeros
 
 
-# def column_erosion(array):
-#     # remove all the columns that are all zeros
-#     return array[:,np.any(array,axis=0)]
+def row_dilation(array):
+    zeros = np.zeros((array.shape[0]*2, array.shape[1]))
+    zeros[list(range(0, zeros.shape[0], 2)), :] = array
+    return zeros
 
 
 def difference(array, spacing=1):
@@ -110,23 +111,48 @@ def calc_angular_velocity(angles, diff_spacing=1):
     return diff
 
 
-def interpolate_data(array, undetected_bool=None, period=None):
-    array = copy.copy(array)
-    original_shape = array.shape
-    array = array.reshape(-1, 1) if len(array.shape) == 1 else array
-    undetected_bool = np.isnan(array) if undetected_bool is None else undetected_bool
-    for col in range(array.shape[1]):
-        fp = array[:, col]
+def interpolate_data_rows(data, interpolation_boolean=None, period=None):
+    data = copy.copy(data)
+    original_shape = data.shape
+    data = data.reshape(-1, 1) if len(original_shape) == 1 else data
+    if interpolation_boolean is not None:
+        interpolation_boolean = interpolation_boolean.reshape(-1, 1) if len(original_shape) == 1 else interpolation_boolean
+    else:
+        interpolation_boolean = np.isnan(data)
+    for row in range(data.shape[0]):
+        fp = data[row, :]
         xp = np.arange(len(fp))
-        cells_to_interpolate = undetected_bool[:, col]
+        cells_to_interpolate = interpolation_boolean[row, :]
+        fp_nonan = fp[np.invert(cells_to_interpolate)]
+        xp_nonan = xp[np.invert(cells_to_interpolate)]
+        if len(fp_nonan) != 0:
+            if period is not None:
+                data[row, :] = np.interp(xp, xp_nonan, fp_nonan, period=period)
+            else:
+                data[row, :] = np.interp(xp, xp_nonan, fp_nonan)
+    return data.reshape(original_shape)
+
+
+def interpolate_data_columns(data, interpolation_boolean=None, period=None):
+    data = copy.copy(data)
+    original_shape = data.shape
+    data = data.reshape(-1, 1) if len(original_shape) == 1 else data
+    if interpolation_boolean is not None:
+        interpolation_boolean = interpolation_boolean.reshape(-1, 1) if len(original_shape) == 1 else interpolation_boolean
+    else:
+        interpolation_boolean = np.isnan(data)
+    for col in range(data.shape[1]):
+        fp = data[:, col]
+        xp = np.arange(len(fp))
+        cells_to_interpolate = interpolation_boolean[:, col]
         fp_nonan = fp[np.invert(cells_to_interpolate)]
         xp_nonan = xp[np.invert(cells_to_interpolate)]
         if period is not None:
-            array[:, col] = np.interp(xp, xp_nonan, fp_nonan, period=period)
+            data[:, col] = np.interp(xp, xp_nonan, fp_nonan, period=period)
         else:
-            array[:, col] = np.interp(xp, xp_nonan, fp_nonan)
-    array = array.reshape(original_shape)
-    return array
+            data[:, col] = np.interp(xp, xp_nonan, fp_nonan)
+    data = data.reshape(original_shape)
+    return data
 
 
 def find_cells_to_interpolate(array, min_size=8):
