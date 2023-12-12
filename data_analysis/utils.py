@@ -5,10 +5,14 @@ from scipy.signal import savgol_filter
 import os
 import cv2
 import time
+import apytl
+from matplotlib import pyplot as plt
+from scipy.stats import f_oneway, ttest_ind
+import itertools
 
 
 def projection_on_axis(X, Y, axis=0):
-    X,Y = copy.copy(X).astype(float),copy.copy(Y).astype(float)
+    X, Y = copy.copy(X).astype(float),copy.copy(Y).astype(float)
     if not axis in [0,1]:
         raise ValueError("axis must be 0 or 1")
     second_axis = 1-axis
@@ -111,7 +115,7 @@ def calc_angular_velocity(angles, diff_spacing=1):
     return diff
 
 
-def interpolate_data_rows(data, interpolation_boolean=None, period=None):
+def interpolate_rows(data, interpolation_boolean=None, period=None):
     data = copy.copy(data)
     original_shape = data.shape
     data = data.reshape(-1, 1) if len(original_shape) == 1 else data
@@ -133,7 +137,7 @@ def interpolate_data_rows(data, interpolation_boolean=None, period=None):
     return data.reshape(original_shape)
 
 
-def interpolate_data_columns(data, interpolation_boolean=None, period=None):
+def interpolate_columns(data, interpolation_boolean=None, period=None):
     data = copy.copy(data)
     original_shape = data.shape
     data = data.reshape(-1, 1) if len(original_shape) == 1 else data
@@ -147,10 +151,11 @@ def interpolate_data_columns(data, interpolation_boolean=None, period=None):
         cells_to_interpolate = interpolation_boolean[:, col]
         fp_nonan = fp[np.invert(cells_to_interpolate)]
         xp_nonan = xp[np.invert(cells_to_interpolate)]
-        if period is not None:
-            data[:, col] = np.interp(xp, xp_nonan, fp_nonan, period=period)
-        else:
-            data[:, col] = np.interp(xp, xp_nonan, fp_nonan)
+        if not len(fp_nonan) == 0 or len(fp_nonan) == len(fp):
+            if period is not None:
+                data[:, col] = np.interp(xp, xp_nonan, fp_nonan, period=period)
+            else:
+                data[:, col] = np.interp(xp, xp_nonan, fp_nonan)
     data = data.reshape(original_shape)
     return data
 
@@ -216,6 +221,50 @@ def create_projective_transform_matrix(dst, dst_quality=None, quality_threshold=
     return PTMs
 
 
+def test_if_on_boundaries(coordinates, frame_size):
+    if frame_size[1] * 0.1 < coordinates[0] < frame_size[0] - frame_size[1] * 0.1 \
+            and frame_size[1] * 0.1 < coordinates[1] < frame_size[1] * 0.9:
+        return True
+    else:
+        return False
+
+
+def interpolate_assigned_ants(ants_assigned_to_springs, num_of_frames):
+    arranged_frames = np.arange(num_of_frames)
+    not_empty_columns = np.where(np.sum(ants_assigned_to_springs, axis=0) != 0)[0]
+    for count, ant in enumerate(not_empty_columns):
+        apytl.Bar().drawbar(count, len(not_empty_columns), fill='*')
+        vector = ants_assigned_to_springs[:, ant]
+        zeros = vector == 0
+        small_chunks = filter_continuity_vector(zeros, max_size=5)
+        xp = arranged_frames[~zeros]
+        fp = vector[xp]
+        x = arranged_frames[small_chunks]
+        vector[x] = np.round(np.interp(x, xp, fp))
+        small_chunks_springs = filter_continuity_vector(vector != 0, max_size=15)
+        vector[small_chunks_springs + zeros] = 0
+        if len(np.unique(vector)) > 1:
+            small_chunks = filter_continuity_vector(vector == 0, max_size=10)
+            xp = arranged_frames[vector != 0]
+            fp = vector[xp]
+            x = arranged_frames[small_chunks]
+            vector[x] = np.round(np.interp(x, xp, fp))
+        small_chunks = np.full(len(vector), False)
+        for spring in np.unique(vector):
+            if spring != 0:
+                small_chunks = small_chunks + filter_continuity_vector(vector == spring, max_size=10)
+        vector[small_chunks] = 0
+        small_chunks = filter_continuity_vector(vector == 0, max_size=50)
+        labeled, num_features = label(small_chunks)
+        for i in range(1, num_features + 1):
+            idx = np.where(labeled == i)[0]
+            start, end = idx[0], idx[-1]
+            if end != len(vector) - 1 and vector[start - 1] == vector[end + 1]:
+                vector[idx] = vector[start - 1]
+        ants_assigned_to_springs[:, ant] = vector
+    return ants_assigned_to_springs
+
+
 def apply_projective_transform(coordinates, projective_transformation_matrices):
     original_shape = coordinates.shape
     # print("coordinates before", coordinates.shape)
@@ -266,29 +315,80 @@ def smooth_columns(array):
     return array
 
 
-# import pandas as pd
-#
-#
-# def force_calculations(force_magnitude, force_direction, angle_to_nest, object_center_coordinates):
-#     # self.force_magnitude[~np.isnan(self.force_magnitude)*self.rest_bool] -= np.nanmean(self.force_magnitude[~np.isnan(self.force_magnitude)*self.rest_bool])
-#     # self.force_direction[~np.isnan(self.force_direction)*self.rest_bool] -= np.nanmean(self.force_direction[~np.isnan(self.force_direction)*self.rest_bool])
-#     net_force_direction, net_force_magnitude, net_tangential_force = calc_net_force(force_magnitude, force_direction, angle_to_nest)
-#     angular_velocity = calc_angular_velocity(angle_to_nest, diff_spacing=20) / 20
-#     angular_velocity = np.where(np.isnan(angular_velocity).all(axis=1), np.nan, np.nanmedian(angular_velocity, axis=1))
-#     momentum_direction, momentum_magnitude = calc_translation_velocity(object_center_coordinates, spacing=40)
-#     net_force_direction = np.array(pd.Series(net_force_direction).rolling(window=40, center=True).median())
-#     net_force_magnitude = np.array(pd.Series(net_force_magnitude).rolling(window=40, center=True).median())
-#     net_tangential_force = np.array(pd.Series(net_tangential_force).rolling(window=5, center=True).median())
-#     return net_force_direction, net_force_magnitude, net_tangential_force, angular_velocity, momentum_direction, momentum_magnitude
-#
-#
-# def calc_net_force(force_magnitude, force_direction, angle_to_nest):
-#     horizontal_component = force_magnitude * np.cos(force_direction + angle_to_nest)
-#     vertical_component = force_magnitude * np.sin(force_direction + angle_to_nest)
-#     net_force_direction = np.arctan2(np.nansum(vertical_component, axis=1), np.nansum(horizontal_component, axis=1))
-#     net_force_magnitude = np.sqrt(np.nansum(horizontal_component, axis=1) ** 2 + np.nansum(vertical_component, axis=1) ** 2)
-#     tangential_force = np.sin(force_direction) * force_magnitude
-#     net_tangential_force = np.where(np.isnan(tangential_force).all(axis=1), np.nan, np.nansum(tangential_force, axis=1))
-#     return net_force_direction, net_force_magnitude, net_tangential_force
+def kuramoto_order_parameter(phases):
+    """
+    Calculate the Kuramoto order parameter for an array of phase values.
 
+    Parameters:
+    - phases: A 1D NumPy array or list containing the phase values of oscillators.
+
+    Returns:
+    - R: Magnitude of the order parameter.
+    - Phi: Phase of the order parameter.
+    """
+    # Ensure phases are in the range [0, 2*pi)
+    phases = np.mod(phases, 2 * np.pi)
+    # Calculate the complex sum of unit vectors corresponding to each phase
+    complex_sum = np.sum(np.exp(1j * phases))
+    # Calculate the order parameter magnitude and phase
+    R = np.abs(complex_sum) / len(phases)
+    Phi = np.angle(complex_sum)
+    return R, Phi
+
+
+def compare_two_pairs(pair1, pair2):
+    group1, group2, group3, group4 = pair1[0], pair1[1], pair2[0], pair2[1]
+    f_statistic, p_value_anova = f_oneway(group1, group2, group3, group4)
+    alpha_anova = 0.05
+    if p_value_anova < alpha_anova:
+        print("There are significant differences between at least two groups.")
+        t_statistic_pair1, p_value_pair1 = ttest_ind(*pair1)
+        t_statistic_pair2, p_value_pair2 = ttest_ind(*pair2)
+        alpha_ttest = 0.05
+        if p_value_pair1 < alpha_ttest and p_value_pair2 < alpha_ttest and abs(t_statistic_pair1) > abs(t_statistic_pair2):
+            print("The difference between pair1 is larger than the difference between pair2.")
+            pair1_difference_is_larger_than_pair2_differences = True
+        else:
+            print("The difference between pair1 is not larger than the difference between pair2.")
+            pair1_difference_is_larger_than_pair2_differences = False
+    else:
+        pair1_difference_is_larger_than_pair2_differences = False
+        print("There are no significant differences between groups.")
+    return pair1_difference_is_larger_than_pair2_differences
+
+
+def draw_significant_stars(df, combinations=None, axs=None, y_range=None):
+    if combinations is None:
+        combinations = np.array(list(itertools.combinations(np.arange(len(df.columns)), 2)))
+    else:
+        combinations = np.array(combinations)
+    combinations = combinations[np.argsort([i[1]-i[0] for i in combinations])]
+    for col_1_idx, col_2_idx in combinations:
+        array1 = df.iloc[:, col_1_idx]
+        array2 = df.iloc[:, col_2_idx]
+        nan_idx = np.logical_or(np.isnan(array1), np.isnan(array2))
+        t_stat, p_value = ttest_ind(array1[~nan_idx], array2[~nan_idx])
+        if p_value < 0.05:
+            print("There is a significant difference between the two groups.")
+            if axs is None:
+                top = plt.gca().get_ylim()[1]
+                bottom = plt.gca().get_ylim()[0]
+            else:
+                top = axs.get_ylim()[1]
+                bottom = axs.get_ylim()[0]
+            y_range = top - bottom
+            bar_height = (y_range * 0.02) + top
+            bar_tips = bar_height - (y_range * 0.02)
+            if axs is None:
+                plt.plot(
+                    [col_1_idx, col_1_idx, col_2_idx, col_2_idx],
+                    [bar_tips, bar_height, bar_height, bar_tips], lw=1, c='k')
+                plt.text(np.abs(col_2_idx + col_1_idx) / 2, bar_height, "***", ha='center', va='center', fontsize=12)
+            else:
+                axs.plot(
+                    [col_1_idx, col_1_idx, col_2_idx, col_2_idx],
+                    [bar_tips, bar_height, bar_height, bar_tips], lw=1, c='k')
+                axs.text(np.abs(col_2_idx + col_1_idx) / 2, bar_height, "***", ha='center', va='center', fontsize=12)
+        else:
+            print(f"There is no significant difference between {col_1_idx} and {col_2_idx}.")
 

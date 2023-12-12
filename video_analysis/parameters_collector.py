@@ -11,7 +11,7 @@ from springs_detector import Springs
 from perspective_squares import PerspectiveSquares
 
 NEUTRALIZE_COLOUR_ALPHA = 2.5
-MAX_ANTS_NUMBER = 200
+MAX_ANTS_NUMBER = 300
 ANTS_SOBEL_KERNEL_SIZE = 3
 ANTS_GRADIANT_THRESHOLD = 240
 ANTS_CLOSING_KERNEL = np.ones((2, 2))
@@ -107,7 +107,7 @@ class CollectParameters:
         new_parameters["ANTS_NEUTRALIZE_COLOUR_ALPHA"] = 2
         new_parameters["ANTS_NEUTRALIZE_COLOUR_BETA"] = 10
         new_parameters["NEUTRALIZE_COLOUR_ALPHA"] = NEUTRALIZE_COLOUR_ALPHA if parameters is None else parameters["NEUTRALIZE_COLOUR_ALPHA"]
-        new_parameters["MAX_ANTS_NUMBER"] = MAX_ANTS_NUMBER if parameters is None else parameters["MAX_ANTS_NUMBER"]
+        new_parameters["MAX_ANTS_NUMBER"] = MAX_ANTS_NUMBER# if parameters is None else parameters["MAX_ANTS_NUMBER"]
         new_parameters["ANTS_SOBEL_KERNEL_SIZE"] = ANTS_SOBEL_KERNEL_SIZE if parameters is None else parameters["ANTS_SOBEL_KERNEL_SIZE"]
         new_parameters["ANTS_GRADIANT_THRESHOLD"] = ANTS_GRADIANT_THRESHOLD# if parameters is None else parameters["ANTS_GRADIANT_THRESHOLD"]
         new_parameters["ANTS_CLOSING_KERNEL"] = ANTS_CLOSING_KERNEL if parameters is None else parameters["ANTS_CLOSING_KERNEL"]

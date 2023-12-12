@@ -158,14 +158,14 @@ class DataPreparation:
             for count, set_idx in enumerate(self.sets_frames):
                 start, end = set_idx[0][0], set_idx[-1][1]
                 interpolation_boolean = utils.filter_continuity(self.missing_info[start:end, :].astype(int), max_size=8)
-                self.N_ants_around_springs[start:end, :] = np.round(utils.interpolate_data_columns(self.N_ants_around_springs[start:end, :], interpolation_boolean))
+                self.N_ants_around_springs[start:end, :] = np.round(utils.interpolate_columns(self.N_ants_around_springs[start:end, :], interpolation_boolean))
                 nans = np.isnan(self.N_ants_around_springs[start:end, :])
                 self.N_ants_around_springs[start:end, :][nans] = 0
                 self.N_ants_around_springs[start:end, :] = utils.smooth_columns(self.N_ants_around_springs[start:end, :])
                 self.N_ants_around_springs[start:end, :][nans] = np.nan
                 for n in reversed(range(1, int(np.nanmax(self.N_ants_around_springs[start:end, :]))+1)):
                     short_attaches = utils.filter_continuity(self.N_ants_around_springs[start:end, :] == n, max_size=25)
-                    self.N_ants_around_springs[start:end, :] = np.round(utils.interpolate_data_columns(self.N_ants_around_springs[start:end, :], short_attaches))
+                    self.N_ants_around_springs[start:end, :] = np.round(utils.interpolate_columns(self.N_ants_around_springs[start:end, :], short_attaches))
             self.rest_bool = self.N_ants_around_springs == 0
         else:
             self.rest_bool = np.full((self.N_ants_around_springs.shape[0], 1), False)

@@ -481,8 +481,6 @@ def create_snapshot_data(parameters=None, snapshot_data=None, calculations=None,
 
 def load_parameters(video_path, args):
     try:
-        print(video_path)
-        print(pickle.load(open(os.path.join(args["path"], "video_analysis_parameters.pickle"), 'rb')).keys())
         video_analysis_parameters = pickle.load(open(os.path.join(args["path"], "video_analysis_parameters.pickle"), 'rb'))[os.path.normpath(video_path)]
     except:
         raise ValueError("Video parameters for video: ", video_path, " not found. Please run the script with the flag --collect_parameters (-cp)")

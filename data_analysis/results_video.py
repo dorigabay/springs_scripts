@@ -5,19 +5,26 @@ import os
 import scipy.io as sio
 # local imports:
 from data_analysis.analysis import Analyser
+import utils
 
 
 def create_video(class_object):
     os.makedirs(class_object.output_path, exist_ok=True)
-    save_path = os.path.join(class_object.output_path, f"results_video_{os.path.split(class_object.video_path)[-1].split('.')[0]}_correct.MP4")
+    video_name = f"results_video_{os.path.split(class_object.video_path)[-1].split('.')[0]}.MP4"
+    video_name += "-amoeba_mask.MP4" if class_object.draw_amoeba else ""
+    save_path = os.path.join(class_object.output_path, video_name)
     print("saving video to: ", save_path)
+    previous_points = None
     for frame_num in range(class_object.frames_num):
         print("\rframe: ", frame_num, end="")
         ret, frame = class_object.cap.read()
         if frame is None:
             break
         frame = cv2.resize(frame, (0, 0), fx=class_object.reduction_factor, fy=class_object.reduction_factor)
-        frame = class_object.draw_results_on_frame(frame, frame_num, reduction_factor=class_object.reduction_factor)
+        if class_object.draw_amoeba:
+            frame, previous_points = class_object.amoeba_results(frame, frame_num, reduction_factor=class_object.reduction_factor, previous_points=previous_points)
+        else:
+            frame = class_object.draw_results_on_frame(frame, frame_num, reduction_factor=class_object.reduction_factor)
         if frame_num == 0:
             video_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), class_object.fps, (frame.shape[1], frame.shape[0]))
         video_writer.write(frame)
@@ -51,17 +58,26 @@ def create_color_space(hue_data, around_zero=False):
 
 
 class ResultsVideo:
-    def __init__(self, video_path, video_analysis_path, data_analysis_path, output_path, spring_type, start_frame=0, n_frames_to_save=100, reduction_factor=1., n_springs=20, arrangement=0):
+    def __init__(self, video_path,
+                       video_analysis_path,
+                       data_analysis_path,
+                       output_path,
+                       spring_type,
+                       start_frame=0,
+                       n_frames_to_save=100,
+                       reduction_factor=1.,
+                       n_springs=20,
+                       arrangement=0,
+                       draw_amoeba=False):
         self.video_path = video_path
         self.output_path = output_path
         self.n_springs = n_springs
-        # missing_sub_dirs = video_path.split('.MP4')[0].split(video_analysis_path.split(os.sep)[-2])[1:][0].split(os.sep)[1:]
+        self.draw_amoeba = draw_amoeba
         missing_sub_dirs = video_path.split('.MP4')[0].split(spring_type)[1:][0].split(os.sep)[1:]
         self.video_analysis_path = os.path.join(video_analysis_path, *missing_sub_dirs)
         self.data_analysis_path = data_analysis_path
         self.start_frame = start_frame
         self.reduction_factor = reduction_factor
-        # self.calculations()
         data = Analyser(self.data_analysis_path, os.path.basename(video_analysis_path), spring_type)
         self.load_data(data, arrangement)
         self.frames_num = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)) - 1
@@ -96,11 +112,11 @@ class ResultsVideo:
 
         rearrangement = np.append(np.arange(arrangement, self.n_springs), np.arange(0, arrangement))
         self.fixed_ends_coordinates = np.stack((np.loadtxt(os.path.join(self.video_analysis_path, "fixed_ends_coordinates_x.csv"), delimiter=",").reshape(-1, self.n_springs),
-            np.loadtxt(os.path.join(self.video_analysis_path, "fixed_ends_coordinates_y.csv"), delimiter=",").reshape(-1, self.n_springs)), axis=2)[self.start_frame:, rearrangement]
+        np.loadtxt(os.path.join(self.video_analysis_path, "fixed_ends_coordinates_y.csv"), delimiter=",").reshape(-1, self.n_springs)), axis=2)[self.start_frame:, rearrangement]
         self.free_ends_coordinates = np.stack((np.loadtxt(os.path.join(self.video_analysis_path, "free_ends_coordinates_x.csv"), delimiter=",").reshape(-1, self.n_springs),
-            np.loadtxt(os.path.join(self.video_analysis_path, "free_ends_coordinates_y.csv"), delimiter=",").reshape(-1, self.n_springs)), axis=2)[self.start_frame:, rearrangement]
+        np.loadtxt(os.path.join(self.video_analysis_path, "free_ends_coordinates_y.csv"), delimiter=",").reshape(-1, self.n_springs)), axis=2)[self.start_frame:, rearrangement]
         self.needle_part_coordinates = np.stack((np.loadtxt(os.path.join(self.video_analysis_path, "needle_part_coordinates_x.csv"), delimiter=","),
-            np.loadtxt(os.path.join(self.video_analysis_path, "needle_part_coordinates_y.csv"), delimiter=",")), axis=2)[self.start_frame:]
+        np.loadtxt(os.path.join(self.video_analysis_path, "needle_part_coordinates_y.csv"), delimiter=",")), axis=2)[self.start_frame:]
         self.object_center_coordinates = self.needle_part_coordinates[:, 0]
         self.needle_tip_coordinates = self.needle_part_coordinates[:, -1]
 
@@ -119,6 +135,31 @@ class ResultsVideo:
         tracked_ants[:, 2, :] = indices.reshape(tracked_ants[:, 2, :].shape)
         self.tracked_ants = tracked_ants[:, :, start:end]
 
+    def amoeba_results(self, frame, frame_num, reduction_factor=0.4, previous_points=None):
+        vector_end_points = np.full((self.number_of_springs, 2), np.nan)
+        object_center_coordinates = self.object_center_coordinates[frame_num]
+        for spring in range(self.number_of_springs):
+            start_point = self.fixed_ends_coordinates[frame_num, spring, :]
+            midpoint = (object_center_coordinates + self.fixed_ends_coordinates[frame_num, spring, :]) / 2
+            universal_angle = self.object_fixed_end_angle_to_nest[frame_num, spring] + np.pi / 2 + self.force_direction[frame_num, spring]
+            # vector_end_point = start_point + 100 * self.force_magnitude[frame_num, spring] * np.array([np.cos(universal_angle), np.sin(universal_angle)])
+            vector_end_point = midpoint + 100 * self.force_magnitude[frame_num, spring] * np.array([np.cos(universal_angle), np.sin(universal_angle)])
+            if not np.isnan(vector_end_point).any():
+                vector_end_point = tuple((vector_end_point * reduction_factor).astype(int))
+                vector_end_points[spring, :] = vector_end_point
+        polygon_mask = np.zeros((frame.shape[0], frame.shape[1], 3), dtype=np.uint8)
+        if previous_points is not None:
+            previous_points = np.concatenate((previous_points, vector_end_points[np.newaxis, :, :]), axis=0)
+            previous_points[:, :, 0] = utils.interpolate_columns(previous_points[:, :, 0])
+            previous_points[:, :, 1] = utils.interpolate_columns(previous_points[:, :, 1])
+            points = previous_points[-1, :, :].reshape((-1, 1, 2)).astype(int)
+            polygon_mask = cv2.fillPoly(polygon_mask, [points], color=(255, 255, 255))
+        else:
+            previous_points = vector_end_points[np.newaxis, :, :]
+        if not np.isnan(vector_end_points).any():
+            polygon_mask = cv2.circle(polygon_mask, (int(object_center_coordinates[0]), int(object_center_coordinates[1])), 5, (0, 0, 255), -1)
+        return polygon_mask, previous_points
+
     def draw_results_on_frame(self, frame, frame_num, reduction_factor=0.4):
         # circle_coordinates = (np.concatenate((self.object_center_coordinates[frame_num, :].reshape(1, 2),
         #                                       self.needle_tip_coordinates[frame_num, :].reshape(1, 2),
@@ -135,7 +176,7 @@ class ResultsVideo:
                 coordinates = tuple((ant[:2] * reduction_factor).astype(int))
                 label = ant[2].astype(int)
                 cv2.circle(frame, coordinates, int(3 * reduction_factor), (0, 0, 255), -1)
-                cv2.putText(frame, str(label), coordinates, cv2.FONT_HERSHEY_SIMPLEX, 0.7 * reduction_factor, (0, 0, 255), 2)
+                # cv2.putText(frame, str(label), coordinates, cv2.FONT_HERSHEY_SIMPLEX, 0.7 * reduction_factor, (0, 0, 255), 2)
                 spring = self.ants_assigned_to_springs[frame_num, label-1].astype(int)
                 if spring != 0:
                     # cv2.putText(frame, str(spring), coordinates, cv2.FONT_HERSHEY_SIMPLEX,  0.7*reduction_factor, (0, 255, 0), 2)
@@ -158,30 +199,39 @@ class ResultsVideo:
                 cv2.putText(frame, str(spring+1), start_point, cv2.FONT_HERSHEY_SIMPLEX, 0.7*reduction_factor, (0, 200, 255), 2)
 
         # write the net tangential force on the frame
-        # net_tangential_force_color = [int(x) for x in self.net_tangential_force_color_range[np.argmin(np.abs(self.net_tangential_force[frame_num] - self.net_tangential_force_color_range_bins))]]
-        # coordinates = tuple((np.array((1440, 300))*reduction_factor).astype(int))
-        # cv2.putText(frame, "Net tangential force (mN): "+str(np.round(self.net_tangential_force[frame_num],3)), coordinates,
-        #             cv2.FONT_HERSHEY_SIMPLEX, 1*reduction_factor, net_tangential_force_color, int(2*reduction_factor), cv2.LINE_AA)
-        # # write the velocity on the frame
-        # velocity_color = [int(x) for x in self.velocity_color_range[np.argmin(np.abs(self.angular_velocity[frame_num] - self.velocity_color_range_bins))]]
-        # coordinates = tuple((np.array((1440, 200))*reduction_factor).astype(int))
-        # cv2.putText(frame, "Angular velocity: " + str(np.round(self.angular_velocity[frame_num], 5)), coordinates,
-        #             cv2.FONT_HERSHEY_SIMPLEX, 1*reduction_factor, velocity_color, int(2*reduction_factor), cv2.LINE_AA)
+        net_tangential_force_color = [int(x) for x in self.net_tangential_force_color_range[np.argmin(np.abs(self.net_tangential_force[frame_num] - self.net_tangential_force_color_range_bins))]]
+        coordinates = tuple((np.array((1440, 300))*reduction_factor).astype(int))
+        cv2.putText(frame, "Net tangential force (mN): "+str(np.round(self.net_tangential_force[frame_num],3)), coordinates,
+                    cv2.FONT_HERSHEY_SIMPLEX, 1*reduction_factor, net_tangential_force_color, int(2*reduction_factor), cv2.LINE_AA)
+        # write the velocity on the frame
+        velocity_color = [int(x) for x in self.velocity_color_range[np.argmin(np.abs(self.angular_velocity[frame_num] - self.velocity_color_range_bins))]]
+        coordinates = tuple((np.array((1440, 200))*reduction_factor).astype(int))
+        cv2.putText(frame, "Angular velocity: " + str(np.round(self.angular_velocity[frame_num], 5)), coordinates,
+                    cv2.FONT_HERSHEY_SIMPLEX, 1*reduction_factor, velocity_color, int(2*reduction_factor), cv2.LINE_AA)
         return frame
 
 
 if __name__ == "__main__":
     import glob
     spring_type = "plus_0.1"
-    video_idx = 0
+    video_idx = 1
     arrangement = 0
     # calib_or_experiment = "calibration"
     calib_or_experiment = "experiment"
     num_of_springs = 20 if calib_or_experiment == "experiment" else 1
     video_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\1-videos\\summer_2023\\{calib_or_experiment}\\{spring_type}\\"
-    video_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\{calib_or_experiment}\\{spring_type}_final_final\\"
-    data_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\{calib_or_experiment}\\{spring_type}_final_final\\"
-    results_output_dir = f"Z:\\Dor_Gabay\\ThesisProject\\results\\summer_2023\\{spring_type}_final_final\\"
     video_path = os.path.normpath(glob.glob(os.path.join(video_dir, "**", "*.MP4"), recursive=True)[video_idx])
-    self = ResultsVideo(video_path, video_analysis_dir, data_analysis_dir, results_output_dir, spring_type, n_frames_to_save=10000, reduction_factor=1, n_springs=num_of_springs, arrangement=arrangement)
+    video_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\{calib_or_experiment}\\{spring_type}\\"
+    data_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\{calib_or_experiment}\\{spring_type}\\"
+    results_output_dir = f"Z:\\Dor_Gabay\\ThesisProject\\results\\summer_2023\\{spring_type}\\"
+    self = ResultsVideo(video_path,
+                        video_analysis_dir,
+                        data_analysis_dir,
+                        results_output_dir,
+                        spring_type,
+                        n_frames_to_save=10000,
+                        reduction_factor=1,
+                        n_springs=num_of_springs,
+                        arrangement=arrangement,
+                        draw_amoeba=True)
 

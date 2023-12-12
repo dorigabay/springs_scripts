@@ -57,7 +57,6 @@ def main(video_path, parameters):
                 snapshot_data = calculator.save_data(snapshot_data, parameters)
         parameters["CONTINUE_FROM_LAST_SNAPSHOT"] = False
     cap.release()
-    # utils.convert_ants_centers_to_mathlab(parameters["OUTPUT_PATH"])
     print("Finished processing video: ", video_path)
 
 
@@ -80,6 +79,10 @@ if __name__ == '__main__':
 
 
 # python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\calibration\plus_0.1\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\calibration\plus_0.1\ -cp
+# python video_analysis\main.py --path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.5\ --output_path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.5\ -cp
+
+# python video_analysis\main.py --path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.5\ --output_path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.5\ -nCPU 18
+
 # python video_analysis\main.py --path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.2\ --output_path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.2\ -cp
 # python video_analysis\main.py --path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.1\ --output_path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.1\ -cp
 # python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.1\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.1_final_final\ -con
@@ -92,5 +95,7 @@ if __name__ == '__main__':
 # python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.2\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.2\ -cp
 # python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\calibration\plus_0.2\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\calibration\plus_0.2\ -cp
 # python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\calibration\plus_0.2\ --output_path Z:\Dor_Gabay\ThesisProject\data\Trash\
+
+# python video_analysis\main.py --path Z:\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\calibration\plus_0.5\ --output_path Z:\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\calibration\plus_0.5\ --nCPU 10
 
 
