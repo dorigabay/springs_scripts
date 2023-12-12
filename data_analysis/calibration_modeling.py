@@ -8,7 +8,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import train_test_split
 # local imports:
-from data_analysis.data_preparation import DataPreparation
+from data_preparation import DataPreparation
 
 
 class CalibrationModeling(DataPreparation):
@@ -19,12 +19,12 @@ class CalibrationModeling(DataPreparation):
         self.output_path = os.path.join(output_path, self.calibration_name)
         self.load_weights(weights)
         data_paths = np.array([root for root, dirs, files in os.walk(self.output_path) if not dirs])
-        self.weights = self.weights[videos_idx] if videos_idx is not None else self.weights
-        data_paths = data_paths[videos_idx] if videos_idx is not None else data_paths
+        self.weights = self.weights[list(videos_idx)] if videos_idx is not None else self.weights
+        data_paths = data_paths[list(videos_idx)] if videos_idx is not None else data_paths
         super().__init__(data_paths, video_path, n_springs=1)
         self.zero_weight_dir = data_paths[np.where(np.array(self.weights) == 0)[0][0]]
         self.concat_calib_data()
-        # self.plot()
+        self.plot()
         self.create_calibration_model()
 
     def load_weights(self, weights=None):

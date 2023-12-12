@@ -392,3 +392,72 @@ def draw_significant_stars(df, combinations=None, axs=None, y_range=None):
         else:
             print(f"There is no significant difference between {col_1_idx} and {col_2_idx}.")
 
+
+def discretize_angular_velocity(angular_velocity, sets_frames):
+    discrete_velocity_vectors = []
+    threshold_stop = np.nanpercentile(np.abs(angular_velocity), 50)
+    threshold_very_slow = np.nanpercentile(np.abs(angular_velocity), 67.5)
+    threshold_slow = np.nanpercentile(np.abs(angular_velocity), 75)
+    threshold_medium = np.nanpercentile(np.abs(angular_velocity), 87.5)
+
+    for count, set_idx in enumerate(sets_frames):
+        s, e = set_idx[0][0], set_idx[-1][1]+1
+        set_angular_velocity = angular_velocity[s:e]
+        set_angular_velocity = interpolate_columns(set_angular_velocity)
+        stop = np.abs(set_angular_velocity) < threshold_stop
+        very_slow = np.all([threshold_stop <= np.abs(set_angular_velocity), np.abs(set_angular_velocity) < threshold_very_slow], axis=0)
+        slow = np.all([threshold_very_slow <= np.abs(set_angular_velocity), np.abs(set_angular_velocity) < threshold_slow], axis=0)
+        medium = np.all([threshold_slow <= np.abs(set_angular_velocity), np.abs(set_angular_velocity) < threshold_medium], axis=0)
+        fast = np.abs(set_angular_velocity) >= threshold_medium
+        signed_angular_velocity = set_angular_velocity.copy()
+        signed_angular_velocity[stop] = 0
+        signed_angular_velocity[very_slow] = np.sign(signed_angular_velocity[very_slow]) * 0.25
+        signed_angular_velocity[slow] = np.sign(signed_angular_velocity[slow]) * 0.5
+        signed_angular_velocity[medium] = np.sign(signed_angular_velocity[medium]) * 0.75
+        signed_angular_velocity[fast] = np.sign(signed_angular_velocity[fast]) * 1
+        velocity_labels = [1, 0.75, 0.5, 0.25, 0]
+        for i in velocity_labels:
+            small_parts = filter_continuity_vector(np.abs(signed_angular_velocity) == i, max_size=5)
+            signed_angular_velocity = interpolate_columns(signed_angular_velocity, small_parts)
+        small_parts = filter_continuity_vector(~np.isin(np.abs(signed_angular_velocity), [1, 0.75, 0.5, 0.25, 0]), max_size=5)
+        signed_angular_velocity = interpolate_columns(signed_angular_velocity, small_parts)
+        for velocity_count, velocity in enumerate(velocity_labels[1:]):
+            out_of_label = (signed_angular_velocity > velocity) * (signed_angular_velocity < velocity_labels[velocity_count])
+            signed_angular_velocity[out_of_label] = velocity
+            out_of_label_minus = (signed_angular_velocity < -velocity) * (signed_angular_velocity > -velocity_labels[velocity_count])
+            signed_angular_velocity[out_of_label_minus] = -velocity
+        for velocity_count, velocity in enumerate(velocity_labels[:-1]):
+            small_parts_plus = filter_continuity_vector(signed_angular_velocity == velocity, max_size=5)
+            signed_angular_velocity[small_parts_plus] = velocity_labels[velocity_count+1]
+            small_parts_minus = filter_continuity_vector(signed_angular_velocity == -velocity, max_size=5)
+            signed_angular_velocity[small_parts_minus] = -velocity_labels[velocity_count+1]
+        discrete_velocity_vectors.append(signed_angular_velocity)
+    discrete_velocity = np.concatenate(discrete_velocity_vectors)
+    change = np.abs(np.diff(discrete_velocity)) > 0.5
+    change = np.concatenate([[False], change])
+    return discrete_velocity * -1, change
+
+
+def create_color_space(hue_data, around_zero=False):
+    x = np.linspace(0, 1, 100)
+    blue = (0, 0, 1)
+    white = (1, 1, 1)
+    red = (1, 0, 0)
+    colors = np.empty((100, 3))
+    if around_zero:
+        for i in range(3):
+            colors[:, i] = np.interp(x, [0, 0.5, 1], [blue[i], white[i], red[i]])
+    else:  # range color from white to red
+        for i in range(3):
+            colors[:, i] = np.interp(x, [0, 1], [white[i], blue[i]])
+    color_range = (colors * 255).astype(int)
+    flatten = hue_data.flatten()#[0:5000]
+    flatten = flatten[~np.isnan(flatten)]
+    median_biggest = np.median(np.sort(flatten)[-100:])
+    median_smallest = np.median(np.sort(flatten)[:100])
+    color_range_bins = np.linspace(median_smallest, median_biggest, 100)
+    if around_zero:
+        color_range_bins = np.linspace(-np.median(np.sort(np.abs(flatten))[-100:]), np.median(np.sort(np.abs(flatten))[-100:]), 100)
+    return color_range, color_range_bins
+
+

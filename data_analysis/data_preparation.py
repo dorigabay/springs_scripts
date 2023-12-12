@@ -1,13 +1,11 @@
 import os
-
-import matplotlib.pyplot as plt
 import numpy as np
 import cv2
 import glob
-
-from scipy.optimize import curve_fit, minimize
+import matplotlib.pyplot as plt
+from scipy.optimize import minimize
 # local packages:
-from data_analysis import utils
+import utils
 
 
 SQUARENESS_THRESHOLD = 0.0005
@@ -16,7 +14,7 @@ QUALITY_THRESHOLD = SQUARENESS_THRESHOLD * RECTANGLE_SIMILARITY_THRESHOLD
 
 
 class DataPreparation:
-    def __init__(self, data_paths, videos_path, n_springs=20):
+    def __init__(self, data_paths, videos_path, n_springs):
         self.data_paths = data_paths
         self.videos_path = videos_path
         self.n_springs = n_springs

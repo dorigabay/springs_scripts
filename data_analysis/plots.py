@@ -1,18 +1,14 @@
+import os
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-import os
 from scipy.signal import savgol_filter
 from scipy.ndimage import label
 import itertools
 import apytl
-from scipy import stats
-import copy
-import re
-from scipy.ndimage import gaussian_filter1d
 # local imports:
-from data_analysis import utils
+import utils
 
 
 # used functions:

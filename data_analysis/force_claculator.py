@@ -2,12 +2,12 @@ import os
 import pickle
 import numpy as np
 # local imports:
-from data_analysis.data_preparation import DataPreparation
+from data_preparation import DataPreparation
 
 
 class ForceCalculator(DataPreparation):
-    def __init__(self, video_paths, data_paths, output_path, calibration_model_path, n_springs=20):
-        super().__init__(data_paths, video_paths, n_springs=n_springs)
+    def __init__(self, video_paths, data_paths, output_path, calibration_model_path, n_springs):
+        super().__init__(data_paths, video_paths, n_springs)
         self.video_dir = video_paths
         self.output_path = output_path
         self.data_paths = data_paths
@@ -52,13 +52,3 @@ class ForceCalculator(DataPreparation):
         print("Saved data to: ", self.output_path)
 
 
-if __name__ == "__main__":
-    spring_type = "plus_0.1"
-    video_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\1-videos\\summer_2023\\experiment\\{spring_type}\\"
-    video_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\experiment\\{spring_type}_final_final\\"
-    data_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\experiment\\{spring_type}_final_final\\"
-    calibration_output_path = "Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\calibration\\"
-    calibration_model_path = os.path.join(calibration_output_path, spring_type, "calibration_model.pkl")
-    video_analysis_paths = [root for root, dirs, files in os.walk(video_analysis_dir) if not dirs]
-    video_analysis_paths = video_analysis_paths[:1]
-    self = ForceCalculator(video_dir, video_analysis_paths, data_analysis_dir, calibration_model_path)
