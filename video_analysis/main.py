@@ -6,10 +6,10 @@ import argparse
 from multiprocessing import Pool, cpu_count
 # local imports:
 from parameters_collector import CollectParameters
-import calculator
+import image_processing_integrator
 from ants_detector import Ants
 from springs_detector import Springs
-import perspective_squares
+import perspective_squares_detector
 import utils
 
 
@@ -28,11 +28,12 @@ def parse_args():
 
 def main(video_path, parameters):
     snapshot_data = utils.create_snapshot_data(parameters=parameters)
-    print("Started processing video: ", video_path)
+    print("\nStarted processing video: ", video_path)
     cap = cv2.VideoCapture(video_path)
     cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["STARTING_FRAME"])
-    total_n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    while total_n_frames > snapshot_data["frame_count"]:
+    # total_n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    parameters["total_n_frames"] = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    while parameters["total_n_frames"] > snapshot_data["frame_count"]:
         _, frame = cap.read()
         if snapshot_data["skipped_frames"] % 25 == 0 and snapshot_data["skipped_frames"] != 0:
             cap.set(cv2.CAP_PROP_POS_FRAMES, parameters["STARTING_FRAME"] + snapshot_data["frame_count"] + 24)
@@ -46,7 +47,7 @@ def main(video_path, parameters):
                 try:
                     springs = Springs(parameters, frame, snapshot_data)
                     ants = Ants(frame, springs, squares)
-                    calculations = calculator.Calculation(parameters, snapshot_data, springs, ants)
+                    calculations = calculator.Integration(parameters, snapshot_data, springs, ants)
                     snapshot_data = utils.create_snapshot_data(snapshot_data=snapshot_data, calculations=calculations, squares=squares, springs=springs, ants=ants)
                     snapshot_data = calculator.save_data(snapshot_data, parameters, calculations)
                     utils.present_analysis_result(frame, calculations, springs, ants, os.path.basename(video_path).split(".")[0])
@@ -57,7 +58,7 @@ def main(video_path, parameters):
                 snapshot_data = calculator.save_data(snapshot_data, parameters)
         parameters["CONTINUE_FROM_LAST_SNAPSHOT"] = False
     cap.release()
-    print("Finished processing video: ", video_path)
+    print("\nFinished processing video: ", video_path)
 
 
 if __name__ == '__main__':
@@ -82,6 +83,7 @@ if __name__ == '__main__':
 # python video_analysis\main.py --path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.5\ --output_path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.5\ -cp
 
 # python video_analysis\main.py --path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.5\ --output_path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.5\ -nCPU 18
+# python video_analysis\main.py --path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.2\ --output_path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.2\ -nCPU 15
 
 # python video_analysis\main.py --path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.2\ --output_path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.2\ -cp
 # python video_analysis\main.py --path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\1-videos\summer_2023\experiment\plus_0.1\ --output_path \\phys-guru-cs\ants\Dor_Gabay\ThesisProject\data\2-video_analysis\summer_2023\experiment\plus_0.1\ -cp

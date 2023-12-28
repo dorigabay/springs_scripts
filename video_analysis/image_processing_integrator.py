@@ -1,12 +1,13 @@
 import pickle
 import os
 import numpy as np
+import apytl
 from scipy.ndimage import maximum_filter
 # local imports:
 import utils
 
 
-class Calculation:
+class Integration:
     def __init__(self, parameters, previous_detections, springs, ants):
         self.parameters = parameters
         self.previous_detections = previous_detections
@@ -161,7 +162,7 @@ def save_data(snapshot_data, parameters, calculations=None):
         empty_ants = np.full((1, max_ants), np.nan)
         arrays = [empty_springs for _ in range(6)] + [empty_2_values, empty_2_values] + [empty_ants for _ in range(4)]
         snapshot_data["skipped_frames"] += 1
-        print("\r Skipped frame: ", snapshot_data["frame_count"], end=" " * 150)
+        # print("\r Skipped frame: ", snapshot_data["frame_count"], end=" " * 150)
     else:
         arrays = [calculations.N_ants_around_springs, calculations.size_ants_around_springs,
                   calculations.fixed_ends_coordinates_x, calculations.fixed_ends_coordinates_y,
@@ -172,7 +173,8 @@ def save_data(snapshot_data, parameters, calculations=None):
                   calculations.ants_attached_forgotten_labels.reshape(1, max_ants)]
         snapshot_data["analysed_frame_count"] += 1
         snapshot_data["skipped_frames"] = 0
-        print("\r Analyzed frame number: ", snapshot_data["frame_count"], end=" " * 150)
+        apytl.Bar().drawbar(snapshot_data["frame_count"], parameters["total_n_frmaes"], fill='*')
+        # print("\r Analyzed frame number: ", snapshot_data["frame_count"], end=" " * 150)
     names = ["N_ants_around_springs", "size_ants_around_springs",
              "fixed_ends_coordinates_x", "fixed_ends_coordinates_y", "free_ends_coordinates_x",
              "free_ends_coordinates_y", "needle_part_coordinates_x", "needle_part_coordinates_y",

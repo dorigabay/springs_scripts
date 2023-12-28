@@ -7,7 +7,7 @@ import cv2
 import time
 import apytl
 from matplotlib import pyplot as plt
-from scipy.stats import f_oneway, ttest_ind
+from scipy.stats import f_oneway, ttest_ind, ttest_ind_from_stats
 import itertools
 
 
@@ -97,22 +97,36 @@ def difference(array, spacing=1):
         return diff_array
 
 
-def calc_translation_velocity(coordinates, spacing=1):
+def calc_translation_velocity(coordinates, window=1):
     coordinates = coordinates.copy()
-    horizontal_component = difference(coordinates[:, 0], spacing=spacing) / spacing
-    vertical_component = difference(coordinates[:, 1], spacing=spacing) / spacing
+    horizontal_component = difference(coordinates[:, 0], spacing=window) / window
+    vertical_component = difference(coordinates[:, 1], spacing=window) / window
     movement_direction = np.arctan2(vertical_component, horizontal_component)
     movement_magnitude = np.sqrt(horizontal_component ** 2 + vertical_component ** 2)
     return movement_direction, movement_magnitude
 
 
-def calc_angular_velocity(angles, diff_spacing=1):
-    # calculate the angular velocity of the angles
+def calc_angular_velocity(angles, window=4, remove_outliers=True, percentile_threshold=99):
     THERSHOLD = 5.5
-    diff = difference(angles, spacing=diff_spacing)
+    diff = difference(angles, spacing=window)
     diff[(diff > THERSHOLD)] = diff[diff > THERSHOLD]-2*np.pi
     diff[(diff < -THERSHOLD)] = diff[diff < -THERSHOLD]+2*np.pi
-    return diff
+    diff /= window
+    angular_velocity = np.full(diff.shape[0], np.nan)
+    all_nans = np.isnan(diff).all(axis=1)
+    angular_velocity[~all_nans] = np.nanmedian(diff[~all_nans], axis=1)
+    if remove_outliers:
+        outlier_threshold = np.nanpercentile(np.abs(angular_velocity), percentile_threshold)
+        angular_velocity[np.abs(angular_velocity) > outlier_threshold] = np.nan
+    return angular_velocity
+
+
+def exponential_function(x, a, b):
+    return a * np.exp(b * x)
+
+
+def exponential_decay(x, a, b):
+    return a * np.exp(-b * x)
 
 
 def interpolate_rows(data, interpolation_boolean=None, period=None):
@@ -367,7 +381,11 @@ def draw_significant_stars(df, combinations=None, axs=None, y_range=None):
         array1 = df.iloc[:, col_1_idx]
         array2 = df.iloc[:, col_2_idx]
         nan_idx = np.logical_or(np.isnan(array1), np.isnan(array2))
-        t_stat, p_value = ttest_ind(array1[~nan_idx], array2[~nan_idx])
+        # t_stat, p_value = ttest_ind(array1[~nan_idx], array2[~nan_idx])
+        mean1, std1 = np.nanmean(array1), np.nanstd(array1)
+        mean2, std2 = np.nanmean(array2), np.nanstd(array2)
+        nomber_of_samples1, nomber_of_samples2 = np.sum(~np.isnan(array1)), np.sum(~np.isnan(array2))
+        t_stat, p_value = ttest_ind_from_stats(mean1, std1, nomber_of_samples1, mean2, std2, nomber_of_samples2)
         if p_value < 0.05:
             print("There is a significant difference between the two groups.")
             if axs is None:

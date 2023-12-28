@@ -1,6 +1,8 @@
 import os
 import pickle
 import numpy as np
+import seaborn as sns
+import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.linear_model import LinearRegression
@@ -12,8 +14,9 @@ from data_preparation import DataPreparation
 
 
 class CalibrationModeling(DataPreparation):
-    def __init__(self, video_path, output_path, weights=None, videos_idx=None):
+    def __init__(self, video_path, output_path, weights=None, videos_idx=None, mm_per_pixel=0.1):
         self.num_of_springs = 1
+        self.mm_per_pixel = mm_per_pixel
         self.video_path = video_path
         self.calibration_name = os.path.basename(os.path.normpath(self.video_path))
         self.output_path = os.path.join(output_path, self.calibration_name)
@@ -38,15 +41,16 @@ class CalibrationModeling(DataPreparation):
 
     def concat_calib_data(self):
         weights_repeated = np.concatenate([np.repeat(weight, self.video_n_frames[count]) for count, weight in enumerate(self.weights)], axis=0)
-        magnitude, direction = self.calc_calib_force(self.fixed_end_angle_to_nest, weights_repeated)
+        magnitude, direction = self.calc_calib_force(self.fixed_end_angle_to_wall, weights_repeated)
         self.calib_data = np.concatenate((self.pulling_angle, self.spring_length, direction.reshape(-1, 1), magnitude.reshape(-1, 1)), axis=1)
         self.calib_data[self.calib_data[:, 2] < 0, 0] *= -1
         self.calib_data[self.calib_data[:, 2] < 0, 2] *= -1
         self.calib_data[self.calib_data[:, 0] < 0, :] = np.nan
-        self.calib_data = self.remove_bin_outliers(self.calib_data, self.video_n_frames, bins=200, percentile=10, max_angle_value=np.pi*(13/24))
+        # self.calib_data = self.remove_bin_outliers(self.calib_data, self.video_n_frames, bins=200, percentile=10, max_angle_value=np.pi*(13/24))
+        self.calib_data = self.remove_bin_outliers(self.calib_data, self.video_n_frames, bins=200, percentile=10, max_angle_value=np.pi*(12/24))
         self.calib_data = self.calib_data[~np.isnan(self.calib_data).any(axis=1)]
         self.calib_data = np.concatenate((self.calib_data, self.calib_data), axis=0)
-        # self.calib_data[0:self.calib_data.shape[0]//2, [0, 2]] *= -1
+        self.calib_data[0:self.calib_data.shape[0]//2, [0, 2]] *= -1
 
     def remove_bin_outliers(self, data, frames_per_weight, bins=200, percentile=5, max_angle_value=np.pi*(13/24)):
         # max_angle_value = np.nanpercentile(data[~(data[:, 3] == 0), 2], 90)
@@ -62,26 +66,50 @@ class CalibrationModeling(DataPreparation):
                 data[s:e][angle_bin_outliers, :] = np.nan
         return data
 
-    def plot(self):
-        for force_magnitude in np.unique(self.calib_data[:, 3]):
-            data = self.calib_data[self.calib_data[:, 3] == force_magnitude]
-            coordinates = np.array([np.sin(data[:, 0]), np.cos(data[:, 0])]).transpose() * (data[:, 1:2])
-            plt.scatter(coordinates[:, 0], coordinates[:, 1], label=np.round(force_magnitude,3), alpha=0.5)
-        plt.legend()
-        print("Presenting data. Close the plot to continue.")
-        plt.show()
+    def plot(self, font_size=6):
+        magnitudes = np.unique(self.calib_data[:, 3])
+        magnitudes_coordinates = []
+        for mag in magnitudes:
+            data = self.calib_data[self.calib_data[:, 3] == mag]
+            magnitudes_coordinates.append(np.array([np.sin(data[:, 0]), np.cos(data[:, 0])]).transpose() * (data[:, 1:2]))
+        fig, ax = plt.subplots()
+        inch_per_mm = 0.0393701
+        fig.set_size_inches(82*inch_per_mm, 75*inch_per_mm)
+        colors = sns.color_palette("magma", len(self.weights))
+        mm_convert_factor = (self.max_extenstion * self.mm_per_pixel) / np.nanmax(magnitudes_coordinates[-1][:, 1])
+        for count, (mag, coordinates) in enumerate(zip(magnitudes, magnitudes_coordinates)):
+            coordinates *= mm_convert_factor
+            df = pd.DataFrame({"x": coordinates[:, 0], "y": coordinates[:, 1]})
+            sns.scatterplot(data=df, x="x", y="y", color=colors[count], label=np.round(mag, 3), ax=ax, s=10)
+        legend = plt.legend(title="Force (mN)", fontsize=font_size)
+        legend.get_title().set_fontsize(str(font_size))
+        plt.setp(ax.get_xticklabels(), fontsize=font_size)
+        plt.setp(ax.get_yticklabels(), fontsize=font_size)
+        ax.set_xlabel("")
+        ax.set_ylabel("")
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        plt.tight_layout()
+        # print("Presenting data. Close the plot to continue.")
+        self.figures_output_path = "Z:\\Dor_Gabay\\ThesisProject\\results\\summer_2023\\plus_0.1\\calibration_figures\\"
+        os.makedirs(self.figures_output_path, exist_ok=True)
+        fig.savefig(os.path.join(self.figures_output_path, "calibration_data.svg"), format="svg")
 
     def create_calibration_model(self):
-        degree = 1
-        print("Polynomial degree of the force calibration model: ", degree)
         X_train, X_test, y_train, y_test = train_test_split(self.calib_data[:, 0:2], self.calib_data[:, 2:4], test_size=0.2)
-        self.model = make_pipeline(PolynomialFeatures(degree=degree), LinearRegression())
+        print("X_train shape: ", X_train.shape)
+        self.model = make_pipeline(PolynomialFeatures(degree=1), LinearRegression())
         self.model.fit(X_train, y_train)
         pickle.dump(self.model, open(os.path.join(self.output_path, "calibration_model.pkl"), 'wb'))
         print("Model saved to: ", os.path.join(self.output_path,"calibration_model.pkl"))
         y_prediction = self.model.predict(X_test)
         print("r squared: ", self.model.score(X_test, y_test))
         print("mean squared error: ", mean_squared_error(y_test, y_prediction, squared=False))
+        with open(os.path.join(self.output_path, "calibration_model_statistics.txt"), "w") as f:
+            f.write("r squared: " + str(self.model.score(X_test, y_test)) + "\n")
+            f.write("mean squared error: " + str(mean_squared_error(y_test, y_prediction, squared=False)) + "\n")
+        np.save(os.path.join(self.figures_output_path, "y_test.npy"), y_test)
+        np.save(os.path.join(self.figures_output_path, "y_test_prediction.npy"), y_prediction)
 
     def calc_calib_force(self, angle_to_nest, mass1):
         mass1 *= 1e-3  # convert to kg
@@ -95,13 +123,13 @@ class CalibrationModeling(DataPreparation):
         return magnitude, direction
 
 
-if __name__ == '__main__':
-    spring_type = "plus_0.2"
-    video_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\1-videos\\summer_2023\\experiment\\{spring_type}\\"
-    calibration_output_path = "Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\calibration\\"
-    print("-" * 60 + "\nCreating calibration model...\n" + "-" * 20)
-    calibration_weights = [0., 0.00356, 0.01449, 0.01933, 0.02986, 0.04515, 0.06307, 0.08473, 0.10512, 0.13058]
-    # calibration_weights = [0., 0.00356, 0.01449, 0.01933, 0.02986, 0.04515, 0.08473, 0.10512, 0.13058]
-    self = CalibrationModeling(video_dir, calibration_output_path, calibration_weights)
+# if __name__ == '__main__':
+#     spring_type = "plus_0.2"
+#     video_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\1-videos\\summer_2023\\experiment\\{spring_type}\\"
+#     calibration_output_path = "Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\calibration\\"
+#     print("-" * 60 + "\nCreating calibration model...\n" + "-" * 20)
+#     calibration_weights = [0., 0.00356, 0.01449, 0.01933, 0.02986, 0.04515, 0.06307, 0.08473, 0.10512, 0.13058]
+#     # calibration_weights = [0., 0.00356, 0.01449, 0.01933, 0.02986, 0.04515, 0.08473, 0.10512, 0.13058]
+#     self = CalibrationModeling(video_dir, calibration_output_path, calibration_weights)
 
 

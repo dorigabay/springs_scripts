@@ -5,10 +5,10 @@ import numpy as np
 from scipy.ndimage import generate_binary_structure
 # local imports:
 import utils
-from calculator import Calculation
+from image_processing_integrator import Integration
 from ants_detector import Ants
 from springs_detector import Springs
-from perspective_squares import PerspectiveSquares
+from perspective_squares_detector import PerspectiveSquares
 
 NEUTRALIZE_COLOUR_ALPHA = 2.5
 MAX_ANTS_NUMBER = 300
@@ -49,7 +49,6 @@ class CollectParameters:
                 else:
                     print("Found previous parameters for this video, loading it...")
                     video_parameters = parameters[os.path.normpath(video)]
-                    # if True:
                     if utils.insist_input_type("yes_no", "Would you like to edit the parameters for this video?"):
                         if count != 0 and utils.insist_input_type("yes_no", "Should I use the previous video's parameters?"):
                             video_parameters = parameters[os.path.normpath(self.video_paths[count - 1])]
@@ -107,31 +106,29 @@ class CollectParameters:
         new_parameters["ANTS_NEUTRALIZE_COLOUR_ALPHA"] = 2
         new_parameters["ANTS_NEUTRALIZE_COLOUR_BETA"] = 10
         new_parameters["NEUTRALIZE_COLOUR_ALPHA"] = NEUTRALIZE_COLOUR_ALPHA if parameters is None else parameters["NEUTRALIZE_COLOUR_ALPHA"]
-        new_parameters["MAX_ANTS_NUMBER"] = MAX_ANTS_NUMBER# if parameters is None else parameters["MAX_ANTS_NUMBER"]
+        new_parameters["MAX_ANTS_NUMBER"] = MAX_ANTS_NUMBER if parameters is None else parameters["MAX_ANTS_NUMBER"]
         new_parameters["ANTS_SOBEL_KERNEL_SIZE"] = ANTS_SOBEL_KERNEL_SIZE if parameters is None else parameters["ANTS_SOBEL_KERNEL_SIZE"]
-        new_parameters["ANTS_GRADIANT_THRESHOLD"] = ANTS_GRADIANT_THRESHOLD# if parameters is None else parameters["ANTS_GRADIANT_THRESHOLD"]
+        new_parameters["ANTS_GRADIANT_THRESHOLD"] = ANTS_GRADIANT_THRESHOLD if parameters is None else parameters["ANTS_GRADIANT_THRESHOLD"]
         new_parameters["ANTS_CLOSING_KERNEL"] = ANTS_CLOSING_KERNEL if parameters is None else parameters["ANTS_CLOSING_KERNEL"]
         new_parameters["ANTS_MIN_SIZE"] = ANTS_MIN_SIZE if parameters is None else parameters["ANTS_MIN_SIZE"]
         new_parameters["ANTS_MAX_SIZE"] = ANTS_MAX_SIZE if parameters is None else parameters["ANTS_MAX_SIZE"]
         new_parameters["ANTS_MAX_LINE_LENGTH"] = ANTS_MAX_LINE_LENGTH if parameters is None else parameters["ANTS_MAX_LINE_LENGTH"]
         new_parameters["ANTS_OBJECT_DILATION_SIZE"] = ANTS_OBJECT_DILATION_SIZE if parameters is None else parameters["ANTS_OBJECT_DILATION_SIZE"]
         new_parameters["ANTS_SPRINGS_OVERLAP_SIZE"] = ANTS_SPRINGS_OVERLAP_SIZE if parameters is None else parameters["ANTS_SPRINGS_OVERLAP_SIZE"]
-        # if False:
         if utils.insist_input_type("yes_no", "Would you like to re-collect image processing parameters?"):
-            # new_parameters["NEUTRALIZE_COLOUR_ALPHA"] = utils.insist_input_type("float", f"What is the neutralize colour alpha? (default is {NEUTRALIZE_COLOUR_ALPHA}): ")
-            # new_parameters["MAX_ANTS_NUMBER"] = utils.insist_input_type("int", f"What is the max ants number expected to be tracked? (default is {MAX_ANTS_NUMBER}): ")
-            # new_parameters["ANTS_SOBEL_KERNEL_SIZE"] = utils.insist_input_type("int", f"What is the ants sobel kernel size? (default is {ANTS_SOBEL_KERNEL_SIZE}): ")
+            new_parameters["NEUTRALIZE_COLOUR_ALPHA"] = utils.insist_input_type("float", f"What is the neutralize colour alpha? (default is {NEUTRALIZE_COLOUR_ALPHA}): ")
+            new_parameters["MAX_ANTS_NUMBER"] = utils.insist_input_type("int", f"What is the max ants number expected to be tracked? (default is {MAX_ANTS_NUMBER}): ")
+            new_parameters["ANTS_SOBEL_KERNEL_SIZE"] = utils.insist_input_type("int", f"What is the ants sobel kernel size? (default is {ANTS_SOBEL_KERNEL_SIZE}): ")
             new_parameters["ANTS_GRADIANT_THRESHOLD"] = utils.insist_input_type("int", f"What is the ants gradiant threshold? (default is {ANTS_GRADIANT_THRESHOLD}): ")
-            # new_parameters["ANTS_CLOSING_KERNEL"] = np.ones([utils.insist_input_type("int", f"What is the ants closing kernel size? (default is {ANTS_CLOSING_KERNEL.shape[0]}): ")] * 2)
-            # new_parameters["ANTS_MIN_SIZE"] = utils.insist_input_type("int", f"What is the ants min size? (default is {ANTS_MIN_SIZE}): ")
-            # new_parameters["ANTS_MAX_SIZE"] = utils.insist_input_type("int", f"What is the ants max size? (default is {ANTS_MAX_SIZE}): ")
-            # new_parameters["ANTS_MAX_LINE_LENGTH"] = utils.insist_input_type("int", f"What is the ants max line length? (default is {ANTS_MAX_LINE_LENGTH}): ")
-            # new_parameters["ANTS_OBJECT_DILATION_SIZE"] = utils.insist_input_type("int", f"What is the ants object dilation size? (default is {ANTS_OBJECT_DILATION_SIZE}): ")
-            # new_parameters["ANTS_SPRINGS_OVERLAP_SIZE"] = utils.insist_input_type("int", f"What is the ants springs overlap size? (default is {ANTS_SPRINGS_OVERLAP_SIZE}): ")
+            new_parameters["ANTS_CLOSING_KERNEL"] = np.ones([utils.insist_input_type("int", f"What is the ants closing kernel size? (default is {ANTS_CLOSING_KERNEL.shape[0]}): ")] * 2)
+            new_parameters["ANTS_MIN_SIZE"] = utils.insist_input_type("int", f"What is the ants min size? (default is {ANTS_MIN_SIZE}): ")
+            new_parameters["ANTS_MAX_SIZE"] = utils.insist_input_type("int", f"What is the ants max size? (default is {ANTS_MAX_SIZE}): ")
+            new_parameters["ANTS_MAX_LINE_LENGTH"] = utils.insist_input_type("int", f"What is the ants max line length? (default is {ANTS_MAX_LINE_LENGTH}): ")
+            new_parameters["ANTS_OBJECT_DILATION_SIZE"] = utils.insist_input_type("int", f"What is the ants object dilation size? (default is {ANTS_OBJECT_DILATION_SIZE}): ")
+            new_parameters["ANTS_SPRINGS_OVERLAP_SIZE"] = utils.insist_input_type("int", f"What is the ants springs overlap size? (default is {ANTS_SPRINGS_OVERLAP_SIZE}): ")
         return new_parameters
 
     def collect_crop_coordinates(self, image, parameters):
-        # if False:
         if ("OBJECT_CENTER_COORDINATES" not in parameters) or utils.insist_input_type("yes_no", "Would you to re-collect crop coordinates?"):
             reduced_resolution_image = cv2.resize(image, (0, 0), fx=parameters["IMAGE_RESIZE_FACTOR"], fy=parameters["IMAGE_RESIZE_FACTOR"])
             print("Please point on the center of the object, to get the initial crop coordinates.")
@@ -147,7 +144,6 @@ class CollectParameters:
         return collage_image, parameters
 
     def collect_or_edit_color_spaces(self, collage_image, parameters):
-        # if False:
         if ("COLOR_SPACES" not in parameters) or utils.insist_input_type("yes_no", "Would you like to edit the color spaces?"):
             parameters["COLOR_SPACES"] = {"b": [], "r": [], "g": [], "p": []} if "COLOR_SPACES" not in parameters else parameters["COLOR_SPACES"]
             for color_name, color_short in zip(["blue", "red", "green", "purple"], parameters["COLOR_SPACES"].keys()):
@@ -195,7 +191,7 @@ class CollectParameters:
 
     def analysis_example(self, image, parameters):
         if self.show_analysis_example:
-            # try:
+            try:
                 image = image.copy()
                 parameters["CONTINUE_FROM_LAST_SNAPSHOT"] = False
                 snapshot_data = utils.create_snapshot_data(parameters)
@@ -203,9 +199,9 @@ class CollectParameters:
                 squares = PerspectiveSquares(parameters, image, snapshot_data)
                 springs = Springs(parameters, image, snapshot_data)
                 ants = Ants(image, springs, squares)
-                calculations = Calculation(parameters, snapshot_data, springs, ants)
+                calculations = Integration(parameters, snapshot_data, springs, ants)
                 utils.present_analysis_result(image, calculations, springs, ants, waitKey=0)
-            # except:
-            #     print("Error in analysis_example. Could not show example")
+            except:
+                print("Error in analysis_example. Could not show example")
 
 

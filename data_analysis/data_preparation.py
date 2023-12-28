@@ -2,7 +2,6 @@ import os
 import numpy as np
 import cv2
 import glob
-import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 # local packages:
 import utils
@@ -46,11 +45,15 @@ class DataPreparation:
             np.loadtxt(os.path.join(path, "fixed_ends_coordinates_y.csv"), delimiter=",").reshape(-1, self.n_springs)), axis=2) for path in paths], axis=0)
         self.free_ends_coordinates = np.concatenate([np.stack((np.loadtxt(os.path.join(path, "free_ends_coordinates_x.csv"), delimiter=",").reshape(-1, self.n_springs),
             np.loadtxt(os.path.join(path, "free_ends_coordinates_y.csv"), delimiter=",").reshape(-1, self.n_springs)), axis=2) for path in paths], axis=0)
-        needle_coordinates = np.concatenate([np.loadtxt(os.path.join(path, "needle_part_coordinates_x.csv"), delimiter=",") for path in paths], axis=0)
-        needle_coordinates = np.stack((needle_coordinates, np.concatenate([np.loadtxt(os.path.join(path, "needle_part_coordinates_y.csv"), delimiter=",") for path in paths], axis=0)), axis=2)
-        self.object_center_coordinates = needle_coordinates[:, 0, :]
-        self.needle_tip_coordinates = needle_coordinates[:, -1, :]
+        needle_coordinates_x = np.concatenate([np.loadtxt(os.path.join(path, "needle_part_coordinates_x.csv"), delimiter=",") for path in paths], axis=0)
+        needle_coordinates_y = np.concatenate([np.loadtxt(os.path.join(path, "needle_part_coordinates_y.csv"), delimiter=",") for path in paths], axis=0)
+        np.stack((needle_coordinates_x, needle_coordinates_y), axis=2)
+        self.object_center_coordinates =  np.stack((needle_coordinates_x[:, 0], needle_coordinates_y[:, 0]), axis=1)
+        # self.object_center_coordinates = needle_coordinates[:, 0, :]
+        self.needle_tip_coordinates = np.stack((needle_coordinates_x[:, -1], needle_coordinates_y[:, -1]), axis=1)
+        # self.needle_tip_coordinates = needle_coordinates[:, -1, :]
         self.video_n_frames = np.array([np.loadtxt(os.path.join(path, "N_ants_around_springs.csv"), delimiter=",").shape[0] for path in paths])
+        self.n_frames = np.sum(self.video_n_frames)
         cap = cv2.VideoCapture(glob.glob(os.path.join(self.videos_path, "**", "*.MP4"), recursive=True)[0])
         self.video_resolution = np.array((int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))))
         cap.release()
@@ -117,14 +120,14 @@ class DataPreparation:
                 self.perspective_squares_coordinates[count] = self.perspective_squares_coordinates[count, rearrangement, :]
 
     def correct_perspectives(self, quality_threshold):
-        # first perspective correction
+        # first perspective correction:
         PTMs = utils.create_projective_transform_matrix(self.perspective_squares_coordinates, self.perspective_squares_quality, quality_threshold, self.video_resolution)
         self.perspective_squares_coordinates = utils.apply_projective_transform(self.perspective_squares_coordinates, PTMs)
         self.fixed_ends_coordinates = utils.apply_projective_transform(self.fixed_ends_coordinates, PTMs)
         self.free_ends_coordinates = utils.apply_projective_transform(self.free_ends_coordinates, PTMs)
         self.object_center_coordinates = utils.apply_projective_transform(self.object_center_coordinates, PTMs)
         self.needle_tip_coordinates = utils.apply_projective_transform(self.needle_tip_coordinates, PTMs)
-        # second perspective correction
+        # second perspective correction:
         perspective_correction_params = self.fit_perspective_params(self.fixed_ends_coordinates.copy(), self.needle_tip_coordinates.copy(), self.free_ends_coordinates.copy())
         self.fixed_ends_coordinates = utils.project_plane_perspective(self.fixed_ends_coordinates, perspective_correction_params[[0, 2, 3]])
         needle_tip_repeated = np.copy(np.repeat(self.needle_tip_coordinates[:, np.newaxis, :], self.free_ends_coordinates.shape[1], axis=1))
@@ -148,7 +151,6 @@ class DataPreparation:
             needle_tip_repeated[~self.rest_bool] = np.nan
         x0 = np.array([0.0025, 0.0025, 3840/2, 2160/2])
         res = minimize(loss_func, x0=x0)
-        # print("params: ", res.x, "loss: ", res.fun)
         return res.x
 
     def n_ants_processing(self):
@@ -177,7 +179,6 @@ class DataPreparation:
         if not self.calib_mode:
             object_center_coordinates_approximated = np.full(self.object_center_coordinates.shape, np.nan)
             for count, points in enumerate(self.fixed_ends_coordinates):
-                # print(f"\r{count}", end="")
                 x0 = np.array([np.nanmedian(points[:, 0]), np.nanmedian(points[:, 1])])
                 res = minimize(loss, x0=x0)#, method='nelder-mead', options={'xatol': 1e-8, 'disp': True})
                 object_center_coordinates_approximated[count, :] = res.x
@@ -190,19 +191,20 @@ class DataPreparation:
                 s, e = set_idx[0][0], set_idx[-1][1] + 1
                 self.spring_length[s:e] /= np.nanmedian(np.where(~self.rest_bool[s:e], np.nan, self.spring_length[s:e]), axis=0)
         else:
+            self.max_extenstion = np.nanpercentile(self.spring_length, 99)
             self.spring_length /= np.nanmedian(np.where(~self.rest_bool, np.nan, self.spring_length), axis=0)
 
     def repeat_values(self):
-        self.nest_direction = np.stack((self.fixed_ends_coordinates[:, :, 0], self.fixed_ends_coordinates[:, :, 1] - 500), axis=2)
-        self.tip_nest_direction = np.repeat(np.stack((self.needle_tip_coordinates[:, np.newaxis, 0], self.needle_tip_coordinates[:, np.newaxis, 1] - 500), axis=2), self.n_springs, axis=1)
-        self.object_center_repeated = np.copy(np.repeat(self.object_center_coordinates[:, np.newaxis, :], self.n_springs, axis=1))
-        self.needle_tip_repeated = np.copy(np.repeat(self.needle_tip_coordinates[:, np.newaxis, :], self.n_springs, axis=1))
+        self.wall_direction = np.stack((self.fixed_ends_coordinates[:, :, 0], self.fixed_ends_coordinates[:, :, 1] - 500), axis=2)
+        self.nest_direction = np.full((self.n_frames, self.n_springs, 2), np.array([3840, 1080]))
         self.object_center_repeated = np.repeat(self.object_center_coordinates[:, np.newaxis, :], self.n_springs, axis=1)
-        self.object_nest_direction = np.stack((self.object_center_repeated[:, :, 0], self.object_center_repeated[:, :, 1] - 500), axis=2)
+        self.needle_tip_repeated = np.copy(np.repeat(self.needle_tip_coordinates[:, np.newaxis, :], self.n_springs, axis=1))
+        self.object_wall_direction = np.stack((self.object_center_repeated[:, :, 0], self.object_center_repeated[:, :, 1] - 500), axis=2)
 
     def calc_angle(self):
-        self.object_fixed_end_angle_to_nest = utils.calc_angle_matrix(self.object_nest_direction, self.object_center_repeated, self.fixed_ends_coordinates) + np.pi
         self.fixed_end_angle_to_nest = utils.calc_angle_matrix(self.object_center_repeated, self.fixed_ends_coordinates, self.nest_direction) + np.pi
+        self.fixed_end_angle_to_wall = utils.calc_angle_matrix(self.object_center_repeated, self.fixed_ends_coordinates, self.wall_direction) + np.pi
+        self.object_fixed_end_angle_to_wall = utils.calc_angle_matrix(self.object_wall_direction, self.object_center_repeated, self.fixed_ends_coordinates) + np.pi
         self.pulling_angle = utils.calc_pulling_angle_matrix(self.free_ends_coordinates, self.object_center_repeated, self.fixed_ends_coordinates)
         if not self.calib_mode:
             for count, set_idx in enumerate(self.sets_frames):
@@ -210,3 +212,4 @@ class DataPreparation:
                 self.pulling_angle[s:e] -= np.nanmedian(np.where(~self.rest_bool[s:e], np.nan, self.pulling_angle[s:e]), axis=0)
         else:
             self.pulling_angle -= np.nanmedian(np.where(~self.rest_bool, np.nan, self.pulling_angle), axis=0)
+

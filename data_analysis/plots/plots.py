@@ -5,16 +5,73 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from scipy.signal import savgol_filter
 from scipy.ndimage import label
+from scipy.ndimage import gaussian_filter1d
+from scipy.optimize import curve_fit
 import itertools
 import apytl
+import sys
+from scipy.stats import pearsonr
+import apytl
 # local imports:
+sys.path.append(os.path.join(os.getcwd(), "data_analysis"))
 import utils
 
 
 # used functions:
+def plot_relative_angular_velocity_over_spring_types(path, output_path, bins=50, sample_size=50000):
+    sub_dirs = [os.path.join(path, o) for o in os.listdir(path) if os.path.isdir(os.path.join(path, o))]
+    titles = [os.path.basename(os.path.normpath(subdir)) for subdir in sub_dirs]
+    angular_velocity = np.full((sample_size, bins, len(titles)), np.nan)
+    translational_velocity = np.full((sample_size, bins, len(titles)), np.nan)
+    for title_count, title in enumerate(titles):
+        title_sub_dirs = [os.path.join(path, title, o) for o in os.listdir(os.path.join(path, title)) if os.path.isdir(os.path.join(path, title, o))]
+        angles = np.concatenate([np.load(os.path.join(file, "fixed_end_angle_to_nest.npz"))["arr_0"] for file in title_sub_dirs])
+        title_angular_velocity = np.abs(utils.calc_angular_velocity(angles, window=24))
+        title_angular_velocity[title_angular_velocity > np.nanpercentile(title_angular_velocity, 99)] = np.nan
+        ants_number = np.concatenate([np.load(os.path.join(file, "N_ants_around_springs.npz"))["arr_0"] for file in title_sub_dirs])
+        title_sum_ants_number = np.nansum(ants_number, axis=1)
+        title_sum_ants_number[np.isnan(ants_number).all(axis=1)] = np.nan
+        title_sum_ants_number[title_sum_ants_number > np.nanpercentile(title_sum_ants_number, 99)] = np.nan
+        title_sum_ants_number = np.round(title_sum_ants_number).astype(int)
+        coordinates = np.concatenate([np.load(os.path.join(file, "object_center_coordinates.npz"))["arr_0"] for file in title_sub_dirs])
+        _, title_momentum_magnitude = utils.calc_translation_velocity(coordinates, window=24)
+        title_momentum_magnitude[title_momentum_magnitude > np.nanpercentile(title_momentum_magnitude, 99)] = np.nan
+        for _bin in range(bins):
+            _bin_idx = title_sum_ants_number == _bin
+            if np.sum(_bin_idx) > sample_size:
+                random = np.random.choice(np.where(_bin_idx)[0], sample_size, replace=False)
+                _bin_idx = np.full(len(_bin_idx), False)
+                _bin_idx[random] = True
+            angular_velocity[:np.sum(_bin_idx), _bin, title_count] = title_angular_velocity[_bin_idx]
+            translational_velocity[:np.sum(_bin_idx), _bin, title_count] = title_momentum_magnitude[_bin_idx]
+    arr_min, new_min = np.nanmin(angular_velocity), np.nanmin(translational_velocity)
+    arr_max, new_max = np.nanmax(angular_velocity), np.nanmax(translational_velocity)
+    angular_velocity_normed = (angular_velocity - arr_min) / (arr_max - arr_min) * (new_max - new_min) + new_min
+    score = angular_velocity_normed * translational_velocity
+    mean_score = np.nanmean(score, axis=0)
+    plt.clf()
+    plt.figure(figsize=(7, 3))
+    colors = np.array(sns.color_palette("rocket"))[[0, 2, 4]]
+    titles_ = ["0.4mm", "0.5mm", "0.8mm"]
+    for title_count, title in enumerate(titles):
+        # y = mean_score[:, title_count]
+        # plt.plot(np.arange(bins), y, label=title, color=colors[title_count])
+        y = score[:, :, title_count]
+        df = pd.DataFrame({"bin": np.tile(np.arange(bins), sample_size), "score": y.flatten()})
+        sns.lineplot(x="bin", y="score", data=df, label=titles_[title_count], color=colors[title_count])
+    #add legend title "Spring thickness":
+    plt.legend(title="Spring thickness")
+    # plt.title("Load velocity over spring types")
+    plt.xlabel("Ants around the load")
+    plt.ylabel("Arbitrary velocity units")
+    plt.savefig(os.path.join(output_path, "load_velocity_over_spring_types.svg"), format='svg', bbox_inches='tight')
+# plot_relative_angular_velocity_over_spring_types("Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\experiment\\",
+#                                                  output_path="Z:\\Dor_Gabay\\ThesisProject\\results\\summer_2023")
+
+
 def discrete_angular_velocity_over_force_and_kuramoto(self, output_path, sample_size=50000):
     kuramoto_score = self.kuramoto_score.copy()
-    alignment_percentage = self.alignment_percentage.copy()
+    # alignment_percentage = self.alignment_percentage.copy()
     tangential_force = np.abs(self.tangential_force)
     force_magnitude = np.abs(self.force_magnitude)
     velocities = [1, 0.75, 0.5, 0.25, 0]
@@ -33,8 +90,8 @@ def discrete_angular_velocity_over_force_and_kuramoto(self, output_path, sample_
             data_results[:len(vector), velocity_count] = vector
         plt.clf()
         df = pd.DataFrame(data_results, columns=velocities)
-        sns.boxplot(data=df, palette="rocket", showfliers=False)
-        # sns.barplot(data=df, palette="rocket")
+        # sns.boxplot(data=df, palette="rocket", showfliers=False)
+        sns.barplot(data=df, palette="rocket")
         plt.title(f"Discrete angular velocity over {data_title}")
         plt.xlabel("Discrete angular velocity")
         plt.ylabel(f"{data_title}")
@@ -45,8 +102,10 @@ def discrete_angular_velocity_over_force_and_kuramoto(self, output_path, sample_
 # discrete_angular_velocity_over_force_and_kuramoto(self, os.path.join(self.output_path, "macro_analysis"))
 
 
-def distribution_of_new_joiners_over_nest_direction(self, bins=50):
-    data_angles = self.profiled_fixed_end_angle_to_nest[:, 0]
+def distribution_of_new_joiners_over_nest_direction(self, output_path, bins=50, sample_size=1800):
+    new_joiners_frames, new_joiners_springs = np.where(np.diff(self.N_ants_around_springs, axis=0) == 1)
+    new_joiners_frames += 1
+    data_angles = self.fixed_end_angle_to_nest[new_joiners_frames, new_joiners_springs].copy()
     plt.clf()
     ax = plt.subplot(111, projection='polar')
     angles = np.linspace(0, 2 * np.pi, bins)
@@ -54,149 +113,130 @@ def distribution_of_new_joiners_over_nest_direction(self, bins=50):
     r = np.append(r, r[0])
     theta[-1] = 0
     ax.plot(theta, r)
-    ax.set_theta_offset(np.pi)
+    # ax.set_theta_offset(np.pi)
     ax.fill_between(theta, 0, r, alpha=0.2)
     ax.set_yticklabels([])
     ax.grid(True)
     plt.title(f"Distribution of new joiners over nest direction")
-    print("Saving figure to path: ", os.path.join(self.output_path, f"Distribution of new joiners over nest direction.png"))
-    plt.savefig(os.path.join(self.output_path, f"Distribution of new joiners over nest direction.png"))
-# distribution_of_new_joiners_over_nest_direction(self, bins=50)
+    plt.savefig(os.path.join(output_path, f"Distribution of new joiners over nest direction.png"))
+
+    # plt.clf()
+    # up_quarter_idx = np.logical_and(data_angles >= (np.pi / 4), data_angles < (3 * np.pi / 4))  # degrees 45-135
+    # left_quarter_idx = np.logical_and(data_angles >= (3 * np.pi / 4), data_angles < (5 * np.pi / 4))  # degrees 135-225
+    # down_quarter_idx = np.logical_and(data_angles >= (5 * np.pi / 4), data_angles < (7 * np.pi / 4))  # degrees 225-315
+    # right_quarter_idx = np.logical_or(data_angles >= (7 * np.pi / 4), data_angles < (np.pi / 4))  # degrees 315-45
+    # up_quarter_histogram = data_angles[up_quarter_idx]
+    # left_quarter_histogram = data_angles[left_quarter_idx]
+    # down_quarter_histogram = data_angles[down_quarter_idx]
+    # right_quarter_histogram = data_angles[right_quarter_idx]
+    # # print(up_quarter_histogram.shape, left_quarter_histogram.shape, down_quarter_histogram.shape, right_quarter_histogram.shape)
+    # df = pd.DataFrame({"Left quarter": left_quarter_histogram.shape, "Right quarter": right_quarter_histogram.shape,
+    #                    "Up quarter": up_quarter_histogram.shape, "Down quarter": down_quarter_histogram.shape})
+    # sns.barplot(data=df, palette="rocket", ci="sd")
+    # plt.title(f"New joiners over nest direction")
+    # plt.xlabel("Nest direction")
+    # plt.ylabel("Number of new joiners")
+    # # utils.draw_significant_stars(df)
+    # # draw_significant_stars(df)
+    # plt.tight_layout()
+    # plt.savefig(os.path.join(output_path, f"New joiners over nest direction.png"))
+# distribution_of_new_joiners_over_nest_direction(self, os.path.join(self.output_path, "nest_direction_distributions"), bins=50)
 
 
-def distributions_with_binned_angle_to_nest2(self, output_path, bins=50):
-    angles = np.linspace(0, 2 * np.pi, bins)
-    leaders_bool_idx = self.profiles_beginnings * (self.N_ants_around_springs == 1)
-    non_leaders_bool_idx = ~self.profiles_beginnings * (self.N_ants_around_springs == 1)
-    leader_labels = ["non-leaders", "leaders"]
-    leaders_bools = [non_leaders_bool_idx, leaders_bool_idx]
-    for data_title, types_data in zip(["force magnitude", "tangential force"], [self.force_magnitude, self.tangential_force]):
-        percentile = np.nanpercentile(types_data, 90, axis=0)
-        force_bool_idx = types_data > percentile
-        strong_pulls_data = np.full((len(angles) - 1, 2), np.nan, dtype=np.float64)
-        all_pulls_data = np.full((len(angles) - 1, 2), np.nan, dtype=np.float64)
-        for angle_count in range(len((angles[:-1]))):
-            angle_bool_idx = np.logical_and(self.fixed_end_angle_to_nest >= angles[angle_count], self.fixed_end_angle_to_nest < angles[angle_count + 1])
-            angle_bool_idx[~np.isin(self.discrete_angular_velocity, [1, 0.75, 0.5]), :] = False
-            for leaders_count, leaders_bool in enumerate(leaders_bools):
-                final_bool_idx = angle_bool_idx.copy()
-                final_bool_idx[~leaders_bool] = False
-                strong_pulls_data[angle_count, leaders_count] = np.sum(force_bool_idx[final_bool_idx])
-                all_pulls_data[angle_count, leaders_count] = np.sum(final_bool_idx)
-        plt.clf()
-        theta = angles[:-1]
-        theta = np.append(theta, theta[0])
-        # data_copy = strong_pulls_data.copy()
-        data_copy = strong_pulls_data / all_pulls_data
-        data_copy = np.append(data_copy, data_copy[0, :].reshape(1, -1), axis=0)
-        ax = plt.subplot(111, projection='polar')
-        ax.set_title(f"Distribution over nest direction of {data_title} for leaders and non-leaders")
-        for col in range(len(leader_labels)):
-            r = data_copy[:, col]
-            if col != 0:
-                r += data_copy[:, col - 1]
-            ax.plot(theta, r, label=f"{leader_labels[col]}")
-            if col != 0:
-                ax.fill_between(theta, r, data_copy[:, col - 1], alpha=0.2)
-            else:
-                ax.fill_between(theta, r, 0, alpha=0.2)
-        ax.set_theta_offset(np.pi)
-        ax.legend(title="", loc='upper right')
-        ax.set_yticklabels([])
-        ax.grid(True)
-        ax.set_rorigin(-0.1)
-        plt.tight_layout()
-        plt.savefig(os.path.join(output_path, f"Distribution over nest direction of {data_title} for leaders and nonleaders.png"))
-        # plt.show()
-# distributions_with_binned_angle_to_nest2(self, os.path.join(self.output_path, "nest_direction_distributions"), bins=50)
-
-
-def distributions_with_binned_angle_to_nest(self, output_path, bins=50):
-    # analysed, bins = self, 50
+def distributions_with_binned_angle_to_nest(self, output_path, bins=50, sample_size=50000):
+    angle_to_nest,  to, analyse_type = self.fixed_end_angle_to_nest.copy(), "nest", "mean"
+    # angle_to_nest,  to, analyse_type = self.fixed_end_angle_to_nest.copy(), "nest", "high"
+    # velocities = [[0, 0.25], [0.75, 1]]
     velocities = [0, 0.25, 0.5, 0.75, 1]
+    discrete_velocity = self.discrete_angular_velocity.copy()
+    values_idx = np.where(np.isin(np.abs(discrete_velocity),  np.array(velocities).flatten()))[0]
+    if len(values_idx) > sample_size:
+        values_idx = np.random.choice(values_idx, size=sample_size, replace=False)
+    discrete_velocity = np.full(self.discrete_angular_velocity.shape, np.nan)
+    discrete_velocity[values_idx] = self.discrete_angular_velocity[values_idx]
+
+    # _, discrete_velocity = utils.calc_translation_velocity(self.object_center_coordinates, window=4)
+    # discrete_velocity[discrete_velocity > np.nanpercentile(discrete_velocity, 99)] = np.nan
+    # fast_idx = discrete_velocity > np.nanpercentile(discrete_velocity, 75)
+    # mid_idx = np.logical_and(discrete_velocity > np.nanpercentile(discrete_velocity, 25), discrete_velocity < np.nanpercentile(discrete_velocity, 75))
+    # stop_idx = discrete_velocity < np.nanpercentile(discrete_velocity, 25)
+    # discrete_velocity[fast_idx] = 1
+    # discrete_velocity[mid_idx] = 0.5
+    # discrete_velocity[stop_idx] = 0
+    # discrete_velocity[np.abs(self.discrete_angular_velocity) >= 0.25] = 0.5
+
     angles = np.linspace(0, 2 * np.pi, bins)
     for data_title, types_data in zip(["force magnitude", "tangential force"], [self.force_magnitude, self.tangential_force]):
-        percentile = np.nanpercentile(types_data, 90, axis=0)
-        force_bool_idx = types_data > percentile
-        strong_pulls_data = np.full((len(angles) - 1, len(velocities)), np.nan, dtype=np.float64)
-        all_pulls_data = np.full((len(angles) - 1, len(velocities)), np.nan, dtype=np.float64)
-        for angle_count in range(len((angles[:-1]))):
-            angle_bool_idx = np.logical_and(self.fixed_end_angle_to_nest >= angles[angle_count], self.fixed_end_angle_to_nest < angles[angle_count + 1])
+        types_data = types_data.copy()
+        if data_title == "force magnitude":
+            types_data[types_data < 0] = np.nan
+        types_data = np.abs(types_data)
+        types_data[types_data > np.nanpercentile(types_data, 99)] = np.nan
+        upper_percentile = np.nanpercentile(types_data, 100, axis=0)
+        lower_percentile = np.nanpercentile(types_data, 90, axis=0)
+        force_bool_idx = np.logical_and(types_data > lower_percentile, types_data < upper_percentile)
+        strong_pulls_data = np.full((bins - 1, len(velocities)), np.nan, dtype=np.float64)
+        mean_data = np.full((bins - 1, len(velocities)), np.nan, dtype=np.float64)
+        all_pulls_data = np.full((bins - 1, len(velocities)), np.nan, dtype=np.float64)
+        for angle_count in range(bins - 1):
+            angle_bool_idx = np.logical_and(angle_to_nest >= angles[angle_count], angle_to_nest < angles[angle_count + 1])
             angle_bool_idx[~(self.N_ants_around_springs > 0)] = False
-            angle_bool_idx[~np.isin(self.discrete_angular_velocity, velocities), :] = False
             for velocity_count, velocity in enumerate(velocities):
                 velocity_bool_idx = angle_bool_idx.copy()
-                velocity_bool_idx[self.discrete_angular_velocity != velocity] = False
+                velocity_bool_idx[~np.isin(np.abs(discrete_velocity), velocity)] = False
+                mean_data[angle_count, velocity_count] = np.nanmean(np.abs(types_data[velocity_bool_idx]))
                 strong_pulls_data[angle_count, velocity_count] = np.sum(force_bool_idx[velocity_bool_idx])
                 all_pulls_data[angle_count, velocity_count] = np.sum(velocity_bool_idx)
+        data = strong_pulls_data / all_pulls_data  # normalizing
+        data = np.append(data, data[0, :].reshape(1, -1), axis=0)
+        data = np.flip(data, axis=0)
+        if analyse_type == "mean":
+            data = np.append(mean_data, mean_data[0, :].reshape(1, -1), axis=0)
+            data = np.flip(data, axis=0)
+
         plt.clf()
         theta = angles[:-1]
         theta = np.append(theta, theta[0])
-        # data_copy = strong_pulls_data.copy()
-        data_copy = strong_pulls_data / all_pulls_data
-        data_copy = np.append(data_copy, data_copy[0, :].reshape(1, -1), axis=0)
+        theta = np.flip(theta)
         ax = plt.subplot(111, projection='polar')
         ax.set_title(f"Distribution over velocities - high {data_title}")
         for col in range(len(velocities)):
-            r = data_copy[:, col]
-            if col != 0:
-                r += data_copy[:, col - 1]
+            r = data[:, col]
             ax.plot(theta, r, label=f"{velocities[col]}")
             if col != 0:
-                ax.fill_between(theta, r, data_copy[:, col - 1], alpha=0.2)
-            else:
-                ax.fill_between(theta, r, 0, alpha=0.2)
-        ax.set_theta_offset(np.pi)
-        ax.legend(title="Velocity", loc=(0.42, 0.38), prop={'size': 6}, frameon=False)
+                ax.fill_between(theta, r, data[:, col - 1], alpha=0.2, color="red")
+        if to == "wall":
+            ax.set_theta_offset(np.pi / 2)
+        ax.legend(title="Velocity", loc=(1, 0.8))
         ax.set_yticklabels([])
         ax.grid(True)
-        # ax.set_rorigin(-3000)
-        ax.set_rorigin(-0.5)
         plt.tight_layout()
-        plt.savefig(os.path.join(output_path, f"Distribution over velocities - high {data_title} - normed.png"))
+        plt.savefig(os.path.join(output_path, f"Angle to {to} - {analyse_type} {data_title}.png"))
 
-        right_quarter_idx = np.logical_and(angles[1:] >= (3 * np.pi / 4), angles[1:] < (5 * np.pi / 4))  # degrees 135-225
-        left_quarter_idx = np.logical_or(angles[1:] >= (7 * np.pi / 4), angles[1:] < (np.pi / 4))  # degrees 315-45
-        right_quarter_histogram = np.sum(strong_pulls_data[right_quarter_idx], axis=1)
-        left_quarter_histogram = np.sum(strong_pulls_data[left_quarter_idx], axis=1)[:-1]
-        df = pd.DataFrame({"Left quarter": left_quarter_histogram, "Right quarter": right_quarter_histogram})
         plt.clf()
-        sns.barplot(data=df[["Left quarter", "Right quarter"]], palette="rocket")
+        up_quarter_idx = np.logical_and(angle_to_nest >= (np.pi / 4), angle_to_nest < (3 * np.pi / 4))  # degrees 45-135
+        left_quarter_idx = np.logical_and(angle_to_nest >= (3 * np.pi / 4), angle_to_nest < (5 * np.pi / 4))  # degrees 135-225
+        down_quarter_idx = np.logical_and(angle_to_nest >= (5 * np.pi / 4), angle_to_nest < (7 * np.pi / 4))  # degrees 225-315
+        right_quarter_idx = np.logical_or(angle_to_nest >= (7 * np.pi / 4), angle_to_nest < (np.pi / 4))  # degrees 315-45
+        right_half_idx = np.logical_or(angle_to_nest >= (3 * np.pi / 2), angle_to_nest < (np.pi / 2))  # degrees 270-90
+        left_half_idx = np.logical_and(angle_to_nest >= (np.pi / 2), angle_to_nest < (3 * np.pi / 2))  # degrees 90-270
+        up_quarter_histogram = np.random.choice(types_data[up_quarter_idx], size=sample_size, replace=False)
+        left_quarter_histogram = np.random.choice(types_data[left_quarter_idx], size=sample_size, replace=False)
+        down_quarter_histogram = np.random.choice(types_data[down_quarter_idx], size=sample_size, replace=False)
+        right_quarter_histogram = np.random.choice(types_data[right_quarter_idx], size=sample_size, replace=False)
+        print(up_quarter_histogram.shape, left_quarter_histogram.shape, down_quarter_histogram.shape, right_quarter_histogram.shape)
+        df = pd.DataFrame({"Left quarter": left_quarter_histogram, "Right quarter": right_quarter_histogram,
+                           "Up quarter": up_quarter_histogram, "Down quarter": down_quarter_histogram})
+        left_half_data = np.random.choice(types_data[left_half_idx], size=sample_size, replace=False)
+        right_half_data = np.random.choice(types_data[right_half_idx], size=sample_size, replace=False)
+        # df = pd.DataFrame({"Left half": left_half_data, "Right half": right_half_data})
+        sns.barplot(data=df, palette="rocket")
         plt.title(f"Strong pulls over nest direction - high {data_title}")
         plt.xlabel("Nest direction")
         plt.ylabel("Number of strong pulls")
+        utils.draw_significant_stars(df)
         plt.tight_layout()
-        plt.savefig(os.path.join(output_path, f"Strong pulls over nest direction - high {data_title} - normed.png"))
-
-        plt.clf()
-        strong_percentages = strong_pulls_data / all_pulls_data
-        right_quarter_histogram = np.mean(strong_percentages[right_quarter_idx], axis=0)
-        left_quarter_histogram = np.mean(strong_percentages[left_quarter_idx][:-1], axis=0)
-        difference = np.abs(right_quarter_histogram - left_quarter_histogram)
-        sns.set_theme(style="whitegrid")
-        sns.barplot(y=difference, x=velocities, palette="rocket")
-        plt.title(f"Strong pulls over nest direction - high {data_title}")
-        plt.xlabel("Velocity")
-        plt.ylabel("Difference in strong pulls")
-        plt.tight_layout()
-        plt.gca().axes.get_yaxis().set_ticks([])
-        group1 = strong_percentages[right_quarter_idx][:, np.isin(velocities, 0)].flatten()
-        group2 = strong_percentages[left_quarter_idx][:-1][:, np.isin(velocities, 0)].flatten()
-        group3 = strong_percentages[right_quarter_idx][:, np.isin(velocities, 1)].flatten()
-        group4 = strong_percentages[left_quarter_idx][:-1][:, np.isin(velocities, 1)].flatten()
-        is_significant = utils.compare_two_pairs((group3, group4), (group1, group2))
-        # is_significant = compare_two_pairs((group3, group4), (group1, group2))
-        if is_significant:
-            top = plt.gca().get_ylim()[1]
-            bottom = plt.gca().get_ylim()[0]
-            y_range = top - bottom
-            bar_height = (y_range * 0.02) + top
-            bar_tips = bar_height - (y_range * 0.02)
-            plt.plot(
-                [0, 0, 4, 4],
-                [bar_tips, bar_height, bar_height, bar_tips], lw=1, c='k')
-            plt.text((4 - 0) / 2, bar_height, "***", ha='center', va='center', fontsize=12)
-        plt.savefig(os.path.join(output_path, f"Differecne in strong pulls between two sides - high {data_title} - normed.png"))
+        plt.savefig(os.path.join(output_path, f"Bar plot Angle to {to} - {analyse_type} {data_title}.png"))
 # distributions_with_binned_angle_to_nest(self, os.path.join(self.output_path, "nest_direction_distributions"), bins=50)
 
 
@@ -249,64 +289,7 @@ def plot_alignment_kuramoto(self, output_dir, sample_size=50000):
 # plot_alignment(self, os.path.join(self.output_path, "alignment"), sample_size=50000)
 
 
-def plot_ant_profiles(self, output_dir, window_size=11, profile_size=200):
-    os.makedirs(output_dir, exist_ok=True)
-    # plot number of cases
-    plt.clf()
-    y = np.sum(self.attaching_single_ant_profiles, axis=0)
-    y = y[y > self.fps]
-    x = np.arange(0, y.shape[0], 1) / self.fps
-    plt.plot(x, y, color="purple")
-    plt.ylabel(f"number of profiles")
-    plt.xlabel("seconds")
-    print("Saving figure to path: ", os.path.join(output_dir, f"number of profiles.png"))
-    plt.savefig(os.path.join(output_dir, f"number of profiles.png"))
-    # plot profiles of force magnitude and tangential force
-    force_magnitude = np.abs(self.profiled_force_magnitude)
-    tangential_force = np.abs(self.profiled_tangential_force)
-    first_attachment_profiles = self.ant_profiles[:, 4] == 1
-    all_but_first_attachment_profiles = self.ant_profiles[:, 4] != 1
-    for y_ori, y_title in zip([force_magnitude, tangential_force], ["force magnitude", "tangential force"]):
-        for precedence in ["first attachment", "all but first attachment", "all attachments"]:
-            precedence_bool = np.ones(self.ant_profiles.shape[0], dtype=bool)
-            if precedence == "first attachment":
-                precedence_bool = first_attachment_profiles
-            elif precedence == "all but first attachment":
-                precedence_bool = all_but_first_attachment_profiles
-            attaching_bool = self.attaching_single_ant_profiles * precedence_bool[:, np.newaxis]
-            detaching_bool = self.detaching_single_ant_profiles * precedence_bool[:, np.newaxis]
-            single_ant_bool = (self.profiled_N_ants_around_springs == 1) * precedence_bool[:, np.newaxis]
-            attaching_bool[~attaching_bool[:, profile_size], :] = False
-            detaching_bool[~detaching_bool[:, -profile_size - 1], :] = False
-            attaching_bool[:, profile_size + 1:] = False
-            detaching_bool[:, :-profile_size] = False
-            single_ant_bool[:, :profile_size] = False
-            single_ant_bool[:, profile_size + 500:] = False
-            attaching_y = np.copy(y_ori)
-            detaching_y = np.copy(y_ori)[self.reverse_argsort]
-            single_ant_y = np.copy(y_ori)
-            attaching_y[~attaching_bool] = np.nan
-            detaching_y[~detaching_bool] = np.nan
-            single_ant_y[~single_ant_bool] = np.nan
-            for y, name in zip([attaching_y, detaching_y, single_ant_y], ["attaching", "detaching", "middle"]):
-                y_mean = np.nanmean(y, axis=0)
-                y_SEM_upper = y_mean + np.nanstd(y, axis=0) / np.sqrt(np.sum(~np.isnan(y), axis=0))
-                y_SEM_lower = y_mean - np.nanstd(y, axis=0) / np.sqrt(np.sum(~np.isnan(y), axis=0))
-                y_not_nan = ~np.isnan(y_mean)
-                y_mean, y_SEM_upper, y_SEM_lower = y_mean[y_not_nan], y_SEM_upper[y_not_nan], y_SEM_lower[y_not_nan]
-                x = np.arange(0, y_mean.shape[0], 1) / self.fps
-                plt.clf()
-                plt.plot(x, savgol_filter(y_mean, window_size, 3), color="purple")
-                # plt.plot(x, y_mean, color="purple")
-                # plt.fill_between(x, savgol_filter(y_SEM_lower, window_size, 3), savgol_filter(y_SEM_upper, window_size, 3), alpha=0.5, color="orange")
-                plt.fill_between(x, y_SEM_lower, y_SEM_upper, alpha=0.5, color="orange")
-                plt.title(f"ant {y_title} profiles")
-                plt.xlabel("seconds")
-                plt.ylabel(f"{y_title} (mN)")
-                plt.subplots_adjust(top=0.9, bottom=0.15, left=0.15, right=0.9, hspace=0.5)
-                print("Saving figure to path: ", os.path.join(output_dir, f"{name} ant {y_title} profiles - {precedence}.png"))
-                plt.savefig(os.path.join(output_dir, f"{name} ant {y_title} profiles - {precedence}.png"))
-# plot_ant_profiles(self, output_dir=os.path.join(output_dir,"profiles"), window_size=11, profile_size=200)
+
 
 
 def plot_single_profiles(self, output_path, sample_size=2000):
@@ -390,45 +373,7 @@ def draw_single_profiles(self, output_path, profile_min_length=200, start=0, end
 # draw_single_profiles(self, output_path=os.path.join(self.output_path, "single_profiles_S5760003"), profile_min_length=200, start=self.sets_frames[0][0][0], end=self.sets_frames[0][0][1])
 
 
-def plot_correlation(self, start=0, end=None, output_path=None):
-    # output_dir = define_output_dir(output_dir)
-    os.makedirs(output_path, exist_ok=True)
-    title = "angular velocity to tangential force correlation"
-    end = self.pulling_angle.shape[0] if end is None else end
-    red, purple, blue, green, purple_brown = define_colors()
-    plt.clf()
-    fig, ax1 = plt.subplots()
-    fig.suptitle(title)
-    time = np.linspace(start, end, end - start) / self.fps
-    # plot the angular velocity
-    angular_velocity = self.angular_velocity[start:end] * self.fps
-    ax1.plot(time, angular_velocity, color=red)
-    ax1.set_xlabel("time (sec)")
-    ax1.set_ylabel("angular velocity (rad/ sec)", color=red)
-    ax1.tick_params(axis="y", labelcolor=red)
-    # plot the net tangential force
-    ax2 = ax1.twinx()
-    net_tangential_force = self.net_tangential_force[start:end]
-    ax2.plot(time, net_tangential_force, color=purple)
-    ax2.set_ylabel("net_tangential_force (mN)", color=purple)
-    ax2.tick_params(axis="y", labelcolor=purple)
 
-    ticks1 = ax1.get_yaxis().get_majorticklocs()
-    ticks2 = ax2.get_yaxis().get_majorticklocs()
-    y_min = min(min(ticks1), min(ticks2))
-    y_max = max(max(ticks1), max(ticks2))
-    ax1.set_ylim(y_min, y_max)
-    ax2.set_ylim(y_min, y_max)
-
-    # draw the zero line
-    ax1.axhline(y=0, color="black", linestyle="--")
-    ax2.axhline(y=0, color="black", linestyle="--")
-
-    fig.tight_layout()
-    fig.set_size_inches(19.2, 10.8)
-    plt.show()
-    print("Saving figure to path: ", os.path.join(output_path, title + ".png"))
-    plt.savefig(os.path.join(output_path, title + ".png"))
 
 
 def NAntsProfiles_switching_rate_over_ants_number(self, output_path):
@@ -516,22 +461,25 @@ def NAntsProfiles_angular_velocity_over_N_ants(self, output_path, sample_size=10
 # NAntsProfiles_angular_velocity_over_N_ants(self, os.path.join(self.output_path, "macro_analysis"))
 
 
+
+
+
 def NAntsProfiles_alignment(self, output_path, sample_size=5000):
     alignment_data = np.full((sample_size, 5000, len(self.unique_n_ants)), np.nan)
     for n_count, n in enumerate(self.unique_n_ants.astype(np.int64)):
-        single_ant_labeled = self.N_ants_labeled[n_count]
+        ant_labeled = self.N_ants_labeled[n_count]
         angular_velocity = self.discrete_angular_velocity.copy()
         force_direction = np.sin(self.force_direction)
         force_direction_threshold = np.nanpercentile(np.abs(force_direction), 60)
         force_direction[np.abs(force_direction) < force_direction_threshold] = 0
         force_direction_copy = force_direction.copy()
-        force_direction_copy[~(single_ant_labeled > 0)] = 0
+        force_direction_copy[~(ant_labeled > 0)] = 0
         alignment = np.sign(force_direction_copy) * np.sign(angular_velocity[:, np.newaxis])
-        ants_labels = np.unique(single_ant_labeled[np.isin(alignment, [-1, 1])])
+        ants_labels = np.unique(ant_labeled[np.isin(alignment, [-1, 1])])
         if sample_size < len(ants_labels):
             ants_labels = np.random.choice(ants_labels, sample_size, replace=False)
         for profile_count, profile_label in enumerate(ants_labels):
-            idx = single_ant_labeled == profile_label
+            idx = ant_labeled == profile_label
             profile_alignment = alignment[idx]
             profile_alignment = profile_alignment[np.isin(profile_alignment, [-1, 1])]
             if len(profile_alignment) >= 20:
@@ -572,6 +520,8 @@ def NAntsProfiles_alignment(self, output_path, sample_size=5000):
     plt.subplots_adjust(top=0.9, bottom=0.15, left=0.15, right=0.9, hspace=0.5)
     plt.savefig(os.path.join(output_path, f"Ants alignment N ants profiles - barplot.png"))
 # NAntsProfiles_alignment(self, os.path.join(self.output_path, "alignment"))
+
+
 
 
 # tested functions:
@@ -818,40 +768,102 @@ def profiles_direction_preference(analysed, sample_size=2000):
 
 
 # unused functions:
-def NAntsProfiles_tangential_force(self, output_path, length=200, sample_size=5000):
-    length, sample_size = 250, 5000
-    profiles = np.unique(self.N_ants_labeled[0])[1:]
-    mean = np.full((len(profiles), 2), np.nan)
-    std = np.full((len(profiles), 2), np.nan)
-    percentile = np.full((len(profiles), 2), np.nan)
-    # tangential_force = np.abs(self.tangential_force)
-    tangential_force = np.abs(self.force_magnitude)
-    for profile_count, profile in enumerate(profiles):
-        # print(f"Profile {profile_count} out of {len(profiles)}\r", end="")
-        apytl.Bar().drawbar(profile_count, len(profiles), fill='*')
-        idx_bool = self.N_ants_labeled[0] == profile
-        if np.sum(idx_bool) >= length:
-            idx = np.where(idx_bool)
-            start, end, spring = idx[0][0], idx[0][-1], idx[1][0]
-            profile_tangential = tangential_force[start:end + 1, spring]
-            if start != 0 and self.N_ants_around_springs[start - 1, spring] == 0:
-                mean[profile_count, 0] = np.mean(profile_tangential[100:length])
-                std[profile_count, 0] = np.std(profile_tangential[100:length])
-                percentile[profile_count, 0] = np.percentile(profile_tangential[100:length], 90)
-            if (end - start) >= (length + 25 * 7 + 150) and end + 1 != tangential_force.shape[0] and self.N_ants_around_springs[end + 1, spring] == 0:
-                mean[profile_count, 1] = np.mean(profile_tangential[length:length + 150])
-                std[profile_count, 1] = np.std(profile_tangential[length:length + 150])
-                percentile[profile_count, 1] = np.percentile(profile_tangential[length:length + 150], 90)
-    plt.clf()
-    fig, axs = plt.subplots(1, 3, figsize=(18, 5))
-    for count, (title, data) in enumerate(zip(["Mean", "Std", "Strongest"], [mean, std, percentile])):
-        df = pd.DataFrame(data, columns=["Start", "End"])
-        sns.barplot(data=df, palette="rocket", ax=axs[count])
-        axs[count].set_title(f"{title} tangential force at the start and end of the profile")
-        axs[count].set_xlabel("Profile position")
-        axs[count].set_ylabel("Tangential force")
-        utils.draw_significant_stars(df, axs=axs[count])
-    plt.show()
+# def distributions_with_binned_angle_to_nest2(self, output_path, bins=50, sample_size=50000):
+#     # new_joiners_frames, new_joiners_springs = np.where(np.diff(self.N_ants_around_springs, axis=0) == 1)
+#     # before_zero = self.N_ants_around_springs[new_joiners_frames, new_joiners_springs]
+#     # new_joiners_frames = new_joiners_frames[before_zero == 0]
+#     # new_joiners_springs = new_joiners_springs[before_zero == 0]
+#     # new_joiners_frames += 1
+#     #
+#     # angles = np.linspace(0, 2 * np.pi, bins)
+#
+#     # for data_title, types_data in zip(["force magnitude", "tangential force"], [self.force_magnitude, self.tangential_force]):
+#     #     data = np.full((bins, sample_size), np.nan)
+#     #     for profile_count, profile in enumerate(zip(new_joiners_frames, new_joiners_springs):
+#     #         if np.all(self.N_ants_around_springs[profile[0]:profile[0]+50, profile[1]]==1):
+#     #             data[]
+#
+#
+#
+#
+#     leaders_bool_idx = self.profiles_beginnings * (self.N_ants_around_springs == 1)
+#     non_leaders_bool_idx = ~self.profiles_beginnings * (self.N_ants_around_springs == 1)
+#     leader_labels = ["non-leaders", "leaders"]
+#     leaders_bools = [non_leaders_bool_idx, leaders_bool_idx]
+#     for data_title, types_data in zip(["force magnitude", "tangential force"], [self.force_magnitude, self.tangential_force]):
+#         percentile = np.nanpercentile(types_data, 90, axis=0)
+#         force_bool_idx = types_data > percentile
+#         strong_pulls_data = np.full((len(angles) - 1, 2), np.nan, dtype=np.float64)
+#         all_pulls_data = np.full((len(angles) - 1, 2), np.nan, dtype=np.float64)
+#         for angle_count in range(len((angles[:-1]))):
+#             angle_bool_idx = np.logical_and(self.fixed_end_angle_to_nest >= angles[angle_count], self.fixed_end_angle_to_nest < angles[angle_count + 1])
+#             angle_bool_idx[~np.isin(self.discrete_angular_velocity, [1, 0.75, 0.5]), :] = False
+#             for leaders_count, leaders_bool in enumerate(leaders_bools):
+#                 final_bool_idx = angle_bool_idx.copy()
+#                 final_bool_idx[~leaders_bool] = False
+#                 strong_pulls_data[angle_count, leaders_count] = np.sum(force_bool_idx[final_bool_idx])
+#                 all_pulls_data[angle_count, leaders_count] = np.sum(final_bool_idx)
+#         plt.clf()
+#         theta = angles[:-1]
+#         theta = np.append(theta, theta[0])
+#         # data_copy = strong_pulls_data.copy()
+#         data_copy = strong_pulls_data / all_pulls_data
+#         data_copy = np.append(data_copy, data_copy[0, :].reshape(1, -1), axis=0)
+#         ax = plt.subplot(111, projection='polar')
+#         ax.set_title(f"Distribution over nest direction of {data_title} for leaders and non-leaders")
+#         for col in range(len(leader_labels)):
+#             r = data_copy[:, col]
+#             if col != 0:
+#                 r += data_copy[:, col - 1]
+#             ax.plot(theta, r, label=f"{leader_labels[col]}")
+#             if col != 0:
+#                 ax.fill_between(theta, r, data_copy[:, col - 1], alpha=0.2)
+#             else:
+#                 ax.fill_between(theta, r, 0, alpha=0.2)
+#         ax.set_theta_offset(np.pi)
+#         ax.legend(title="", loc='upper right')
+#         ax.set_yticklabels([])
+#         ax.grid(True)
+#         ax.set_rorigin(-0.1)
+#         plt.tight_layout()
+#         plt.savefig(os.path.join(output_path, f"Distribution over nest direction of {data_title} for leaders and nonleaders.png"))
+#         # plt.show()
+# # distributions_with_binned_angle_to_nest2(self, os.path.join(self.output_path, "nest_direction_distributions"), bins=50)
+
+# def NAntsProfiles_tangential_force(self, output_path, length=200, sample_size=5000):
+#     length, sample_size = 250, 5000
+#     profiles = np.unique(self.N_ants_labeled[0])[1:]
+#     mean = np.full((len(profiles), 2), np.nan)
+#     std = np.full((len(profiles), 2), np.nan)
+#     percentile = np.full((len(profiles), 2), np.nan)
+#     # tangential_force = np.abs(self.tangential_force)
+#     tangential_force = np.abs(self.force_magnitude)
+#     for profile_count, profile in enumerate(profiles):
+#         # print(f"Profile {profile_count} out of {len(profiles)}\r", end="")
+#         apytl.Bar().drawbar(profile_count, len(profiles), fill='*')
+#         idx_bool = self.N_ants_labeled[0] == profile
+#         if np.sum(idx_bool) >= length:
+#             idx = np.where(idx_bool)
+#             start, end, spring = idx[0][0], idx[0][-1], idx[1][0]
+#             profile_tangential = tangential_force[start:end + 1, spring]
+#             if start != 0 and self.N_ants_around_springs[start - 1, spring] == 0:
+#                 mean[profile_count, 0] = np.mean(profile_tangential[100:length])
+#                 std[profile_count, 0] = np.std(profile_tangential[100:length])
+#                 percentile[profile_count, 0] = np.percentile(profile_tangential[100:length], 90)
+#             if (end - start) >= (length + 25 * 7 + 150) and end + 1 != tangential_force.shape[0] and self.N_ants_around_springs[end + 1, spring] == 0:
+#                 mean[profile_count, 1] = np.mean(profile_tangential[length:length + 150])
+#                 std[profile_count, 1] = np.std(profile_tangential[length:length + 150])
+#                 percentile[profile_count, 1] = np.percentile(profile_tangential[length:length + 150], 90)
+#     plt.clf()
+#     fig, axs = plt.subplots(1, 3, figsize=(18, 5))
+#     for count, (title, data) in enumerate(zip(["Mean", "Std", "Strongest"], [mean, std, percentile])):
+#         df = pd.DataFrame(data, columns=["Start", "End"])
+#         sns.barplot(data=df, palette="rocket", ax=axs[count])
+#         axs[count].set_title(f"{title} tangential force at the start and end of the profile")
+#         axs[count].set_xlabel("Profile position")
+#         axs[count].set_ylabel("Tangential force")
+#         utils.draw_significant_stars(df, axs=axs[count])
+#     plt.show()
 # NAntsProfiles_tangential_force(self, os.path.join(self.output_path, ""))
 
 
@@ -1227,42 +1239,7 @@ def NAntsProfiles_tangential_force(self, output_path, length=200, sample_size=50
 # # distributions_over_angle_to_nest(self)
 #
 #
-# def velocity_over_average_force(analysed, output_path, sample_size=10000):
-#     os.makedirs(output_path, exist_ok=True)
-#     angular_velocity = utils.calc_angular_velocity(analysed.fixed_end_angle_to_nest, diff_spacing=2) / 2
-#     angular_velocity = np.where(np.isnan(angular_velocity).all(axis=1), np.nan, np.nanmedian(angular_velocity, axis=1))
-#     outlier_threshold = np.nanpercentile(np.abs(angular_velocity), 90)
-#     angular_velocity[np.abs(angular_velocity) > outlier_threshold] = np.nan
-#     tangential_force = analysed.tangential_force.copy()
-#     percentile_tangential_force = np.nanpercentile(np.abs(tangential_force), 90)
-#     tangential_force[np.abs(tangential_force) > percentile_tangential_force] = np.nan
-#     net_tangential_force = np.abs(np.nansum(tangential_force, axis=1))
-#     net_tangential_force[np.sum(analysed.missing_info, axis=1) != 0] = np.nan
-#     net_tangential_force[np.isinf(net_tangential_force)] = np.nan
-#     tangential_force_hist = np.histogram(net_tangential_force[~np.isnan(net_tangential_force)], bins=50)[1]
-#     velocity_binned = np.full((sample_size, len(tangential_force_hist) - 1), np.nan)
-#     for count, (lower, upper) in enumerate(zip(tangential_force_hist[:-1], tangential_force_hist[1:])):
-#         idx = (np.abs(net_tangential_force) >= lower) * (np.abs(net_tangential_force) < upper)
-#         velocities_binned = angular_velocity[idx]
-#         if len(velocities_binned) > sample_size:
-#             velocities_binned = np.random.choice(velocities_binned, sample_size, replace=False)
-#         velocity_binned[:len(velocities_binned), count] = velocities_binned
-#     y_mean = np.nanmean(velocity_binned, axis=0)
-#     y_SEM_upper = y_mean + np.nanstd(velocity_binned, axis=0) / np.sqrt(np.sum(~np.isnan(velocity_binned), axis=0))
-#     y_SEM_lower = y_mean - np.nanstd(velocity_binned, axis=0) / np.sqrt(np.sum(~np.isnan(velocity_binned), axis=0))
-#     y_mean = gaussian_filter1d(y_mean, sigma=2)
-#     y_SEM_upper = gaussian_filter1d(y_SEM_upper, sigma=2)
-#     y_SEM_lower = gaussian_filter1d(y_SEM_lower, sigma=2)
-#     plt.clf()
-#     plt.figure(figsize=(10, 7))
-#     colors = sns.color_palette("rocket")
-#     plt.fill_between((tangential_force_hist[:-1] + tangential_force_hist[1:]) / 2, y_SEM_lower, y_SEM_upper, alpha=0.5, color=colors[2])
-#     sns.lineplot(x=(tangential_force_hist[:-1] + tangential_force_hist[1:]) / 2, y=y_mean, color=colors[1])
-#     plt.xlabel("Net tangential force")
-#     plt.ylabel("Angular velocity")
-#     plt.savefig(os.path.join(output_path, "Velocity over average force.png"))
-# # velocity_over_average_force(self, os.path.join(self.output_path, "basics"))
-#
+
 #
 # def plot_alignment(analysed, output_dir, profile_size=200):
 #     os.makedirs(output_dir, exist_ok=True)
@@ -1585,7 +1562,7 @@ def NAntsProfiles_tangential_force(self, output_path, length=200, sample_size=50
 #                                            np.nanstd(y[(x >= x_binned[i]) & (x < x_binned[i + 1])]) / np.sqrt(np.sum((x >= x_binned[i]) & (x < x_binned[i + 1])))
 #
 #                 plt.clf()
-#                 fig, ax1 = plt.subplots()
+#                 fig, ax = plt.subplots()
 #                 ax1.plot(x_binned[:-1], savgol_filter(y_mean_binned[:-1], 10, 3), color="purple")
 #                 ax1.fill_between(x_binned[:-1], savgol_filter(y_SEM_lower_bined[:-1],10,3), savgol_filter(y_SEM_upper_bined[:-1],10,3), alpha=0.5, color="orange")
 #                 ax1.set_xlabel("angular velocity (rad/ frame)")
@@ -1632,3 +1609,264 @@ def NAntsProfiles_tangential_force(self, output_path, length=200, sample_size=50
 #                 # print("Saving figure to path: ", os.path.join(output_dir, f"{name}, {label} to angular velocity - violin plot (movie {title}).png"))
 #                 # plt.savefig(os.path.join(output_dir, f"{name}, {label} to angular velocity - violin plot (movie {title}).png"))
 # # plot_query_distribution_to_angular_velocity(analysed, start=0, end=None, window_size=50, title=spring_type, output_dir=macro_scale_output_dir)
+
+
+
+
+# Figure 1:
+# def calibration_error(path, fig_size=np.array([68, 37.5]), font_size=6):
+#     # path = "Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\calibration\\plus_0.1"
+#     y_prediction = np.load(os.path.join(path, "y_test_prediction.npy"))
+#     y_true = np.load(os.path.join(path, "y_test.npy"))
+#     data_direction = pd.DataFrame(np.concatenate((y_prediction[:, :1], y_true[:, :1]), axis=1), columns=["Prediction", "True"])
+#     direction_bins = np.histogram(data_direction["True"], bins=10)[1]
+#     direction_x_values = direction_bins[:-1] + (direction_bins[1:] - direction_bins[:-1]) / 2
+#     direction_means = np.array([])
+#     direction_std = np.array([])
+#     for lower, upper in zip(direction_bins[:-1], direction_bins[1:]):
+#         idx = (data_direction["True"] >= lower) * (data_direction["True"] < upper)
+#         direction_means = np.append(direction_means, np.mean(data_direction["Prediction"][idx]))
+#         direction_std = np.append(direction_std, np.std(data_direction["Prediction"][idx]))
+#     data_magnitude = pd.DataFrame(np.concatenate((y_prediction[:, 1:], y_true[:, 1:]), axis=1), columns=["Prediction", "True"])
+#     magnitude_x_values = np.unique(data_magnitude["True"])
+#     magnitude_means = np.stack([np.mean(data_magnitude["Prediction"][data_magnitude["True"] == i]) for i in magnitude_x_values])
+#     magnitude_std = np.stack([np.std(data_magnitude["Prediction"][data_magnitude["True"] == i]) for i in magnitude_x_values])
+#
+#     for data, means, stds, x_values, x_label, y_label, title in zip([data_direction, data_magnitude],
+#                                            [direction_means, magnitude_means],
+#                                            [direction_std, magnitude_std],
+#                                            [direction_x_values, magnitude_x_values],
+#                                            [r"Force direction $(rad)$", r"Force magnitude $(mN)$"],
+#                                            ["Predicted direction $(rad)$", r"Predicted magnitude $(mN)$"],
+#                                            ["Direction calibration error", "Magnitude calibration error"]):
+#         plt.clf()
+#         colors = sns.color_palette("rocket")
+#         fig, ax = plt.subplots()
+#         fig.set_size_inches(fig_size[0] * 0.0393701, fig_size[1] * 0.0393701)
+#         sns.scatterplot(data=data, x="True", y="Prediction", color="gray", alpha=0.5, s=5)
+#         sns.scatterplot(x=x_values, y=means, color=colors[2], s=25)
+#         plt.fill_between(x_values, means - stds, means + stds, alpha=0.2, color=colors[-2])
+#         plt.xlabel(x_label)
+#         plt.ylabel(y_label)
+#         plt.xlim([-0.1, np.max(data["True"]) * 1.1])
+#         plt.ylim([-0.1, np.max(data["True"]) * 1.1])
+#         plt.plot([0, np.max(data["True"])], [0, np.max(data["True"])], linestyle="--", color="black", alpha=0.6)
+#         ax.spines['top'].set_visible(False)
+#         ax.spines['right'].set_visible(False)
+#         for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
+#                      ax.get_xticklabels() + ax.get_yticklabels()):
+#             item.set_fontsize(font_size)
+#         plt.tight_layout()
+#         plt.savefig(os.path.join(path, f"{title}.svg"))
+# calibration_error(os.path.normpath("Z:\\Dor_Gabay\\ThesisProject\\results\\summer_2023\\plus_0.1\\calibration_figures\\"))
+
+
+
+
+
+# Figure 2:
+# def velocity_over_average_force(self, output_path, sample_size=10000, window=26, bins=20, fig_size=(75, 50), font_size=6):
+#     def func(x, a, b):
+#         return a * x + b
+#     angular_velocity = utils.calc_angular_velocity(self.fixed_end_angle_to_wall, window=window, percentile_threshold=98)
+#     discrete_angular_velocity, _ = utils.discretize_angular_velocity(angular_velocity, self.sets_frames)
+#     angular_velocity = np.abs(angular_velocity)
+#     tangential_force = self.tangential_force.copy()
+#     # tangential_force = np.array([gaussian_filter1d(column, sigma=window) for column in tangential_force.T]).T
+#     tangential_force[np.abs(tangential_force) > np.nanpercentile(np.abs(tangential_force), 98)] = np.nan
+#     tangential_force[self.force_magnitude < 0] = np.nan
+#     tangential_force[np.sum(np.isnan(tangential_force), axis=1) > 0] = np.nan
+#     nan_idx = np.all(np.isnan(tangential_force), axis=1)
+#     net_tangential_force = np.nansum(tangential_force, axis=1)
+#     gaussian_filter1d(net_tangential_force, sigma=window, output=net_tangential_force)
+#     net_tangential_force[nan_idx] = np.nan
+#
+#     # net_tangential_force[np.sum(self.N_ants_around_springs, axis=1) > 10] = np.nan
+#     net_tangential_force = np.abs(net_tangential_force)
+#     velocity_bins = np.histogram(np.abs(angular_velocity)[~np.isnan(angular_velocity)], bins=bins)[1]#[2:]
+#     y_binned = np.full((sample_size, len(velocity_bins) - 1), np.nan)
+#     for count, (lower, upper) in enumerate(zip(velocity_bins[:-1], velocity_bins[1:])):
+#         idx = np.logical_and(angular_velocity > lower, angular_velocity <= upper)
+#         y = net_tangential_force[idx]
+#         if len(y) > sample_size:
+#             y = np.random.choice(y, sample_size, replace=False)
+#         y_binned[:len(y), count] = y
+#
+#     plt.clf()
+#     fig, ax = plt.subplots()
+#     fig.set_size_inches(fig_size[0] * 0.0393701, fig_size[1] * 0.0393701)
+#     y_mean = np.nanmean(y_binned, axis=0)
+#     y_SEM_upper = y_mean + np.nanstd(y_binned, axis=0) / np.sqrt(np.sum(~np.isnan(y_binned), axis=0))
+#     y_SEM_lower = y_mean - np.nanstd(y_binned, axis=0) / np.sqrt(np.sum(~np.isnan(y_binned), axis=0))
+#     df = pd.DataFrame({"y": y_mean, "x": (velocity_bins[:-1] + velocity_bins[1:]) / 2})
+#     df["x"] = df["x"] * (180 / np.pi) * (self.fps)
+#     # fit a linear function only for x values between 0-15
+#     x = df["x"].values
+#     y = df["y"].values
+#     y = y[(x > 0) & (x < 15)]
+#     x = x[(x > 0) & (x < 15)]
+#     df_line_fit = pd.DataFrame({"x": x, "y": y})
+#     popt = curve_fit(func, df_line_fit["x"], df_line_fit["y"], p0=[1, 1])
+#     df_line_fit["y_fit"] = func(df_line_fit["x"], *popt[0])
+#     plt.fill_between(df["x"], y_SEM_lower, y_SEM_upper, alpha=0.5, color="purple")
+#     sns.lineplot(data=df, x="x", y="y", color="purple")
+#     if window > 10:
+#         sns.lineplot(data=df_line_fit, x="x", y="y_fit", color=sns.color_palette("rocket")[1], linestyle="--")
+#     r_squared = 1 - (np.sum((df_line_fit["y"] - df_line_fit["y_fit"]) ** 2) / np.sum((df_line_fit["y"] - np.mean(df_line_fit["y"])) ** 2))
+#     plt.ylabel(r"Net tangential force $(mN)$", fontsize=font_size)
+#     plt.xlabel(r"Angular velocity ($deg. s^{-1}$)", fontsize=font_size)
+#     ax.tick_params(axis='both', which='major', labelsize=font_size)
+#     ax.spines['top'].set_visible(False)
+#     ax.spines['right'].set_visible(False)
+#     plt.tight_layout()
+#     plt.savefig(os.path.join(output_path, f"Velocity over average force, window {window}, R squared {np.round(r_squared, 3)}.svg"))
+# # velocity_over_average_force(self, os.path.join(self.output_path, "macro_analysis"))
+#
+#
+# def plot_correlation(self, output_path,  sets_idx=(1, 1), window=26, font_size=6, fig_size=np.array([150, 50])):
+#     start, end = self.sets_frames[sets_idx[0]][0][0], self.sets_frames[sets_idx[1]][-1][1]
+#     # output_dir = define_output_dir(output_dir)
+#     os.makedirs(output_path, exist_ok=True)
+#     title = "angular velocity to tangential force correlation"
+#     plt.clf()
+#     colors = sns.color_palette("rocket", 2)
+#     fig, ax = plt.subplots()
+#     fig.set_size_inches(fig_size[0] * 0.0393701, fig_size[1] * 0.0393701)
+#     time = np.linspace(start, end, end - start) / self.fps
+#
+#     angular_velocity = utils.calc_angular_velocity(self.fixed_end_angle_to_wall, window=window, remove_outliers=True) * -1
+#     angular_velocity = utils.interpolate_columns(angular_velocity)
+#     angular_velocity = angular_velocity[start:end] * self.fps
+#     gaussian_filter1d(angular_velocity, sigma=window, output=angular_velocity)
+#     ax.plot(time, angular_velocity, color=colors[0])
+#     ax.set_xlabel("Time $(s)$", fontsize=font_size)
+#     ax.set_ylabel("Angular velocity $(deg. s^-1)$", color=colors[0], fontsize=font_size)
+#     #set axes label size:
+#     ax.tick_params(axis="y", labelcolor=colors[0])
+#     ax.tick_params(axis='both', which='major', labelsize=font_size)
+#
+#
+#     ax2 = ax.twinx()
+#     net_tangential_force = self.net_tangential_force.copy()[start:end]
+#     gaussian_filter1d(net_tangential_force, sigma=window, output=net_tangential_force)
+#     ax2.plot(time, net_tangential_force, color=colors[1])
+#     ax2.set_ylabel("Net tangential force $(mN)$", color=colors[1], fontsize=font_size)
+#     ax2.tick_params(axis="y", labelcolor=colors[1])
+#     ax2.tick_params(axis='both', which='major', labelsize=font_size)
+#
+#     ticks1 = ax.get_yaxis().get_majorticklocs()
+#     ticks2 = ax2.get_yaxis().get_majorticklocs()
+#     y_min = min(min(ticks1), min(ticks2))
+#     y_max = max(max(ticks1), max(ticks2))
+#     ax.set_ylim(y_min, y_max)
+#     ax2.set_ylim(y_min, y_max)
+#     # ax.set_xlim(0, 1000)
+#     # ax2.set_xlim(0, 1000)
+#     ax.axhline(y=0, color="black", linestyle="--")
+#     ax2.axhline(y=0, color="black", linestyle="--")
+#     ax.spines['top'].set_visible(False)
+#     ax2.spines['top'].set_visible(False)
+#     fig.tight_layout()
+#     # plt.savefig(os.path.join(output_path, "Angular velocity to tangential force correlation.png"))
+#     plt.savefig(os.path.join(output_path, "Angular velocity to tangential force correlation.svg"), format="svg")
+# # plot_correlation(self, output_path=os.path.join(self.output_path, "correlation"))
+#
+#
+# def plot_auto_correlation(self, output_path, fig_size=(75, 50), font_size=6):
+#     self.calculate_auto_correlation()
+#     data = self.auto_correlation.copy()
+#     lags = np.arange(1, self.auto_correlation.shape[1]+1)
+#     plt.clf()
+#     colors = sns.color_palette("rocket", 3)
+#     fig, ax = plt.subplots()
+#     fig.set_size_inches(fig_size[0] * 0.0393701, fig_size[1] * 0.0393701)
+#     means = np.mean(data, axis=0)
+#     stds = np.std(data, axis=0)
+#     popt = curve_fit(utils.exponential_decay, lags, means, p0=[1, 1])
+#     plt.fill_between(lags, means - stds, means + stds, alpha=0.3, color=colors[2])
+#     sns.scatterplot(x=lags, y=means, color=colors[1], s=30)
+#     sns.lineplot(x=lags, y=utils.exponential_decay(lags, *popt[0]), color=colors[0], linestyle="--")
+#     plt.ylabel(r"Auto correlation")
+#     plt.xlabel(r"Window size")
+#     plt.ylim([-0.1, 1.1])
+#     ax.spines['top'].set_visible(False)
+#     ax.spines['right'].set_visible(False)
+#     for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] + ax.get_xticklabels() + ax.get_yticklabels()):
+#         item.set_fontsize(font_size)
+#     plt.tight_layout()
+#     plt.show()
+#     plt.savefig(os.path.join(output_path, f"Auto correlation.svg"))
+# # plot_auto_correlation(self, os.path.join(self.output_path, "macro_analysis"))
+
+
+
+
+
+# Figure 3:
+# def plot_ant_profiles(self, output_dir, window_size=11, profile_size=200):
+#     # plt.clf()
+#     # y = np.sum(self.attaching_single_ant_profiles, axis=0)
+#     # y = y[y > self.fps]
+#     # x = np.arange(0, y.shape[0], 1) / self.fps
+#     # plt.plot(x, y, color="purple")
+#     # plt.ylabel(f"number of profiles")
+#     # plt.xlabel("seconds")
+#     # print("Saving figure to path: ", os.path.join(output_dir, f"number of profiles.png"))
+#     # plt.savefig(os.path.join(output_dir, f"number of profiles.png"))
+#
+#     force_magnitude = np.abs(self.profiled_force_magnitude)
+#     force_magnitude[self.profiled_negative_magnitude < 0] = np.nan
+#     tangential_force = np.abs(self.profiled_tangential_force)
+#     tangential_force[self.profiled_negative_magnitude] = np.nan
+#     single_ant_labeled = self.N_ants_labeled[0]
+#     profile_labels = np.unique(single_ant_labeled)[1:]
+#     profiles_attachments = np.full(single_ant_labeled.shape, False)
+#     profiles_detachments = np.full(single_ant_labeled.shape, False)
+#     for profile_count, profile_label in enumerate(profile_labels):
+#         idx = np.where(single_ant_labeled == profile_label)
+#         profiles_attachments[idx[0][0], idx[1][0]] = True
+#         profiles_detachments[idx[0][-1], idx[1][-1]] = True
+#
+#     n_ants = self.N_ants_around_springs[1:].copy()
+#     n_ants[profiles_attachments[:-1] != 0] = np.nan
+#     attachments = np.where(n_ants == 0)
+#     attachments = attachments[0] + 1, attachments[1]
+#     dettachments = np.where(self.N_ants_around_springs[1:][single_ant_labeled[:-1] == 0] != 0)
+#
+#     for y_ori, y_title in zip([force_magnitude, tangential_force], ["force magnitude", "tangential force"]):
+#         precedence_bool = np.ones(self.ant_profiles.shape[0], dtype=bool)
+#         attaching_bool = self.attaching_single_ant_profiles * precedence_bool[:, np.newaxis]
+#         detaching_bool = self.detaching_single_ant_profiles * precedence_bool[:, np.newaxis]
+#         single_ant_bool = (self.profiled_N_ants_around_springs == 1) * precedence_bool[:, np.newaxis]
+#         attaching_bool[~attaching_bool[:, profile_size], :] = False
+#         detaching_bool[~detaching_bool[:, -profile_size - 1], :] = False
+#         attaching_bool[:, profile_size + 1:] = False
+#         detaching_bool[:, :-profile_size] = False
+#         single_ant_bool[:, :profile_size] = False
+#         single_ant_bool[:, profile_size + 500:] = False
+#         attaching_y = np.copy(y_ori)
+#         detaching_y = np.copy(y_ori)[self.reverse_argsort]
+#         single_ant_y = np.copy(y_ori)
+#         attaching_y[~attaching_bool] = np.nan
+#         detaching_y[~detaching_bool] = np.nan
+#         single_ant_y[~single_ant_bool] = np.nan
+#         for y, name in zip([attaching_y, detaching_y, single_ant_y], ["attaching", "detaching", "middle"]):
+#             y_mean = np.nanmean(y, axis=0)
+#             y_SEM_upper = y_mean + np.nanstd(y, axis=0) / np.sqrt(np.sum(~np.isnan(y), axis=0))
+#             y_SEM_lower = y_mean - np.nanstd(y, axis=0) / np.sqrt(np.sum(~np.isnan(y), axis=0))
+#             y_not_nan = ~np.isnan(y_mean)
+#             y_mean, y_SEM_upper, y_SEM_lower = y_mean[y_not_nan], y_SEM_upper[y_not_nan], y_SEM_lower[y_not_nan]
+#             x = np.arange(0, y_mean.shape[0], 1) / self.fps
+#             plt.clf()
+#             plt.plot(x, savgol_filter(y_mean, window_size, 3), color="purple")
+#             # plt.plot(x, y_mean, color="purple")
+#             # plt.fill_between(x, savgol_filter(y_SEM_lower, window_size, 3), savgol_filter(y_SEM_upper, window_size, 3), alpha=0.5, color="orange")
+#             plt.fill_between(x, y_SEM_lower, y_SEM_upper, alpha=0.5, color="orange")
+#             plt.title(f"ant {y_title} profiles")
+#             plt.xlabel("seconds")
+#             plt.ylabel(f"{y_title} (mN)")
+#             plt.subplots_adjust(top=0.9, bottom=0.15, left=0.15, right=0.9, hspace=0.5)
+#             print("Saving figure to path: ", os.path.join(output_dir, f"{name} ant {y_title} profiles.png"))
+#             plt.savefig(os.path.join(output_dir, f"{name} ant {y_title} profiles.png"))
+# # plot_ant_profiles(self, output_dir=os.path.join(output_dir,"Figure 3"), window_size=11, profile_size=200)
+
