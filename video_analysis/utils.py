@@ -370,27 +370,67 @@ def process_image(image, alpha=2.5, beta=0, gradiant_threshold=10, sobel_kernel_
     return image
 
 
-def save_data(arrays, names, snapshot_data, parameters):
-    output_path = parameters["OUTPUT_PATH"]
-    continue_from_last = parameters["CONTINUE_FROM_LAST_SNAPSHOT"]
-    os.makedirs(output_path, exist_ok=True)
-    if snapshot_data["frame_count"]-1 == 0:
+def save(arrays, names, checkpoint):
+    os.makedirs(checkpoint.output_path, exist_ok=True)
+    if checkpoint.frame_count - 1 == 0:
         for d, n in zip(arrays[:], names[:]):
-            with open(os.path.join(output_path, str(n) + '.csv'), 'wb') as f:
+            with open(os.path.join(checkpoint.output_path, str(n) + '.csv'), 'wb') as f:
                 np.savetxt(f, d, delimiter=',')
                 f.close()
     else:
         for d, n in zip(arrays[:], names[:]):
-            with open(os.path.join(output_path, str(n) + '.csv'), 'a') as f:
-                if continue_from_last:
-                    line_count = get_csv_line_count(os.path.join(output_path, str(n) + '.csv'))
-                    if line_count == snapshot_data["frame_count"]:
+            with open(os.path.join(checkpoint.output_path, str(n) + '.csv'), 'a') as f:
+                if checkpoint.continuation:
+                    line_count = get_csv_line_count(os.path.join(checkpoint.output_path, str(n) + '.csv'))
+                    if line_count == checkpoint.frame_count:
                         continue
                     else:
                         np.savetxt(f, d, delimiter=',')
                 else:
-                        np.savetxt(f, d, delimiter=',')
+                    np.savetxt(f, d, delimiter=',')
                 f.close()
+    checkpoint.save()
+    # save log.frame_count and temporary file
+
+
+class ProgressBar:
+    def __init__(self, videos, mother_path):
+        self.mother_path = mother_path
+        os.remove(os.path.join(self.mother_path, "progress.pickle")) if os.path.exists(os.path.join(self.mother_path, "progress.pickle")) else None
+        with open(os.path.join(self.mother_path, "progress.pickle"), 'wb') as f:
+            total_work, total_progress = np.array([cv2.VideoCapture(video_path).get(cv2.CAP_PROP_FRAME_COUNT) for video_path in videos]), np.zeros(len(videos))
+            pickle.dump([total_work, total_progress], f)
+
+    def update(self, run_id, frame_count):
+        try:
+            with open(os.path.join(self.mother_path, "progress.pickle"), 'rb') as f:
+                total_work, total_progress = pickle.load(f)
+                total_progress[run_id] = frame_count
+            with open(os.path.join(self.mother_path, "progress.pickle"), 'wb') as f:
+                pickle.dump([total_work, total_progress], f)
+            percentage = np.round(np.sum(total_progress) / np.sum(total_work) * 100, 3)
+            print(f"\r\033[91mProgress: |{'*' * int(percentage * 0.5)}{'-' * (50 - int(percentage * 0.5))}|" + " {:.2f}%".format(percentage), end="\033[0m")
+        except Exception as e:
+            pass
+
+    def end(self):
+        os.remove(os.path.join(self.mother_path, "progress.pickle"))
+        print("\r\n")
+        print("-" * 80)
+        print("Finished processing all videos in directory: ", self.mother_path)
+# def progress_bar(parameters, run_id, checkpoint):
+#
+#
+#     try:
+#         with open(os.path.join(parameters["MOTHER_PATH"], "progress.pickle"), 'rb') as f:
+#             total_work, total_progress = pickle.load(f)
+#             total_progress[run_id] = checkpoint.frame_count
+#         with open(os.path.join(parameters["MOTHER_PATH"], "progress.pickle"), 'wb') as f:
+#             pickle.dump([total_work, total_progress], f)
+#         percentage = np.round(np.sum(total_progress) / np.sum(total_work) * 100, 3)
+#         print(f"\r\033[91mProgress: |{'*' * int(percentage * 0.5)}{'-' * (100 - int(percentage * 0.5))}|" + " {:.2f}%".format(percentage), end="\033[0m")
+#     except Exception as e:
+#         pass
 
 
 def get_csv_line_count(csv_file):
@@ -450,45 +490,61 @@ def present_analysis_result(frame, calculations, springs, ants, video_name=" ", 
         cv2.waitKey(waitKey)
 
 
-def create_snapshot_data(parameters=None, snapshot_data=None, calculations=None, squares=None, springs=None, ants=None):
-    if snapshot_data is None:
-        if parameters["CONTINUE_FROM_LAST_SNAPSHOT"]\
-                and os.path.exists(parameters["OUTPUT_PATH"])\
-                and len([f for f in os.listdir(parameters["OUTPUT_PATH"]) if f.startswith("snap_data")]) != 0:
-            snaps = [f for f in os.listdir(parameters["OUTPUT_PATH"]) if f.startswith("snap_data")]
-            creation_time = [os.path.getctime(os.path.join(parameters["OUTPUT_PATH"], f)) for f in snaps]
-            snapshot_data = pickle.load(open(os.path.join(parameters["OUTPUT_PATH"], snaps[np.argmax(creation_time)]), "rb"))
-            parameters["STARTING_FRAME"] = snapshot_data["frame_count"]
-            snapshot_data["current_time"] = datetime.datetime.now().strftime("%d.%m.%Y-%H%M")
+class CheckpointFile:
+    def __init__(self, parameters):
+        self.output_path = parameters["OUTPUT_PATH"]
+        old_logs = [f for f in os.listdir(self.output_path) if f.startswith("z_Checkpoint_")] if os.path.exists(self.output_path) else []
+        if parameters["CONTINUE"] and len(old_logs) != 0:
+            creation_time = [os.path.getctime(os.path.join(self.output_path, f)) for f in old_logs]
+            loaded_log = pickle.load(open(os.path.join(self.output_path, old_logs[np.argmax(creation_time)]), "rb"))
+            for attribute_name in dir(loaded_log):
+                if not attribute_name.startswith('__'):
+                    setattr(self, attribute_name, getattr(loaded_log, attribute_name))
+            self.starting_frame = self.frame_count
+            self.current_time = datetime.datetime.now().strftime("%d.%m.%Y-%H%M")
+            self.skipped_frames = 0
         else:
-            parameters["CONTINUE_FROM_LAST_SNAPSHOT"] = False
-            snapshot_data = {"object_center_coordinates": parameters["OBJECT_CENTER_COORDINATES"][0],
-                             "tip_point": None, "springs_angles_reference_order": None,
-                             "sum_needle_radius": 0, "analysed_frame_count": 0, "frame_count": 0, "skipped_frames": 0,
-                             "current_time": datetime.datetime.now().strftime("%d.%m.%Y-%H%M"),
-                             "perspective_squares_coordinates": parameters["PERSPECTIVE_SQUARES_COORDINATES"],
-                             "sum_ant_size": 0, "sum_num_ants": 0}
-    else:
-        snapshot_data["object_center_coordinates"] = springs.object_center_coordinates[[1, 0]]
-        snapshot_data["tip_point"] = springs.needle_end
-        snapshot_data["sum_needle_radius"] += int(springs.object_needle_radius)
-        snapshot_data["sum_ant_size"] += ants.sum_ant_size
-        snapshot_data["sum_num_ants"] += ants.sum_num_ants
-        snapshot_data["springs_angles_reference_order"] = calculations.springs_angles_reference_order
-        snapshot_data["perspective_squares_coordinates"] = swap_columns(squares.perspective_squares_properties[:, 0:2])
-    return snapshot_data
+            self.starting_frame = parameters["STARTING_FRAME"]
+            self.max_ants = parameters["MAX_ANTS_NUMBER"]
+            self.n_springs = parameters["N_SPRINGS"]
+            self.continuation = False
+            self.object_center_coordinates = parameters["OBJECT_CENTER_COORDINATES"][0]
+            self.tip_point = None
+            self.springs_angles_reference_order = None
+            self.sum_needle_radius = 0
+            self.analysed_frame_count = 0
+            self.frame_count = 0
+            self.skipped_frames = 0
+            self.current_time = datetime.datetime.now().strftime("%d.%m.%Y-%H%M")
+            self.perspective_squares_coordinates = parameters["PERSPECTIVE_SQUARES_COORDINATES"]
+            self.sum_ant_size = 0
+            self.sum_num_ants = 0
+
+    def update(self, integration, squares, springs, ants):
+        self.object_center_coordinates = springs.object_center_coordinates[[1, 0]]
+        self.tip_point = springs.needle_end
+        self.sum_needle_radius += int(springs.object_needle_radius)
+        self.sum_ant_size += ants.sum_ant_size
+        self.sum_num_ants += ants.sum_num_ants
+        self.springs_angles_reference_order = integration.springs_angles_reference_order
+        self.perspective_squares_coordinates = swap_columns(squares.perspective_squares_properties[:, 0:2])
+
+    def save(self):
+        pickle.dump(self, open(os.path.join(self.output_path, f'z_Checkpoint_{self.current_time}.pickle'), "wb"))
 
 
 def load_parameters(video_path, args):
     try:
         video_analysis_parameters = pickle.load(open(os.path.join(args["path"], "video_analysis_parameters.pickle"), 'rb'))[os.path.normpath(video_path)]
-    except:
+    except Exception as e:
+        print(f"An error occurred: {e}")
         raise ValueError("Video parameters for video: ", video_path, " not found. Please run the script with the flag --collect_parameters (-cp)")
     video_analysis_parameters["STARTING_FRAME"] = args["starting_frame"] if args["starting_frame"] is not None else video_analysis_parameters["STARTING_FRAME"]
-    video_analysis_parameters["CONTINUE_FROM_LAST_SNAPSHOT"] = args["continue_from_last_snapshot"]
+    video_analysis_parameters["CONTINUE"] = args["continue"]
     sub_dirs = os.path.normpath(video_path).split(args["path"])[1].split(".MP4")[0].split("\\")
     video_analysis_parameters["OUTPUT_PATH"] = os.path.join(args["path"], "analysis_output", *sub_dirs)\
         if args["output_path"] is None else os.path.join(args["output_path"], *sub_dirs)
+    video_analysis_parameters["MOTHER_PATH"] = args["output_path"]
     return video_analysis_parameters
 
 

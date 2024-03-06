@@ -11,9 +11,9 @@ import utils
 class Ants:
     def __init__(self, image, springs, perspective_squares):
         self.parameters = springs.parameters
-        self.previous_detections = springs.previous_detections
+        self.checkpoint = springs.checkpoint
         circle_mask = self.create_circle_maks(image, springs.object_center_coordinates, springs.object_needle_radius)
-        self.label_ants(image, springs.whole_object_mask, perspective_squares.all_perspective_squares_mask, circle_mask)
+        self.label_ants(image, springs.whole_object_mask, perspective_squares.perspective_squares_mask, circle_mask)
 
     def create_circle_maks(self, image, center, radius):
         mask = np.zeros(image.shape[:2], dtype=np.uint8)
@@ -96,8 +96,8 @@ class Ants:
         labels_sizes = np.bincount(labeled_image.ravel())
         small_labels_mask = np.isin(labeled_image, np.where(labels_sizes < mean_ant_size * 0.5)[0])
         labeled_image[small_labels_mask * circle_maks] = 0
-        self.sum_ant_size = int(np.sum(labels_sizes[1:])) + self.previous_detections["sum_ant_size"]
-        self.sum_num_ants = int(np.sum(labels_sizes[1:] > 0)) + self.previous_detections["sum_num_ants"]
+        self.sum_ant_size = int(np.sum(labels_sizes[1:])) + self.checkpoint.sum_ant_size
+        self.sum_num_ants = int(np.sum(labels_sizes[1:] > 0)) + self.checkpoint.sum_num_ants
         self.labeled_ants, line_lengths = utils.extend_lines(labeled_image, extend_by=self.parameters["ANTS_EXTENSION_LENGTH"])
         for ant_label in line_lengths.keys():
             if line_lengths[ant_label] > self.parameters["ANTS_MAX_LINE_LENGTH"]:

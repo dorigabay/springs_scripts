@@ -10,6 +10,9 @@ from calibration_modeling import CalibrationModeling
 from force_claculator import ForceCalculator
 from ant_tracking import AntTracking
 from data_visualization import VisualData
+import warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 
 class Config:
@@ -17,6 +20,7 @@ class Config:
         self.config_file = configparser.ConfigParser()
         self.config_file.read(config_path)
         self.spring = self._get('General', 'spring_type')
+        self.stiff_load = self._get('General', 'stiff_load')
         self.n_springs = self._get('General', 'n_springs')
         self.resolution = self._get('General', 'resolution')  # (height, width)
         self.run_calibration = self._get('General', 'run_calibration')
@@ -31,7 +35,7 @@ class Config:
         self.calib_output_path = self._get('Paths', 'calibration_output_path')
         self.calib_model_path = os.path.join(self.calib_output_path, self.spring, "calibration_model.pkl")
         self.calib_weights = self._get('Calibration', 'weights')
-        self.calib_videos_idx = self._get('Calibration', 'videos_idx')
+        # self.calib_videos_idx = self._get('Calibration', 'videos_idx')
         self.viz_use_video_idx = self._get('Data_Visualization', 'use_video_idx')
         self.viz_video_idx = self._get('Data_Visualization', 'video_idx') if self.viz_use_video_idx else None
         self.viz_video_path = self._get('Data_Visualization', 'video_path') if not self.viz_use_video_idx else None
@@ -43,6 +47,8 @@ class Config:
     def _get(self, section, parameter):
         try:
             parameter = eval(self.config_file.get(section, parameter))
+        except NameError:
+            parameter = str(self.config_file.get(section, parameter))
         except SyntaxError:
             parameter = self.config_file.get(section, parameter)
         return parameter
@@ -57,14 +63,15 @@ def parse_args():
 
 def main(config_path):
     config = Config(config_path)
-    if config.run_calibration:
+    if not config.stiff_load and config.run_calibration:
         print("-" * 60 + "\nCreating calibration model\n" + "-" * 20)
-        CalibrationModeling(config.videos_path, config.calib_output_path, config.calib_weights, config.calib_videos_idx)
+        CalibrationModeling(config.videos_path, config.calib_output_path, config.calib_weights) #, config.calib_videos_idx)
 
     if config.run_force_calculation:
         print("-" * 60 + "\nCalculating force\n" + "-" * 20)
         video_analysis_paths = [root for root, dirs, files in os.walk(config.video_analysis_path) if not dirs]
-        ForceCalculator(config.videos_path, video_analysis_paths, config.data_analysis_path, config.calib_model_path, config.n_springs)
+        calib_model_path = config.calib_model_path if not config.stiff_load else None
+        ForceCalculator(config.videos_path, video_analysis_paths, config.data_analysis_path, config.n_springs, calib_model_path)
 
     if config.run_ant_tracking:
         print("-" * 60 + "\nTracking ants\n"+"-"*20)

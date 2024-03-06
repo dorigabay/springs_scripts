@@ -14,17 +14,18 @@ from data_preparation import DataPreparation
 
 
 class CalibrationModeling(DataPreparation):
-    def __init__(self, video_path, output_path, weights=None, videos_idx=None, mm_per_pixel=0.1):
-        self.num_of_springs = 1
-        self.mm_per_pixel = mm_per_pixel
+    def __init__(self, video_path, output_path, weights=None, mm_per_pixel=0.1):
         self.video_path = video_path
         self.calibration_name = os.path.basename(os.path.normpath(self.video_path))
         self.output_path = os.path.join(output_path, self.calibration_name)
+        self.figures_output_path = os.path.join(output_path, "calibration_figures", self.calibration_name)
         self.load_weights(weights)
-        data_paths = np.array([root for root, dirs, files in os.walk(self.output_path) if not dirs])
-        self.weights = self.weights[list(videos_idx)] if videos_idx is not None else self.weights
-        data_paths = data_paths[list(videos_idx)] if videos_idx is not None else data_paths
-        super().__init__(data_paths, video_path, n_springs=1)
+        self.mm_per_pixel = mm_per_pixel
+        self.num_of_springs = 1
+        data_paths = np.array([os.path.normpath(root) for root, dirs, files in os.walk(self.output_path) if not dirs])
+        # self.weights = self.weights[list(videos_idx)] if videos_idx is not None else self.weights
+        # data_paths = data_paths[list(videos_idx)] if videos_idx is not None else data_paths
+        super().__init__(video_path, data_paths, n_springs=1, calib_mode=True)
         self.zero_weight_dir = data_paths[np.where(np.array(self.weights) == 0)[0][0]]
         self.concat_calib_data()
         self.plot()
@@ -66,7 +67,7 @@ class CalibrationModeling(DataPreparation):
                 data[s:e][angle_bin_outliers, :] = np.nan
         return data
 
-    def plot(self, font_size=6):
+    def plot(self, fig_size=(82, 70), font_size=6):
         magnitudes = np.unique(self.calib_data[:, 3])
         magnitudes_coordinates = []
         for mag in magnitudes:
@@ -74,7 +75,7 @@ class CalibrationModeling(DataPreparation):
             magnitudes_coordinates.append(np.array([np.sin(data[:, 0]), np.cos(data[:, 0])]).transpose() * (data[:, 1:2]))
         fig, ax = plt.subplots()
         inch_per_mm = 0.0393701
-        fig.set_size_inches(82*inch_per_mm, 75*inch_per_mm)
+        fig.set_size_inches(fig_size[0]*inch_per_mm, fig_size[1]*inch_per_mm)
         colors = sns.color_palette("magma", len(self.weights))
         mm_convert_factor = (self.max_extenstion * self.mm_per_pixel) / np.nanmax(magnitudes_coordinates[-1][:, 1])
         for count, (mag, coordinates) in enumerate(zip(magnitudes, magnitudes_coordinates)):
@@ -90,8 +91,9 @@ class CalibrationModeling(DataPreparation):
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
         plt.tight_layout()
+        # plt.show()
         # print("Presenting data. Close the plot to continue.")
-        self.figures_output_path = "Z:\\Dor_Gabay\\ThesisProject\\results\\summer_2023\\plus_0.1\\calibration_figures\\"
+        # self.figures_output_path = "Z:\\Dor_Gabay\\ThesisProject\\results\\summer_2023\\plus_0.0\\calibration_figures\\"
         os.makedirs(self.figures_output_path, exist_ok=True)
         fig.savefig(os.path.join(self.figures_output_path, "calibration_data.svg"), format="svg")
 
@@ -121,15 +123,4 @@ class CalibrationModeling(DataPreparation):
         magnitude = force_millinewton
         direction = angle_to_nest.flatten() - np.pi
         return magnitude, direction
-
-
-# if __name__ == '__main__':
-#     spring_type = "plus_0.2"
-#     video_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\1-videos\\summer_2023\\experiment\\{spring_type}\\"
-#     calibration_output_path = "Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\calibration\\"
-#     print("-" * 60 + "\nCreating calibration model...\n" + "-" * 20)
-#     calibration_weights = [0., 0.00356, 0.01449, 0.01933, 0.02986, 0.04515, 0.06307, 0.08473, 0.10512, 0.13058]
-#     # calibration_weights = [0., 0.00356, 0.01449, 0.01933, 0.02986, 0.04515, 0.08473, 0.10512, 0.13058]
-#     self = CalibrationModeling(video_dir, calibration_output_path, calibration_weights)
-
 

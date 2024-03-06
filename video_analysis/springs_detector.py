@@ -8,50 +8,34 @@ import utils
 
 
 class Springs:
-    def __init__(self, parameters, image, previous_detections):
+    def __init__(self, parameters, frame, checkpoint):
         self.parameters = parameters
-        self.image = image
-        self.previous_detections = previous_detections
-        image_cropped, self.object_crop_coordinates = self.prepare_frame(self.image)
-        self.image_cropped, _ = self.crop_frame_only(self.image)
-        self.image_processed = image_cropped
-        springs_properties = self.get_springs_properties(image_cropped)
-        self.springs_coordinates_transformation(self.image, springs_properties)
+        self.frame = frame
+        self.checkpoint = checkpoint
+        frame_cropped, self.object_crop_coordinates = self.prepare_frame(self.frame)
+        springs_properties = self.get_properties(frame_cropped)
+        self.transform_coordinates(self.frame, springs_properties)
 
     def prepare_frame(self, frame):
-        if (self.previous_detections["skipped_frames"] >= 25) or self.previous_detections["frame_count"] == 0:
+        if (self.checkpoint.skipped_frames >= 25) or self.checkpoint.frame_count == 0:
             object_crop_coordinates = np.array([0, self.parameters["RESOLUTION"][0], 0, self.parameters["RESOLUTION"][1]])
         else:
-            object_crop_coordinates = utils.create_box_coordinates(self.previous_detections["object_center_coordinates"], self.parameters["OCM"])[0]
-        image_processed = utils.crop_frame(frame, object_crop_coordinates)
-        image_processed = utils.process_image(image_processed, alpha=self.parameters["NEUTRALIZE_COLOUR_ALPHA"],
-                                              blur_kernel=self.parameters["NEUTRALIZE_COLOUR_BETA"],
-                                              gradiant_threshold=self.parameters["GRADIANT_THRESHOLD"])
-        return image_processed, object_crop_coordinates
+            object_crop_coordinates = utils.create_box_coordinates(self.checkpoint.object_center_coordinates, self.parameters["OCM"])[0]
+        frame_cropped = utils.crop_frame(frame, object_crop_coordinates)
+        frame_cropped = utils.process_image(frame_cropped, alpha=self.parameters["NEUTRALIZE_COLOUR_ALPHA"],
+                                            blur_kernel=self.parameters["NEUTRALIZE_COLOUR_BETA"],
+                                            gradiant_threshold=self.parameters["GRADIANT_THRESHOLD"])
+        return frame_cropped, object_crop_coordinates
 
-    def crop_frame_only(self, frame):
-        if (self.previous_detections["skipped_frames"] >= 25) or self.previous_detections["frame_count"] == 0:
-            object_crop_coordinates = np.array([0, self.parameters["RESOLUTION"][0], 0, self.parameters["RESOLUTION"][1]])
-        else:
-            object_crop_coordinates = utils.create_box_coordinates(self.previous_detections["object_center_coordinates"], self.parameters["OCM"])[0]
-        image_processed = utils.crop_frame(frame, object_crop_coordinates)
-        return image_processed, object_crop_coordinates
-
-    def get_springs_properties(self, image_cropped):
-        color_masks, whole_object_mask = utils.mask_object_colors(image_cropped, self.parameters)
-        self.object_center_coordinates, self.needle_end, self.object_needle_radius, self.object_needle_area_size = self.detect_object_needle(color_masks["g"])
-        # cv2.imshow("color_masks b]", color_masks["r"].astype("uint8") * 255)
-        # cv2.waitKey(0)
+    def get_properties(self, frame):
+        color_masks, whole_object_mask = utils.mask_object_colors(frame, self.parameters)
+        self.object_center_coordinates, self.needle_end, self.object_needle_radius, self.object_needle_area_size = self.detect_needle(color_masks["g"])
         spring_ends_mask = utils.clean_mask(color_masks["r"], self.parameters["MIN_SPRING_ENDS_SIZE"],
                                             circle_center_remove=self.object_center_coordinates, circle_radius_remove=self.object_needle_radius)
-        # cv2.imshow("spring_ends_mask", spring_ends_mask.astype("uint8") * 255)
-        # cv2.waitKey(0)
         spring_middle_part_mask = utils.clean_mask(color_masks["b"], self.parameters["MIN_SPRING_MIDDLE_PART_SIZE"], self.parameters["SPRINGS_MIDDLE_PART_OPENING"],
                                                    circle_center_remove=self.object_center_coordinates, circle_radius_remove=self.object_needle_radius)
-        # cv2.imshow("spring_middle_part_mask", spring_middle_part_mask.astype("uint8") * 255)
-        # cv2.waitKey(0)
         spring_middle_part_labeled, spring_ends_labeled, self.fixed_ends_labeled, self.free_ends_labeled, spring_middle_part_centers, spring_ends_centers = \
-            self.get_spring_parts(self.object_center_coordinates, spring_middle_part_mask, spring_ends_mask)
+            self.get_parts(self.object_center_coordinates, spring_middle_part_mask, spring_ends_mask)
         self.bundles_labeled, bundles_labels = self.create_bundles(spring_middle_part_mask, spring_ends_mask, self.fixed_ends_labeled)
         self.bundles_labels = self.assign_parts_to_bundles(self.bundles_labeled, self.fixed_ends_labeled, self.free_ends_labeled, spring_middle_part_centers, spring_ends_labeled)
         self.bundles_labeled[np.isin(self.bundles_labeled, self.bundles_labels, invert=True)] = 0  # remove bundles that has no ends
@@ -63,7 +47,7 @@ class Springs:
                       spring_middle_part_centers, spring_ends_centers, fixed_ends_edges_centers, free_ends_edges_centers]
         return properties
 
-    def detect_object_needle(self, needle_mask):
+    def detect_needle(self, needle_mask):
         needle_mask_empty_closed = needle_mask
         labeled, _ = label(needle_mask_empty_closed)
         needle_prop = regionprops(labeled)
@@ -76,64 +60,43 @@ class Springs:
         if not np.isnan(np.sum(inner_mask_center)):
             object_center = np.array([list(inner_mask_center)[1], list(inner_mask_center)[0]])
         else:
-            object_center = self.previous_detections["object_center_coordinates"]
+            object_center = self.checkpoint.object_center_coordinates
         # If the length between the center and the edge aren't as the previous detection,
         # use the previous detection for the center, or the edge:
         needle_mask_full_contour = find_contours(needle_mask_full)[0]
         farthest_point, needle_radius = utils.get_farthest_point(object_center, needle_mask_full_contour, percentile=80)
-        # print("needle_radius", needle_radius)
-        if self.previous_detections["tip_point"] is not None:
-            mean_radius = self.previous_detections["sum_needle_radius"] / self.previous_detections["analysed_frame_count"]
+        if self.checkpoint.tip_point is not None:
+            mean_radius = self.checkpoint.sum_needle_radius / self.checkpoint.analysed_frame_count
             if np.abs(needle_radius - mean_radius) / mean_radius > self.parameters["NEEDLE_RADIUS_TOLERANCE"]:
-                object_center = self.previous_detections["object_center_coordinates"]
+                object_center = self.checkpoint.object_center_coordinates
                 farthest_point, needle_radius = utils.get_farthest_point(object_center, needle_mask_full_contour, percentile=80)
                 if np.abs(needle_radius - mean_radius) / mean_radius > self.parameters["NEEDLE_RADIUS_TOLERANCE"]:
-                    farthest_point = self.previous_detections["tip_point"]
+                    farthest_point = self.checkpoint.tip_point
                     needle_radius = np.sqrt(np.sum(np.square(farthest_point - object_center)))
                     if np.abs(needle_radius - mean_radius) / mean_radius > self.parameters["NEEDLE_RADIUS_TOLERANCE"]:
                         raise ValueError("There is a problem in the needle part detection")
         needle_area_size = np.sum(needle_mask_full)
-        # image = needle_mask.astype("uint8") * 255
-        # cv2.circle(image, tuple(object_center.astype("int")), 1, (0, 255, 0), 2)
-        # cv2.circle(image, tuple(farthest_point.astype("int")), 1, (0, 255, 0), 2)
-        # cv2.imshow("needle_mask", image)
-        # cv2.waitKey(0)
         return object_center, farthest_point, needle_radius, needle_area_size
 
-    def screen_small_labels(self, labeled, threshold=0.5):
+    def screen_labels(self, labeled, threshold=0.5):
         # Calculate label sizes, and remove labels smaller than the mean size:
         label_counts = np.bincount(labeled.ravel())
         too_small = np.arange(len(label_counts))[label_counts < np.mean(label_counts[1:]) * threshold]
         labeled[np.isin(labeled, too_small)] = 0
         return label(labeled)
 
-    def get_spring_parts(self, object_center, spring_middle_part_mask, spring_ends_mask):
+    def get_parts(self, object_center, spring_middle_part_mask, spring_ends_mask):
         spring_middle_part_labeled, spring_middle_part_num_features = label(spring_middle_part_mask, self.parameters["LABELING_BINARY_STRUCTURE"])
-        # cv2.imshow("spring_middle_part_labeled", spring_middle_part_labeled.astype(bool).astype("uint8") * 255)
-        # cv2.waitKey(0)
-        spring_middle_part_labeled, spring_middle_part_num_features = self.screen_small_labels(spring_middle_part_labeled)
+        spring_middle_part_labeled, spring_middle_part_num_features = self.screen_labels(spring_middle_part_labeled)
         spring_middle_part_centers = np.array(center_of_mass(spring_middle_part_labeled, labels=spring_middle_part_labeled, index=range(1, spring_middle_part_num_features + 1)))
         spring_middle_part_centers = utils.swap_columns(spring_middle_part_centers)
-
-        # image = spring_ends_mask.astype("uint8") * 255
-        # # image = spring_middle_part_labeled.astype(bool).astype("uint8") * 255
-        # cv2.imshow("image", image)
-        # cv2.waitKey(0)
-        # image = cv2.circle(image, (int(object_center[0]), int(object_center[1])), 5, 150, -1)
-        # cv2.imshow("image", image)
-        # cv2.waitKey(0)
-
         spring_middle_part_radii = np.sqrt(np.sum(np.square(spring_middle_part_centers - object_center), axis=1))
-
         spring_ends_labeled, spring_ends_num_features = label(spring_ends_mask, self.parameters["LABELING_BINARY_STRUCTURE"])
-        # cv2.imshow("spring_ends_labeled", spring_ends_labeled.astype(bool).astype("uint8") * 255)
-        # cv2.waitKey(0)
         spring_ends_centers = np.array(center_of_mass(spring_ends_labeled, labels=spring_ends_labeled, index=range(1, spring_ends_num_features + 1)))
         spring_ends_centers = utils.swap_columns(spring_ends_centers)
         spring_ends_radii = np.sqrt(np.sum(np.square(spring_ends_centers - object_center), axis=1))
         fixed_ends_labels = np.array([x for x in range(1, spring_ends_num_features + 1)])[spring_ends_radii < (np.mean(spring_middle_part_radii))]
         free_ends_labels = np.array([x for x in range(1, spring_ends_num_features + 1)])[spring_ends_radii > np.mean(spring_middle_part_radii)]
-
         fixed_ends_labeled = copy.copy(spring_ends_labeled)
         fixed_ends_labeled[np.invert(np.isin(spring_ends_labeled, fixed_ends_labels))] = 0
         free_ends_labeled = copy.copy(spring_ends_labeled)
@@ -218,13 +181,12 @@ class Springs:
         return overlap_centers, overlap_bundles_labels
 
     def remove_duplicates(self, labels):
-        # turn duplicates labels to 0
         labels_array = np.array(labels)
         counts = np.array([labels.count(x) for x in labels])
         labels_array[counts > 1] = 0
         return list(labels_array)
 
-    def springs_coordinates_transformation(self, image, springs_properties):
+    def transform_coordinates(self, frame, springs_properties):
         whole_object_mask, spring_middle_part_labeled, spring_ends_labeled, \
             spring_middle_part_centers, spring_ends_centers, fixed_ends_edges_centers, free_ends_edges_centers = springs_properties
         y_addition, x_addition = self.object_crop_coordinates[0], self.object_crop_coordinates[2]
@@ -234,6 +196,6 @@ class Springs:
         self.spring_ends_centers = spring_ends_centers + [x_addition, y_addition]  # used only for visualization
         self.object_center_coordinates = self.object_center_coordinates + [x_addition, y_addition]
         self.needle_end = self.needle_end + [x_addition, y_addition]
-        self.whole_object_mask = np.full(image.shape[:2], False, dtype=bool)
+        self.whole_object_mask = np.full(frame.shape[:2], False, dtype=bool)
         self.whole_object_mask[self.object_crop_coordinates[0]:self.object_crop_coordinates[1],
                                self.object_crop_coordinates[2]:self.object_crop_coordinates[3]] = whole_object_mask > 0

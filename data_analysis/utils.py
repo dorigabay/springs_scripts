@@ -9,6 +9,7 @@ import apytl
 from matplotlib import pyplot as plt
 from scipy.stats import f_oneway, ttest_ind, ttest_ind_from_stats
 import itertools
+import pandas as pd
 
 
 def projection_on_axis(X, Y, axis=0):
@@ -97,16 +98,19 @@ def difference(array, spacing=1):
         return diff_array
 
 
-def calc_translation_velocity(coordinates, window=1):
+def calc_translation_velocity(coordinates, window=1, percentile_threshold=99):
     coordinates = coordinates.copy()
     horizontal_component = difference(coordinates[:, 0], spacing=window) / window
     vertical_component = difference(coordinates[:, 1], spacing=window) / window
     movement_direction = np.arctan2(vertical_component, horizontal_component)
     movement_magnitude = np.sqrt(horizontal_component ** 2 + vertical_component ** 2)
+    if percentile_threshold:
+        movement_direction[np.abs(movement_direction) > np.nanpercentile(np.abs(movement_direction), percentile_threshold)] = np.nan
+        movement_direction[np.abs(movement_magnitude) > np.nanpercentile(np.abs(movement_magnitude), percentile_threshold)] = np.nan
     return movement_direction, movement_magnitude
 
 
-def calc_angular_velocity(angles, window=4, remove_outliers=True, percentile_threshold=99):
+def calc_angular_velocity(angles, window=1, percentile_threshold=99):
     THERSHOLD = 5.5
     diff = difference(angles, spacing=window)
     diff[(diff > THERSHOLD)] = diff[diff > THERSHOLD]-2*np.pi
@@ -115,7 +119,8 @@ def calc_angular_velocity(angles, window=4, remove_outliers=True, percentile_thr
     angular_velocity = np.full(diff.shape[0], np.nan)
     all_nans = np.isnan(diff).all(axis=1)
     angular_velocity[~all_nans] = np.nanmedian(diff[~all_nans], axis=1)
-    if remove_outliers:
+    # outlier_threshold = np.isinf(angular_velocity)
+    if percentile_threshold and not percentile_threshold == 0:
         outlier_threshold = np.nanpercentile(np.abs(angular_velocity), percentile_threshold)
         angular_velocity[np.abs(angular_velocity) > outlier_threshold] = np.nan
     return angular_velocity
@@ -127,6 +132,10 @@ def exponential_function(x, a, b):
 
 def exponential_decay(x, a, b):
     return a * np.exp(-b * x)
+
+
+def order_1_function(x, a, b):
+    return a * x + b
 
 
 def interpolate_rows(data, interpolation_boolean=None, period=None):
@@ -371,23 +380,35 @@ def compare_two_pairs(pair1, pair2):
     return pair1_difference_is_larger_than_pair2_differences
 
 
-def draw_significant_stars(df, combinations=None, axs=None, y_range=None):
+def draw_significant_stars(df, combinations=None, axs=None, y_range=None, n_division_factor=1):
+    n_columns = len(df.columns) if isinstance(df, pd.DataFrame) else df.shape[1]
     if combinations is None:
-        combinations = np.array(list(itertools.combinations(np.arange(len(df.columns)), 2)))
+        combinations = np.array(list(itertools.combinations(np.arange(n_columns), 2)))
     else:
         combinations = np.array(combinations)
     combinations = combinations[np.argsort([i[1]-i[0] for i in combinations])]
     for col_1_idx, col_2_idx in combinations:
-        array1 = df.iloc[:, col_1_idx]
-        array2 = df.iloc[:, col_2_idx]
+        # check if df is a pandas dataframe:
+        if isinstance(df, pd.DataFrame):
+            array1 = df.iloc[:, col_1_idx]
+            array2 = df.iloc[:, col_2_idx]
+        else:
+            array1 = df[:, col_1_idx]
+            array2 = df[:, col_2_idx]
         nan_idx = np.logical_or(np.isnan(array1), np.isnan(array2))
         # t_stat, p_value = ttest_ind(array1[~nan_idx], array2[~nan_idx])
         mean1, std1 = np.nanmean(array1), np.nanstd(array1)
         mean2, std2 = np.nanmean(array2), np.nanstd(array2)
-        nomber_of_samples1, nomber_of_samples2 = np.sum(~np.isnan(array1)), np.sum(~np.isnan(array2))
-        t_stat, p_value = ttest_ind_from_stats(mean1, std1, nomber_of_samples1, mean2, std2, nomber_of_samples2)
+        number_of_samples1, number_of_samples2 = np.sum(~np.isnan(array1)), np.sum(~np.isnan(array2))
+        t_stat, p_value = ttest_ind_from_stats(mean1, std1, number_of_samples1/n_division_factor, mean2, std2, number_of_samples2/n_division_factor)
         if p_value < 0.05:
-            print("There is a significant difference between the two groups.")
+            print(f"There is a significant difference between the two groups. p={p_value:.3f}")
+            if p_value < 0.001:
+                stars = "***"
+            elif p_value < 0.01:
+                stars = "**"
+            else:
+                stars = "*"
             if axs is None:
                 top = plt.gca().get_ylim()[1]
                 bottom = plt.gca().get_ylim()[0]
@@ -401,15 +422,15 @@ def draw_significant_stars(df, combinations=None, axs=None, y_range=None):
                 plt.plot(
                     [col_1_idx, col_1_idx, col_2_idx, col_2_idx],
                     [bar_tips, bar_height, bar_height, bar_tips], lw=1, c='k')
-                plt.text(np.abs(col_2_idx + col_1_idx) / 2, bar_height, "***", ha='center', va='center', fontsize=12)
+                plt.text(np.abs(col_2_idx + col_1_idx) / 2, bar_height, stars, ha='center', va='center', fontsize=12)
             else:
                 axs.plot(
                     [col_1_idx, col_1_idx, col_2_idx, col_2_idx],
                     [bar_tips, bar_height, bar_height, bar_tips], lw=1, c='k')
-                axs.text(np.abs(col_2_idx + col_1_idx) / 2, bar_height, "***", ha='center', va='center', fontsize=12)
+                axs.text(np.abs(col_2_idx + col_1_idx) / 2, bar_height, stars, ha='center', va='center', fontsize=12)
+            return p_value
         else:
-            print(f"There is no significant difference between {col_1_idx} and {col_2_idx}.")
-
+            print(f"There is no significant difference between {col_1_idx} and {col_2_idx}. p={p_value:.3f}")
 
 def discretize_angular_velocity(angular_velocity, sets_frames):
     discrete_velocity_vectors = []

@@ -13,11 +13,12 @@ QUALITY_THRESHOLD = SQUARENESS_THRESHOLD * RECTANGLE_SIMILARITY_THRESHOLD
 
 
 class DataPreparation:
-    def __init__(self, data_paths, videos_path, n_springs):
-        self.data_paths = data_paths
+    def __init__(self, videos_path, data_paths, n_springs, calib_mode=False):
         self.videos_path = videos_path
+        self.data_paths = data_paths
         self.n_springs = n_springs
-        self.calib_mode = True if self.n_springs == 1 else False
+        # self.calib_mode = True if self.n_springs == 1 else False
+        self.calib_mode = calib_mode
         self.load_data()
         self.create_missing_perspective_squares(QUALITY_THRESHOLD)
         self.rearrange_perspective_squares_order()
@@ -49,9 +50,7 @@ class DataPreparation:
         needle_coordinates_y = np.concatenate([np.loadtxt(os.path.join(path, "needle_part_coordinates_y.csv"), delimiter=",") for path in paths], axis=0)
         np.stack((needle_coordinates_x, needle_coordinates_y), axis=2)
         self.object_center_coordinates =  np.stack((needle_coordinates_x[:, 0], needle_coordinates_y[:, 0]), axis=1)
-        # self.object_center_coordinates = needle_coordinates[:, 0, :]
         self.needle_tip_coordinates = np.stack((needle_coordinates_x[:, -1], needle_coordinates_y[:, -1]), axis=1)
-        # self.needle_tip_coordinates = needle_coordinates[:, -1, :]
         self.video_n_frames = np.array([np.loadtxt(os.path.join(path, "N_ants_around_springs.csv"), delimiter=",").shape[0] for path in paths])
         self.n_frames = np.sum(self.video_n_frames)
         cap = cv2.VideoCapture(glob.glob(os.path.join(self.videos_path, "**", "*.MP4"), recursive=True)[0])

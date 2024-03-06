@@ -5,7 +5,7 @@ import numpy as np
 from scipy.ndimage import generate_binary_structure
 # local imports:
 import utils
-from image_processing_integrator import Integration
+from integrator import Integration
 from ants_detector import Ants
 from springs_detector import Springs
 from perspective_squares_detector import PerspectiveSquares
@@ -193,13 +193,13 @@ class CollectParameters:
         if self.show_analysis_example:
             try:
                 image = image.copy()
-                parameters["CONTINUE_FROM_LAST_SNAPSHOT"] = False
-                snapshot_data = utils.create_snapshot_data(parameters)
-                snapshot_data["frame_count"] = 1
-                squares = PerspectiveSquares(parameters, image, snapshot_data)
-                springs = Springs(parameters, image, snapshot_data)
+                parameters["CONTINUE"] = False
+                checkpoint_file = utils.CheckpointFile(parameters)
+                checkpoint_file.frame_count = 1
+                squares = PerspectiveSquares(parameters, image, checkpoint_file)
+                springs = Springs(parameters, image, checkpoint_file)
                 ants = Ants(image, springs, squares)
-                calculations = Integration(parameters, snapshot_data, springs, ants)
+                calculations = Integration(parameters, checkpoint_file, springs, ants)
                 utils.present_analysis_result(image, calculations, springs, ants, waitKey=0)
             except:
                 print("Error in analysis_example. Could not show example")

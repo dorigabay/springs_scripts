@@ -6,8 +6,7 @@ import pickle
 import numpy as np
 import scipy.io as sio
 # local imports:
-# from data_analysis.analysis import Analyser
-from data_analysis import Analyser
+from plot_preparation import Analyser
 import utils
 
 
@@ -25,7 +24,9 @@ class VisualData:
         self.draw_amoeba = draw_amoeba
         self.load_data(Analyser(self.data_analysis_path, os.path.basename(video_analysis_path), spring_type))
         self.n_frames_to_save = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)) - 1
-        self.n_frames_to_save = self.n_frames_to_save if (n_frames_to_save == -1) or (n_frames_to_save is None) or (n_frames_to_save > self.n_frames_to_save) else n_frames_to_save
+        self.n_frames_to_save = self.n_frames_to_save\
+            if (n_frames_to_save == -1) or (n_frames_to_save is None) or (n_frames_to_save > self.n_frames_to_save)\
+            else n_frames_to_save
         self.color_data()
         self.create_video()
 
@@ -49,7 +50,7 @@ class VisualData:
         self.tangential_force = data.tangential_force[set_s:set_e][start:end]
         self.net_tangential_force = np.sum(self.tangential_force, axis=1)
         self.angular_velocity = data.angular_velocity[set_s:set_e][start:end]
-        self.load_ants_data(data_analysis_sub_path, start, end)
+        # self.load_ants_data(data_analysis_sub_path, start, end)
 
     def load_video_info(self):
         self.cap = cv2.VideoCapture(self.video_path)
@@ -182,12 +183,12 @@ class VisualData:
 
 if __name__ == "__main__":
     spring = "plus_0.1"
-    video_idx = 1
+    video_idx = 2
     video_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\1-videos\\summer_2023\\experiment\\{spring}\\"
     video_path = os.path.normpath(glob.glob(os.path.join(video_dir, "**", "*.MP4"), recursive=True)[video_idx])
     video_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\2-video_analysis\\summer_2023\\experiment\\{spring}\\"
     data_analysis_dir = f"Z:\\Dor_Gabay\\ThesisProject\\data\\3-data_analysis\\summer_2023\\experiment\\{spring}\\"
     results_output_dir = f"Z:\\Dor_Gabay\\ThesisProject\\results\\summer_2023\\{spring}\\"
     self = VisualData(video_path, video_analysis_dir, data_analysis_dir, results_output_dir, spring, n_springs=20,
-                      n_frames_to_save=1000, reduction_factor=1, draw_amoeba=False)
+                      n_frames_to_save=10000, reduction_factor=1, draw_amoeba=False)
 

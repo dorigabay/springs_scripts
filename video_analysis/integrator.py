@@ -8,14 +8,15 @@ import utils
 
 
 class Integration:
-    def __init__(self, parameters, previous_detections, springs, ants):
+    def __init__(self, parameters, checkpoint, springs, ants):
         self.parameters = parameters
-        self.previous_detections = previous_detections
+        self.checkpoint = checkpoint
         self.ants = ants
         self.springs = springs
         self.make_ants_centers()
         self.springs_angles_ordered = self.order_spring_angles()
         self.N_ants_around_springs, self.size_ants_around_springs = self.occupied_springs(self.springs_angles_ordered)
+        # print(self.N_ants_around_springs)
         self.fixed_ends_coordinates_x, self.fixed_ends_coordinates_y, self.free_ends_coordinates_x, \
             self.free_ends_coordinates_y, self.needle_part_coordinates_x, self.needle_part_coordinates_y =\
             self.reorder_coordinates(self.springs_angles_ordered)
@@ -98,7 +99,6 @@ class Integration:
         labeled_ants_cropped = utils.crop_frame(self.ants.labeled_ants, self.springs.object_crop_coordinates)
         dilated_ants = maximum_filter(labeled_ants_cropped, self.parameters["ANTS_SPRINGS_OVERLAP_SIZE"])
         joints_labels = np.unique(dilated_ends[((dilated_ends != 0) * (dilated_ants != 0))])
-
         spring_ends_occupied = []
         for label in joints_labels:
             bundle_label = np.unique(self.springs.bundles_labeled[dilated_ends == label])
@@ -153,33 +153,28 @@ class Integration:
             self.parameters["N_SPRINGS"]), free_ends_y.reshape(1, self.parameters["N_SPRINGS"]), blue_part_x.reshape(1, 2), blue_part_y.reshape(1, 2)
 
 
-def save_data(snapshot_data, parameters, calculations=None):
-    max_ants = parameters["MAX_ANTS_NUMBER"]
-    n_springs = parameters["N_SPRINGS"]
-    if calculations is None:
-        empty_springs = np.full((1, n_springs), np.nan)
+def save(checkpoint, integration=None):
+    if integration is None:
+        empty_springs = np.full((1, checkpoint.n_springs), np.nan)
         empty_2_values = np.full((1, 2), np.nan)
-        empty_ants = np.full((1, max_ants), np.nan)
+        empty_ants = np.full((1, checkpoint.max_ants), np.nan)
         arrays = [empty_springs for _ in range(6)] + [empty_2_values, empty_2_values] + [empty_ants for _ in range(4)]
-        snapshot_data["skipped_frames"] += 1
-        # print("\r Skipped frame: ", snapshot_data["frame_count"], end=" " * 150)
+        checkpoint.skipped_frames += 1
     else:
-        arrays = [calculations.N_ants_around_springs, calculations.size_ants_around_springs,
-                  calculations.fixed_ends_coordinates_x, calculations.fixed_ends_coordinates_y,
-                  calculations.free_ends_coordinates_x, calculations.free_ends_coordinates_y,
-                  calculations.needle_part_coordinates_x, calculations.needle_part_coordinates_y,
-                  calculations.ants_centers_x, calculations.ants_centers_y,
-                  calculations.ants_attached_labels.reshape(1, max_ants),
-                  calculations.ants_attached_forgotten_labels.reshape(1, max_ants)]
-        snapshot_data["analysed_frame_count"] += 1
-        snapshot_data["skipped_frames"] = 0
-        apytl.Bar().drawbar(snapshot_data["frame_count"], parameters["total_n_frmaes"], fill='*')
-        # print("\r Analyzed frame number: ", snapshot_data["frame_count"], end=" " * 150)
+        arrays = [integration.N_ants_around_springs, integration.size_ants_around_springs,
+                  integration.fixed_ends_coordinates_x, integration.fixed_ends_coordinates_y,
+                  integration.free_ends_coordinates_x, integration.free_ends_coordinates_y,
+                  integration.needle_part_coordinates_x, integration.needle_part_coordinates_y,
+                  integration.ants_centers_x, integration.ants_centers_y,
+                  integration.ants_attached_labels.reshape(1, checkpoint.max_ants),
+                  integration.ants_attached_forgotten_labels.reshape(1, checkpoint.max_ants)]
+        checkpoint.analysed_frame_count += 1
+        checkpoint.skipped_frames = 0
+        # apytl.Bar().drawbar(log["frame_count"], parameters["total_n_frames"], fill='*')
     names = ["N_ants_around_springs", "size_ants_around_springs",
              "fixed_ends_coordinates_x", "fixed_ends_coordinates_y", "free_ends_coordinates_x",
              "free_ends_coordinates_y", "needle_part_coordinates_x", "needle_part_coordinates_y",
              "ants_centers_x", "ants_centers_y", "ants_attached_labels", "ants_attached_forgotten_labels"]
-    snapshot_data["frame_count"] += 1
-    utils.save_data(arrays, names, snapshot_data, parameters)
-    pickle.dump(snapshot_data, open(os.path.join(parameters["OUTPUT_PATH"], f'snap_data_{snapshot_data["current_time"]}.pickle'), "wb"))
-    return snapshot_data
+    checkpoint.frame_count += 1
+    utils.save(arrays, names, checkpoint)
+
